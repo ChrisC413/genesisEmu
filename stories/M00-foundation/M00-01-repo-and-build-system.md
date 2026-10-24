@@ -1,7 +1,7 @@
 # M00-01 · Repository layout and CMake/vcpkg build
 
 **Milestone:** [M00 – Foundation](README.md)  
-**Status:** Draft  
+**Status:** In progress  
 **Depends on:** —  
 **Spec refs:** [01-architecture](../../docs/specs/01-architecture.md#repository-layout), [07-frontend-platform](../../docs/specs/07-frontend-platform.md#platforms)
 
