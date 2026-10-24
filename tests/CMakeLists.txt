@@ -31,6 +31,20 @@ target_link_libraries(gen_rom_tests PRIVATE gen_common Catch2::Catch2WithMain)
 genesis_set_warnings(gen_rom_tests)
 catch_discover_tests(gen_rom_tests DISCOVERY_MODE PRE_TEST PROPERTIES LABELS rom SKIP_RETURN_CODE 4)
 
+# SingleStepTests 68000 runner (M01-02). The vectors are fetched by tools/fetch-test-data.py into test-data/;
+# without them the tests report "skipped".
+add_executable(gen_m68k_sst m68k/sst_runner.cpp)
+target_link_libraries(gen_m68k_sst PRIVATE gen_common gen_core)
+target_compile_definitions(gen_m68k_sst PRIVATE GENESIS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+genesis_set_warnings(gen_m68k_sst)
+set(GENESIS_SST_EXCLUSIONS "${CMAKE_CURRENT_SOURCE_DIR}/m68k/sst_exclusions.txt")
+# Per push: the first 250 vectors of every file. Nightly: GENESIS_SST_LIMIT=0 runs all ~1M.
+set(GENESIS_SST_LIMIT 250 CACHE STRING "Vectors per SingleStepTests file in the m68k.sst test (0 = all)")
+add_test(NAME m68k.sst COMMAND gen_m68k_sst --limit ${GENESIS_SST_LIMIT} --show 0
+  --exclusions "${GENESIS_SST_EXCLUSIONS}")
+add_test(NAME m68k.sst_selftest COMMAND gen_m68k_sst --only NOP --limit 50 --show 0 --inject-fault --expect-fail)
+set_tests_properties(m68k.sst m68k.sst_selftest PROPERTIES LABELS m68k SKIP_RETURN_CODE 4)
+
 add_subdirectory(cli)
 if(GENESIS_BUILD_APP)
   add_subdirectory(app)

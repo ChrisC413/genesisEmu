@@ -1,0 +1,506 @@
+{
+  "m68k": {
+    "repo": "SingleStepTests/680x0",
+    "commit": "e0d5ece9670205cc84a0101081837deb446f86a3",
+    "path": "68000/v1",
+    "license": "none stated in the repository (fetched for local testing only, never vendored)",
+    "files": {
+      "68000/v1/ABCD.json.gz": {
+        "sha1": "83d1e504a7d22b1f422488116a9ab8515205623e",
+        "size": 1519592
+      },
+      "68000/v1/ADD.b.json.gz": {
+        "sha1": "e9ae50ec200e695c4637780b0b76cd81aeac6077",
+        "size": 1580701
+      },
+      "68000/v1/ADD.l.json.gz": {
+        "sha1": "90e1c7f9b69ba63a8725e87d531a0916c829e4e1",
+        "size": 1894233
+      },
+      "68000/v1/ADD.w.json.gz": {
+        "sha1": "741a32f83fd4d6580478e8c584d55be617ce3abc",
+        "size": 1787848
+      },
+      "68000/v1/ADDA.l.json.gz": {
+        "sha1": "e05052867bd4447502ea44a91e63d1c9e68df188",
+        "size": 1796401
+      },
+      "68000/v1/ADDA.w.json.gz": {
+        "sha1": "03fe08644cd12e7c3898a3779ac1ea88f6a62c52",
+        "size": 1713030
+      },
+      "68000/v1/ADDX.b.json.gz": {
+        "sha1": "9a292f2d9f3fd0ddecd03e20b7f784fe8873e027",
+        "size": 1514342
+      },
+      "68000/v1/ADDX.l.json.gz": {
+        "sha1": "6e8daf931baebc29f57e455cdaa4fe135818dc8d",
+        "size": 1783687
+      },
+      "68000/v1/ADDX.w.json.gz": {
+        "sha1": "d93d0759c1f3528f87818531fa497b427db0f355",
+        "size": 1675878
+      },
+      "68000/v1/AND.b.json.gz": {
+        "sha1": "a3373aca4fd65bf674d209b03454552af8bed3b3",
+        "size": 1572136
+      },
+      "68000/v1/AND.l.json.gz": {
+        "sha1": "b436b0e5a0c1848939cc4902b0db120a6f633913",
+        "size": 1954989
+      },
+      "68000/v1/AND.w.json.gz": {
+        "sha1": "1002a78b894d35f3090e2fcd5b6ba9173b6b8cef",
+        "size": 1831496
+      },
+      "68000/v1/ANDItoCCR.json.gz": {
+        "sha1": "ad28c52b4e88053ea591b30f6e7e9f9d3c72cb6a",
+        "size": 1390883
+      },
+      "68000/v1/ANDItoSR.json.gz": {
+        "sha1": "54c22cc6090c399588be89deab8f8e24e265d4f0",
+        "size": 1402535
+      },
+      "68000/v1/ASL.b.json.gz": {
+        "sha1": "8092bbba9c7de669d62deeac16ccac64f38dac54",
+        "size": 1360793
+      },
+      "68000/v1/ASL.l.json.gz": {
+        "sha1": "4f2c34a1835b324ad5db1d69e03e832d4d793fdb",
+        "size": 1377566
+      },
+      "68000/v1/ASL.w.json.gz": {
+        "sha1": "41874a2cab65dbb8acc50f8d4a9dab327e3f7990",
+        "size": 1513770
+      },
+      "68000/v1/ASR.b.json.gz": {
+        "sha1": "6e9eed551087fa7d299bdd95590948df7cf46a57",
+        "size": 1357911
+      },
+      "68000/v1/ASR.l.json.gz": {
+        "sha1": "e9c5428ff8b07885683e388e44a3c632f3f1c34b",
+        "size": 1374137
+      },
+      "68000/v1/ASR.w.json.gz": {
+        "sha1": "1f84e7812d6a684cd75159c2ede175c5bcc32901",
+        "size": 1515193
+      },
+      "68000/v1/BCHG.json.gz": {
+        "sha1": "cf5aeab04b316bd3432bb8f83ea0f4af95aae8fb",
+        "size": 1578699
+      },
+      "68000/v1/BCLR.json.gz": {
+        "sha1": "985a394d7a727198ea9f3f6ca4d553d384f8a8ac",
+        "size": 1566275
+      },
+      "68000/v1/BSET.json.gz": {
+        "sha1": "dbb8996b80ebc535c66e284c8d0fd9d6a37dcfd1",
+        "size": 1568396
+      },
+      "68000/v1/BSR.json.gz": {
+        "sha1": "ef5bb9aee21a1cd6297ab714cd734366b974ebfb",
+        "size": 1685181
+      },
+      "68000/v1/BTST.json.gz": {
+        "sha1": "4b4095a760f98a52f771d018dc4039b5b81116cc",
+        "size": 1514575
+      },
+      "68000/v1/Bcc.json.gz": {
+        "sha1": "199282b05387fa06dadbd2d28be1a19a6f182105",
+        "size": 1534495
+      },
+      "68000/v1/CHK.json.gz": {
+        "sha1": "495730e900f322364d2df775b828efd64c85640f",
+        "size": 1982618
+      },
+      "68000/v1/CLR.b.json.gz": {
+        "sha1": "09da06ed17b71a1173d1b8c35cdf4b7a1af4b381",
+        "size": 1514892
+      },
+      "68000/v1/CLR.l.json.gz": {
+        "sha1": "5aa7e4c4ccc8705f93da16f68e0da961fc0c847b",
+        "size": 1825616
+      },
+      "68000/v1/CLR.w.json.gz": {
+        "sha1": "10409c374d39c01d0a5ae9182649cc46aadddf2c",
+        "size": 1725259
+      },
+      "68000/v1/CMP.b.json.gz": {
+        "sha1": "20170c98b69b3dc9837e24c1c48bb39cd30f9db7",
+        "size": 1534399
+      },
+      "68000/v1/CMP.l.json.gz": {
+        "sha1": "9bcf313dc02d19b7bc848d25e6d67e2b95696bd9",
+        "size": 1843466
+      },
+      "68000/v1/CMP.w.json.gz": {
+        "sha1": "343a028886d299e1634535e6225323ecdba899f9",
+        "size": 1751355
+      },
+      "68000/v1/CMPA.l.json.gz": {
+        "sha1": "872b2e8fbde271fe58b5c9e919a2a86c09bd8091",
+        "size": 1754996
+      },
+      "68000/v1/CMPA.w.json.gz": {
+        "sha1": "e4a83e28fb2a377c58a64fc64538d87a4408a0d2",
+        "size": 1694139
+      },
+      "68000/v1/DBcc.json.gz": {
+        "sha1": "5f9c7cf083d87dc0b5027cf6a15cc986be9caa14",
+        "size": 1592630
+      },
+      "68000/v1/DIVS.json.gz": {
+        "sha1": "9d8bcc5ca13aba4db52fafd42b18495c6ffea171",
+        "size": 1755135
+      },
+      "68000/v1/DIVU.json.gz": {
+        "sha1": "70a8179682d022b824c2cc9d5507bfc2af76a601",
+        "size": 1773737
+      },
+      "68000/v1/EOR.b.json.gz": {
+        "sha1": "f12d55c40ddc01217e6cd3d40268ae5e9e33d215",
+        "size": 1578873
+      },
+      "68000/v1/EOR.l.json.gz": {
+        "sha1": "0b36897cb23313daac2b9f83d9e261b6095da57b",
+        "size": 1965981
+      },
+      "68000/v1/EOR.w.json.gz": {
+        "sha1": "c1f6f551fd82257c419ce8862e682545830a055d",
+        "size": 1817791
+      },
+      "68000/v1/EORItoCCR.json.gz": {
+        "sha1": "044886eaf3980d5a75e215d2838ad7ebda89ebd2",
+        "size": 1395345
+      },
+      "68000/v1/EORItoSR.json.gz": {
+        "sha1": "d97b6556bfecc0c02c0811765602e6e3b4c7de5e",
+        "size": 1407667
+      },
+      "68000/v1/EXG.json.gz": {
+        "sha1": "55fa3cdce7fff00cf0a97af739ca073b4f5a220a",
+        "size": 1371908
+      },
+      "68000/v1/EXT.l.json.gz": {
+        "sha1": "14a5915700b51b8d41a221330f749768d6ad393d",
+        "size": 1303210
+      },
+      "68000/v1/EXT.w.json.gz": {
+        "sha1": "4ad7b87b35e73f15bedbe20e36aeb846560f1c54",
+        "size": 1300888
+      },
+      "68000/v1/JMP.json.gz": {
+        "sha1": "154be2cb55f8f83747fe7b35f3318d32366f4e74",
+        "size": 1794958
+      },
+      "68000/v1/JSR.json.gz": {
+        "sha1": "e98a1027f2b9a030dacd35609c65e7811368530f",
+        "size": 1873446
+      },
+      "68000/v1/LEA.json.gz": {
+        "sha1": "3e8c11372274ce5f1dfac2c2438dda45eca9f4b4",
+        "size": 1446866
+      },
+      "68000/v1/LINK.json.gz": {
+        "sha1": "96d649b5c18be4ae16ca1ac7b50faf68fc51a56e",
+        "size": 1658446
+      },
+      "68000/v1/LSL.b.json.gz": {
+        "sha1": "d7b62f714df288c9a1d3aa65a3c972606229ab2c",
+        "size": 1361206
+      },
+      "68000/v1/LSL.l.json.gz": {
+        "sha1": "cd20aa926410b7143919af149d18d7bcfe28f80d",
+        "size": 1377962
+      },
+      "68000/v1/LSL.w.json.gz": {
+        "sha1": "de7fc3c80fac45a948ab19875cab86c4cd723edf",
+        "size": 1519957
+      },
+      "68000/v1/LSR.b.json.gz": {
+        "sha1": "529a6e77b16ae7b84d0cb9d953fa890687daae17",
+        "size": 1361322
+      },
+      "68000/v1/LSR.l.json.gz": {
+        "sha1": "62f2043d0ed18bd56e93af2abbdc7ed48ec371ab",
+        "size": 1369067
+      },
+      "68000/v1/LSR.w.json.gz": {
+        "sha1": "432cb0802aa2305dbd3300f568f321adf8e34741",
+        "size": 1521196
+      },
+      "68000/v1/MOVE.b.json.gz": {
+        "sha1": "d03ab3247fc616680e81fc1e95356599e5d7bab7",
+        "size": 1690230
+      },
+      "68000/v1/MOVE.l.json.gz": {
+        "sha1": "b7c6195de3097c9a0051350ee7a843aa41a04ef0",
+        "size": 2124849
+      },
+      "68000/v1/MOVE.q.json.gz": {
+        "sha1": "81cfa181a1a62d4762045288608279aa1ec3ef3b",
+        "size": 1340498
+      },
+      "68000/v1/MOVE.w.json.gz": {
+        "sha1": "16e333822de28c82ba5ea1e04a957dea944014e7",
+        "size": 2003039
+      },
+      "68000/v1/MOVEA.l.json.gz": {
+        "sha1": "acf701623c065b6fa581d7b2c2f54baa77b77b2c",
+        "size": 1781838
+      },
+      "68000/v1/MOVEA.w.json.gz": {
+        "sha1": "ea74064c9d03dc89f08745bc6a2b22a979f2f1d2",
+        "size": 1719787
+      },
+      "68000/v1/MOVEM.l.json.gz": {
+        "sha1": "e2680beaae95a0193b8f3dad7a39dc765cf22228",
+        "size": 3174640
+      },
+      "68000/v1/MOVEM.w.json.gz": {
+        "sha1": "3ce7b779503a64f23b6eab8209deb20fa32e91c6",
+        "size": 2568232
+      },
+      "68000/v1/MOVEP.l.json.gz": {
+        "sha1": "52179756004aff4cd756d1d7f4a0ee924ce616ab",
+        "size": 1865151
+      },
+      "68000/v1/MOVEP.w.json.gz": {
+        "sha1": "265ed132c18ee75cd2f47d7452eb6f6098d7162b",
+        "size": 1670037
+      },
+      "68000/v1/MOVEfromSR.json.gz": {
+        "sha1": "6807c6f435e5fd403143835051501800dbdd05b0",
+        "size": 1733683
+      },
+      "68000/v1/MOVEfromUSP.json.gz": {
+        "sha1": "0750b2807c2a5a0910489965f6d90abac164e25c",
+        "size": 1292862
+      },
+      "68000/v1/MOVEtoCCR.json.gz": {
+        "sha1": "5e6998483b8f7c1a92b13f53137b6560ea6b6cc6",
+        "size": 1748133
+      },
+      "68000/v1/MOVEtoSR.json.gz": {
+        "sha1": "ad1438dff69f55e1ad0d1c5592f46be89f9be61e",
+        "size": 1754600
+      },
+      "68000/v1/MOVEtoUSP.json.gz": {
+        "sha1": "b21c8a7f09c637ad2f41a89cd8a7cae87c96bc08",
+        "size": 1288920
+      },
+      "68000/v1/MULS.json.gz": {
+        "sha1": "c65451262e3ef7e9e0832e71f8d27ca78183af45",
+        "size": 1787573
+      },
+      "68000/v1/MULU.json.gz": {
+        "sha1": "32629ace8286deb93a39f0f7f171529b788a52f9",
+        "size": 1782949
+      },
+      "68000/v1/NBCD.json.gz": {
+        "sha1": "081a3acdb01bc5256a442be9f6d3d84fe087c327",
+        "size": 1533385
+      },
+      "68000/v1/NEG.b.json.gz": {
+        "sha1": "360929cf25e0860d2a0fc207fad30228b769288e",
+        "size": 1530420
+      },
+      "68000/v1/NEG.l.json.gz": {
+        "sha1": "31328b4973f92e77cfd1106e0d3fd8d516d981c5",
+        "size": 1866913
+      },
+      "68000/v1/NEG.w.json.gz": {
+        "sha1": "08d166ffd894e9577bbd2b228f95cf56d4a59765",
+        "size": 1743584
+      },
+      "68000/v1/NEGX.b.json.gz": {
+        "sha1": "ccc21cb261fd60641d5a8acb608f44eda73fab5f",
+        "size": 1530817
+      },
+      "68000/v1/NEGX.l.json.gz": {
+        "sha1": "4858247542abd238d5db28084b696591fd17ff6b",
+        "size": 1872712
+      },
+      "68000/v1/NEGX.w.json.gz": {
+        "sha1": "bb1a095dd5237eedea2d552cc9201ff1cdd6cda9",
+        "size": 1740190
+      },
+      "68000/v1/NOP.json.gz": {
+        "sha1": "08208f42a2d02753d9e1db8ce1182c2d7e3c511b",
+        "size": 1248255
+      },
+      "68000/v1/NOT.b.json.gz": {
+        "sha1": "5ec7b26a7201f61ddc1ee118325d0b158db0684b",
+        "size": 1530514
+      },
+      "68000/v1/NOT.l.json.gz": {
+        "sha1": "b3301f44bec6bd5acb637346a7149dc561db80f6",
+        "size": 1873934
+      },
+      "68000/v1/NOT.w.json.gz": {
+        "sha1": "cbca2636d0d6011ef0f45e7b656a28976ff98ced",
+        "size": 1739205
+      },
+      "68000/v1/OR.b.json.gz": {
+        "sha1": "5009dfe67cc08fab075e9d042f2d9c76a7ea1ecc",
+        "size": 1574961
+      },
+      "68000/v1/OR.l.json.gz": {
+        "sha1": "c4690368c54154e57fe3a79ff66cfc3d58856bb5",
+        "size": 1960208
+      },
+      "68000/v1/OR.w.json.gz": {
+        "sha1": "9c68e71b5428f5227ff9f205163ff90bbf7ad5fc",
+        "size": 1834635
+      },
+      "68000/v1/ORItoCCR.json.gz": {
+        "sha1": "d68d3b3df56a5b0b1ac3dcbcae7ec3d296a81cb5",
+        "size": 1391270
+      },
+      "68000/v1/ORItoSR.json.gz": {
+        "sha1": "d13faed23f69deaa80767972ab125415f4f02737",
+        "size": 1394745
+      },
+      "68000/v1/PEA.json.gz": {
+        "sha1": "3ae47a5bcca8e3426fcf205c096f1cdb7b80842f",
+        "size": 1597690
+      },
+      "68000/v1/RESET.json.gz": {
+        "sha1": "572e40257043cb5774ce7889a6d55f8a95203beb",
+        "size": 1255872
+      },
+      "68000/v1/ROL.b.json.gz": {
+        "sha1": "3d403c6bfafde2150af328d3d30c3a6d6538fd19",
+        "size": 1357894
+      },
+      "68000/v1/ROL.l.json.gz": {
+        "sha1": "638b62a72c657c30b3e45928d44eaa2e2b1a8dfa",
+        "size": 1387879
+      },
+      "68000/v1/ROL.w.json.gz": {
+        "sha1": "bd1582542f5798cd2ac5eb72fdf6fb8f2fbc6f2b",
+        "size": 1520563
+      },
+      "68000/v1/ROR.b.json.gz": {
+        "sha1": "787cea7761d7c471be8954fcfe2e23f9b7675311",
+        "size": 1357217
+      },
+      "68000/v1/ROR.l.json.gz": {
+        "sha1": "fdb7e42ef4dc7bd4d0f0406ef1a1587d00bd88f1",
+        "size": 1386864
+      },
+      "68000/v1/ROR.w.json.gz": {
+        "sha1": "bbcc351a1f2676a642fce8f31c94fbb8898d9cdd",
+        "size": 1512327
+      },
+      "68000/v1/ROXL.b.json.gz": {
+        "sha1": "b5f523852ca60225da92298fb29334404943bee3",
+        "size": 1358488
+      },
+      "68000/v1/ROXL.l.json.gz": {
+        "sha1": "253b4379525bc9aff1508962a7a61796a9087bdb",
+        "size": 1387426
+      },
+      "68000/v1/ROXL.w.json.gz": {
+        "sha1": "cd32c85ae8a58fb5ed0b2fcbe8b410249686106b",
+        "size": 1517061
+      },
+      "68000/v1/ROXR.b.json.gz": {
+        "sha1": "8cda886a3a06db77e71f0c7ff602af814864ea29",
+        "size": 1356886
+      },
+      "68000/v1/ROXR.l.json.gz": {
+        "sha1": "8e105ce61537e07513fa14606f616de780a1fff8",
+        "size": 1387467
+      },
+      "68000/v1/ROXR.w.json.gz": {
+        "sha1": "31e26192be69cadd78985391eb652ecdcb70b534",
+        "size": 1513010
+      },
+      "68000/v1/RTE.json.gz": {
+        "sha1": "09b35725f4149f065fd3156547d8c57eb28ca27e",
+        "size": 2081584
+      },
+      "68000/v1/RTR.json.gz": {
+        "sha1": "e6e3127b2b01d2a36c8e8e8b45dd50d2d5b6bd09",
+        "size": 2055994
+      },
+      "68000/v1/RTS.json.gz": {
+        "sha1": "cc22582c1e9a154b79bda055741f5735cbc2040d",
+        "size": 1943189
+      },
+      "68000/v1/SBCD.json.gz": {
+        "sha1": "57c4be7c4947aaef5cd2b256721158702a43c645",
+        "size": 1521424
+      },
+      "68000/v1/SUB.b.json.gz": {
+        "sha1": "34ed930df68bcf894183a1726f799ac4e97d9efd",
+        "size": 1580817
+      },
+      "68000/v1/SUB.l.json.gz": {
+        "sha1": "af89ac1faf6115fa6ba5cae44bcb2b57689233a3",
+        "size": 1899275
+      },
+      "68000/v1/SUB.w.json.gz": {
+        "sha1": "5e9534646fa0c7da1c9dc4971679bfb8b8115ff8",
+        "size": 1790209
+      },
+      "68000/v1/SUBA.l.json.gz": {
+        "sha1": "a73697b97b6a95b981aa08d1aa2892fa565f3258",
+        "size": 1795206
+      },
+      "68000/v1/SUBA.w.json.gz": {
+        "sha1": "04c4ae08ab7897a3b3b49adb25d3f18d8a6969a3",
+        "size": 1714715
+      },
+      "68000/v1/SUBX.b.json.gz": {
+        "sha1": "8fbf82fcddd54b0c1174972b7fe5ba5eabe13ecb",
+        "size": 1518858
+      },
+      "68000/v1/SUBX.l.json.gz": {
+        "sha1": "7ec43ae422b60e0cfc18bd15adb03c539f957c84",
+        "size": 1784678
+      },
+      "68000/v1/SUBX.w.json.gz": {
+        "sha1": "e7f6deb70fb0d117ac97bac933fce9d263988349",
+        "size": 1681324
+      },
+      "68000/v1/SWAP.json.gz": {
+        "sha1": "1de825f65279ec93de6bab966dc1c31c3ceb689b",
+        "size": 1318039
+      },
+      "68000/v1/Scc.json.gz": {
+        "sha1": "54829856aadbcfe48d942dacafb757dc748eec69",
+        "size": 1541378
+      },
+      "68000/v1/TAS.json.gz": {
+        "sha1": "29df4484f4c8e0838e9627ffc38cf1715021dc04",
+        "size": 1478769
+      },
+      "68000/v1/TRAP.json.gz": {
+        "sha1": "27b452fa7334c4bd7cfab0e37724ed7873ea499f",
+        "size": 1697453
+      },
+      "68000/v1/TRAPV.json.gz": {
+        "sha1": "7641f03f64456ca31acac8b4f1745cc3ffd35206",
+        "size": 1462183
+      },
+      "68000/v1/TST.b.json.gz": {
+        "sha1": "f039f249db2ff2ca7ca1a1b85e9f80718ea1ad2b",
+        "size": 1465602
+      },
+      "68000/v1/TST.l.json.gz": {
+        "sha1": "8ef89f8f45ce60c0a39865bc30e88d6b04558119",
+        "size": 1759178
+      },
+      "68000/v1/TST.w.json.gz": {
+        "sha1": "2dcf7a0e628a0d6fdf97f45e83b92f339a558cee",
+        "size": 1684445
+      },
+      "68000/v1/UNLINK.json.gz": {
+        "sha1": "1c5e7ccc8bf11a62d5cc32639162c9fb26a664fc",
+        "size": 1688589
+      }
+    }
+  }
+}
