@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Live agent monitor; see README.md. Runs from any directory and any worktree."""
+"""Shim: runs monitor.py from the agent-monitor repository (see _shim.py and docs/specs/17-agent-monitoring.md)."""
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from agent_monitor.cli import main  # noqa: E402
+from _shim import run  # noqa: E402
 
-if __name__ == "__main__":
-    sys.exit(main())
+run("monitor.py")

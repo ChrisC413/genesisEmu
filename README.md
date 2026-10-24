@@ -44,7 +44,7 @@ stories/
 | M11 | [Special-stage splicing](stories/M11-special-stage-splicing/README.md) | Sonic 1 special stage (then Blue Sphere) playable inside Sonic 2, awarding S2 emeralds; equivalence harness passes |
 | M12 | [Cartridge LED mod](stories/M12-cartridge-led-mod/README.md) | Modded S2 lights one emulated LED per emerald; the same ROM drives the physical cartridge |
 | — | [Backlog](stories/backlog/README.md) | Unscheduled: C recompilation spike, rewind/movies, true lock-on |
-| AM | [Agent monitoring](tools/agent-monitor/stories/README.md) | Separate tooling project (own specs, decisions and AM0..AM6 milestones in `tools/agent-monitor`): watch, question and steer parallel agents |
+| — | [Agent monitoring](https://github.com/ChrisC413/agent-monitor) | Separate private repository (own specs, stories and CI): watch, question and steer parallel agents. Contract in [spec 17](docs/specs/17-agent-monitoring.md). |
 
 M00–M05 build the emulator; M06–M09 build the workbench; M10–M12 deliver the mods. Parts of M06 (run
 control, register and memory views) may start as soon as M02 is done — the debugger is invaluable while
@@ -79,7 +79,7 @@ M00 ─► M01 ─► M02 ─┬─► M03 ─► M04 ─► M05
 | [14-modding-pipeline](docs/specs/14-modding-pipeline.md) | Build/diff pipeline, hardware-strict mode, real-hardware validation, Sonic 2 special-stage mods |
 | [15-subsystem-splicing](docs/specs/15-subsystem-splicing.md) | Extracting a special stage from a donor game and splicing it into Sonic 2 |
 | [16-cartridge-hardware-mod](docs/specs/16-cartridge-hardware-mod.md) | Emerald-LED cartridge register interface, emulator device, hardware notes |
-| [17-agent-monitoring](docs/specs/17-agent-monitoring.md) | Dev tooling: how genesisEmu uses agent-monitor (status dir, agent naming, registration file, agent instructions) |
+| [17-agent-monitoring](docs/specs/17-agent-monitoring.md) | Dev tooling: how genesisEmu uses [agent-monitor](https://github.com/ChrisC413/agent-monitor) (status dir, agent naming, registration file, agent instructions) |
 
 Also: [DECISIONS.md](docs/DECISIONS.md) and [OPEN-QUESTIONS.md](docs/OPEN-QUESTIONS.md).
 
