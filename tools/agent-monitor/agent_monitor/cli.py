@@ -66,13 +66,25 @@ def snapshot_json(mon: Monitor, now: datetime, warn: timedelta, stale: timedelta
         })
     return {
         "now": format_ts(now), "agents": agents,
+        "open_questions": [{"agent": a.name, "qid": q.qid, "status": a.question_status(q.qid),
+                            "blocking": q.blocking, "story": q.story, "asked": format_ts(q.ts),
+                            "text": q.text, "options": q.options, "default": q.default}
+                           for a, q in mon.open_questions()],
+        "pending_messages": {a.name: len(a.pending_messages()) for a in mon.rows() if a.pending_messages()},
         "recent": [e.to_dict() for e in mon.recent(feed)],
         "malformed_lines": mon.error_count,
     }
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="monitor", description="Watch Claude Code agents live.")
+    argv = sys.argv[1:] if argv is None else argv
+    from .commands import COMMANDS
+    if argv and argv[0] in COMMANDS:
+        from .commands import main as commands_main
+        return commands_main(argv)
+    ap = argparse.ArgumentParser(
+        prog="monitor", description="Watch Claude Code agents live.",
+        epilog="subcommands: " + ", ".join(COMMANDS) + " (monitor.py <subcommand> -h)")
     ap.add_argument("--dir", type=Path, help="status directory (default: $AGENT_STATUS_DIR or "
                     "<main checkout>/.agent-status)")
     ap.add_argument("--once", action="store_true", help="print one snapshot and exit")

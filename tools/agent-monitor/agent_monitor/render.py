@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from .gitinfo import AgentGit
-from .state import LIVE_IDLE, LIVE_OK, LIVE_QUIET, LIVE_STALE, Monitor
+from .state import LIVE_ASK, LIVE_IDLE, LIVE_OK, LIVE_QUIET, LIVE_STALE, Q_ANSWERED, Monitor
 
 RESET = "\x1b[0m"
 COLORS = {
@@ -15,7 +15,7 @@ COLORS = {
     LIVE_QUIET: "\x1b[33m", LIVE_STALE: "\x1b[31;1m", "dim": "\x1b[2m", "bold": "\x1b[1m",
     "pass": "\x1b[32m", "fail": "\x1b[31;1m", "pending": "\x1b[33m",
 }
-LIVE_LABEL = {LIVE_OK: "", LIVE_QUIET: "QUIET", LIVE_STALE: "STALE", LIVE_IDLE: ""}
+LIVE_LABEL = {LIVE_OK: "", LIVE_QUIET: "QUIET", LIVE_STALE: "STALE", LIVE_IDLE: "", LIVE_ASK: "ASK"}
 
 
 def fmt_age(td: timedelta | None) -> str:
@@ -97,6 +97,30 @@ def render(mon: Monitor, now: datetime, *, width: int = 120, feed: int = 15,
             lines.append(line)
         if a.stories_done:
             lines.append(p(_fit(f"  done: {', '.join(a.stories_done)}", width), "dim"))
+
+    questions = mon.open_questions()
+    if questions:
+        lines.append("")
+        lines.append(p(f"OPEN QUESTIONS ({len(questions)})", "bold") +
+                     p('  answer: monitor.py answer <agent> <qid> "text"', "dim"))
+        for a, q in questions:
+            age = fmt_age(max(now - q.ts, timedelta(0)))
+            if a.question_status(q.qid) == Q_ANSWERED:
+                flag = p("answered, awaiting pickup", "dim")
+            else:
+                flag = p("BLOCKING", LIVE_ASK) if q.blocking else "open"
+            head = f"  {_fit(a.name, 18):<18} {_fit(q.qid, 5):<5} {age:<7} "
+            lines.append(head + flag + " " + _fit(q.text, max(width - len(head) - 27, 10)))
+            hints = []
+            if q.options:
+                hints.append("options: " + " | ".join(q.options))
+            if q.default:
+                hints.append("default: " + q.default)
+            if hints:
+                lines.append(p(_fit("      " + "   ".join(hints), width), "dim"))
+    pend = [(a, len(a.pending_messages())) for a in mon.rows() if a.pending_messages()]
+    if pend:
+        lines.append(p(_fit("  inbox not yet picked up: " + ", ".join(f"{a.name} ({n})" for a, n in pend), width), "dim"))
 
     lines.append("")
     lines.append(p(f"RECENT EVENTS (last {feed})", "bold"))

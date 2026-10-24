@@ -19,6 +19,12 @@ Optional extensions (readers must ignore unknown fields)::
     files_changed       integer
     tokens, cost_usd    usage, when the agent can obtain it
     detail              longer free text (not shown in the table)
+    closes              question ID (or list) this event resolves
+
+Two-way channel (docs/specs/03-two-way-channel.md)::
+
+    state "question"    agent asks; fields qid, options, default, blocking
+    state "ack"         agent received inbox messages; field ref = [message ids]
 """
 
 from __future__ import annotations
@@ -28,7 +34,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 V1_STATES = ("started", "progress", "blocked", "done", "failed")
-EXT_STATES = ("heartbeat",)
+# Extension states that do not change the agent's displayed state ("side-channel" events).
+SIDE_STATES = ("heartbeat", "question", "ack")
+EXT_STATES = SIDE_STATES
 KNOWN_STATES = V1_STATES + EXT_STATES
 TERMINAL_STATES = ("done", "failed")
 CORE_FIELDS = ("ts", "agent", "story", "state", "message")

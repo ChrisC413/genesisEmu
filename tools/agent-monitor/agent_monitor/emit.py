@@ -45,7 +45,7 @@ def default_status_dir() -> Path:
 
 def make_event(agent: str, story: str, state: str, message: str, ts: datetime | None = None,
                **extra) -> dict:
-    if not AGENT_RE.match(agent or ""):
+    if not AGENT_RE.match(agent or "") or agent.endswith(".inbox"):
         raise ValueError(f"invalid agent name {agent!r} (letters, digits, . _ -; max 64)")
     if state not in KNOWN_STATES:
         raise ValueError(f"unknown state {state!r}; expected one of {', '.join(KNOWN_STATES)}")
@@ -111,6 +111,67 @@ def emit(agent: str, story: str, state: str, message: str = "", *, status_dir: P
     return ev
 
 
+# --- two-way channel (agent side) -----------------------------------------------------
+
+def next_qid(status_dir: Path, agent: str) -> str:
+    """q1, q2, ... per agent, from the questions already in its status file."""
+    from .inbox import status_path
+    n = 0
+    try:
+        with open(status_path(status_dir, agent), encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if '"question"' in line:
+                    try:
+                        obj = json.loads(line)
+                    except ValueError:
+                        continue
+                    q = obj.get("qid") if isinstance(obj, dict) else None
+                    if isinstance(q, str) and q[:1] == "q" and q[1:].isdigit():
+                        n = max(n, int(q[1:]))
+    except OSError:
+        pass
+    return f"q{n + 1}"
+
+
+def ask(agent: str, story: str, question: str, *, status_dir: Path | None = None, qid: str | None = None,
+        options: list[str] | None = None, default: str | None = None, blocking: bool = False,
+        **extra) -> dict:
+    status_dir = Path(status_dir or default_status_dir())
+    qid = qid or next_qid(status_dir, agent)
+    return emit(agent, story, "question", question, status_dir=status_dir, qid=qid,
+                options=options or None, default=default, blocking=blocking or None, **extra)
+
+
+def check_inbox(agent: str, story: str = "", *, status_dir: Path | None = None) -> list:
+    """Return pending messages and acknowledge them (one ``ack`` event)."""
+    from .inbox import pending
+    status_dir = Path(status_dir or default_status_dir())
+    msgs = pending(status_dir, agent)
+    if msgs:
+        emit(agent, story, "ack", f"received {len(msgs)} message(s)", status_dir=status_dir,
+             ref=[m.id for m in msgs])
+    return msgs
+
+
+def wait_for_answer(agent: str, qid: str, story: str = "", *, status_dir: Path | None = None,
+                    timeout: float = 300.0, poll: float = 2.0, clock=None, sleep=None) -> list:
+    """Block (cheaply: no model tokens while waiting) until an answer to ``qid`` -- or a
+    ``stop`` -- arrives, or ``timeout`` elapses. Returns the messages delivered (acked)."""
+    import time as _time
+    from .inbox import pending
+    clock = clock or _time.monotonic
+    sleep = sleep or _time.sleep
+    status_dir = Path(status_dir or default_status_dir())
+    deadline = clock() + timeout
+    while True:
+        msgs = pending(status_dir, agent)
+        if any((m.kind == "answer" and m.ref == qid) or m.kind == "stop" for m in msgs):
+            return check_inbox(agent, story, status_dir=status_dir)
+        if clock() >= deadline:
+            return []
+        sleep(min(poll, max(deadline - clock(), 0)))
+
+
 def _git_context() -> dict:
     from .gitinfo import _run
     out = {}
@@ -123,10 +184,24 @@ def _git_context() -> dict:
     return out
 
 
+CLI_ACTIONS = ("check", "wait")
+USER_STATES = tuple(s for s in KNOWN_STATES if s != "ack")  # ack is written by check/wait
+
+
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="emit", description="Append one agent status event.")
-    ap.add_argument("state", choices=KNOWN_STATES)
+    ap = argparse.ArgumentParser(
+        prog="emit", description="Append one agent status event; print any new inbox messages.",
+        epilog="question: ask the user (prints qid=...).  check: print + acknowledge new inbox "
+               "messages.  wait --qid Q: block until Q is answered (exit 3 on timeout).")
+    ap.add_argument("state", choices=USER_STATES + CLI_ACTIONS)
     ap.add_argument("message", nargs="?", default="")
+    ap.add_argument("--qid", help="question id (question: default next q<N>; wait: required)")
+    ap.add_argument("--option", action="append", dest="options", help="question: a possible answer (repeatable)")
+    ap.add_argument("--default", help="question: what you will do if nobody answers")
+    ap.add_argument("--blocking", action="store_true", help="question: you cannot continue without an answer")
+    ap.add_argument("--closes", help="this event resolves question QID (e.g. you found the answer yourself)")
+    ap.add_argument("--timeout", type=float, default=300.0, help="wait: seconds (default 300)")
+    ap.add_argument("--no-inbox", action="store_true", help="don't check the inbox after writing")
     ap.add_argument("-a", "--agent", default=os.environ.get("AGENT_NAME"),
                     help="agent name (default: $AGENT_NAME)")
     ap.add_argument("-s", "--story", default=os.environ.get("AGENT_STORY", ""),
@@ -142,14 +217,46 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("--agent is required (or set AGENT_NAME)")
     if args.percent is not None and not 0 <= args.percent <= 100:
         ap.error("--percent must be 0-100")
+    if not AGENT_RE.match(args.agent):
+        ap.error(f"invalid agent name {args.agent!r}")
+    from .inbox import format_for_agent
+    status_dir = Path(args.dir or default_status_dir())
+
+    if args.state == "check":
+        print(format_for_agent(args.agent, check_inbox(args.agent, args.story, status_dir=status_dir))
+              or "[agent-monitor inbox] no new messages")
+        return 0
+    if args.state == "wait":
+        if not args.qid:
+            ap.error("wait needs --qid")
+        msgs = wait_for_answer(args.agent, args.qid, args.story, status_dir=status_dir, timeout=args.timeout)
+        if not msgs:
+            print(f"[agent-monitor inbox] no answer to {args.qid} after {args.timeout:g}s; "
+                  "continue with your stated default or ask again later")
+            return 3
+        print(format_for_agent(args.agent, msgs))
+        return 0
+
     extra = {} if args.no_git else _git_context()
-    extra.update(percent=args.percent, pr=args.pr, detail=args.detail)
+    extra.update(percent=args.percent, pr=args.pr, detail=args.detail, closes=args.closes)
     try:
-        ev = emit(args.agent, args.story, args.state, args.message, status_dir=args.dir, **extra)
+        if args.state == "question":
+            if not args.message:
+                ap.error("question needs the question text")
+            ev = ask(args.agent, args.story, args.message, status_dir=status_dir, qid=args.qid,
+                     options=args.options, default=args.default, blocking=args.blocking, **extra)
+            print(f"qid={ev['qid']}")
+        else:
+            ev = emit(args.agent, args.story, args.state, args.message, status_dir=status_dir, **extra)
     except ValueError as exc:
         ap.error(str(exc))
     if args.print:
         print(json.dumps(ev, ensure_ascii=True))
+    if not args.no_inbox:
+        # Piggy-back delivery: zero extra tool calls, zero output when the inbox is empty.
+        text = format_for_agent(args.agent, check_inbox(args.agent, args.story, status_dir=status_dir))
+        if text:
+            print(text)
     return 0
 
 
