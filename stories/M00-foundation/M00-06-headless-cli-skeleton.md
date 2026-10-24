@@ -1,7 +1,7 @@
 # M00-06 · Headless CLI runner skeleton
 
 **Milestone:** [M00 – Foundation](README.md)  
-**Status:** Draft  
+**Status:** In progress  
 **Depends on:** M00-04  
 **Spec refs:** [01-architecture](../../docs/specs/01-architecture.md#modules)
 

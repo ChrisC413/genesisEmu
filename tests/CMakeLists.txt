@@ -29,3 +29,5 @@ add_executable(gen_rom_tests
 target_link_libraries(gen_rom_tests PRIVATE gen_common Catch2::Catch2WithMain)
 genesis_set_warnings(gen_rom_tests)
 catch_discover_tests(gen_rom_tests DISCOVERY_MODE PRE_TEST PROPERTIES LABELS rom SKIP_RETURN_CODE 4)
+
+add_subdirectory(cli)

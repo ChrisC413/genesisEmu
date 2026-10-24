@@ -6,6 +6,7 @@ add_library(gen_common STATIC
   config.cpp
   logging.cpp
   paths.cpp
+  rom_info.cpp
 )
 target_include_directories(gen_common PUBLIC "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(gen_common PUBLIC gen_core nlohmann_json::nlohmann_json spdlog::spdlog)
