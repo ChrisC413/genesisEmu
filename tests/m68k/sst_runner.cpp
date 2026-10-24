@@ -33,7 +33,12 @@ namespace {
 
 class FlatBus final : public gen::m68k::Bus68k {
 public:
-    FlatBus() : mem_(0x1000000, 0) {}
+    FlatBus() : mem_(0x1000000, 0) {
+        for (std::size_t p = 0; p < 256; ++p) {
+            fastRead[p] =
+                mem_.data() + (p << 16);  // reads are direct; writes stay virtual so they are tracked
+        }
+    }
     std::uint8_t read8(std::uint32_t addr) override { return mem_[addr]; }
     std::uint16_t read16(std::uint32_t addr) override {
         return static_cast<std::uint16_t>((mem_[addr] << 8) | mem_[(addr + 1) & 0xFFFFFF]);

@@ -1,12 +1,13 @@
 // 68000 throughput microbenchmark (story M01-11): runs a mix of typical Sonic-style code (block copies,
 // table lookups, arithmetic, branches, subroutine calls) and prints instructions per second.
 //
-//   gen_m68k_bench [millions-of-instructions]   (default 50)
+//   gen_m68k_bench [millions-of-instructions] [--virtual]   (default 50; --virtual disables fast pages)
 
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <string_view>
 #include <vector>
 
 #include "core/m68k/m68k.hpp"
@@ -16,6 +17,12 @@ namespace {
 class Bus final : public gen::m68k::Bus68k {
 public:
     std::vector<std::uint8_t> mem = std::vector<std::uint8_t>(0x1000000, 0);
+    explicit Bus(bool direct) {
+        for (std::size_t p = 0; direct && p < 256; ++p) {
+            fastRead[p] = mem.data() + (p << 16);
+            fastWrite[p] = mem.data() + (p << 16);
+        }
+    }
     std::uint8_t read8(std::uint32_t a) override { return mem[a]; }
     std::uint16_t read16(std::uint32_t a) override {
         return static_cast<std::uint16_t>((mem[a] << 8) | mem[a + 1]);
@@ -35,7 +42,8 @@ public:
 
 int main(int argc, char** argv) {
     const long long millions = argc > 1 ? std::atoll(argv[1]) : 50;
-    Bus bus;
+    const bool direct = !(argc > 2 && std::string_view(argv[2]) == "--virtual");  // --virtual: no fast pages
+    Bus bus(direct);
     // Vectors: SSP $FFFE00, PC $000200.
     std::uint32_t a = 0;
     for (const std::uint16_t w :

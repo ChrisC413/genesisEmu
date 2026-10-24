@@ -17,7 +17,7 @@ As a **developer**, I want every instruction's cycle count verified against the 
 ## Acceptance criteria
 
 - [x] Cycle mismatches across the full suite = 0 (or listed exclusions) — 996,322 / 996,322 non-excluded vectors pass with exact cycle counts; 3,738 excluded vectors are listed with reasons in `tests/m68k/sst_exclusions.txt` (SingleStepTests 680x0 @ e0d5ece9 (`gen_m68k_sst`, Release, 2026-10-24))
-- [ ] Throughput benchmark: ≥ 100 MIPS-equivalent of 68k instructions/sec on the reference machine (≫ 1.3 M/s needed) — *not met yet*: `gen_m68k_bench 100` gives 95 MIPS (≈110× a real 68000) on an i7-11700KF (Release, MSVC). Not profiled yet; candidates are the virtual bus call per access and the per-step interrupt/hook checks
+- [ ] Throughput benchmark: ≥ 100 MIPS-equivalent of 68k instructions/sec on the reference machine (≫ 1.3 M/s needed) — *borderline, not verified on the reference machine*: on an i7-11700KF (Release, MSVC) `gen_m68k_bench 100` gives 98-100 MIPS with the bus's direct fast-read/write pages (≈110× a real 68000) and 93 MIPS through the virtual bus calls (`--virtual`). A Ryzen 5 3600 / M1 is likely a little slower. Not profiled further yet
 
 ## Test plan
 

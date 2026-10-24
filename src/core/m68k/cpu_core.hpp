@@ -145,14 +145,20 @@ struct CpuCore {
             throwAddressError(addr, true, program);
         }
         cycles += 4;
-        const std::uint16_t v = bus->read16(addr & 0xFFFFFF);
-        access(program ? AccessKind::Fetch : AccessKind::Read, addr & 0xFFFFFF, 2, v);
+        const std::uint32_t a = addr & 0xFFFFFF;
+        const std::uint8_t* page = bus->fastRead[a >> 16];
+        const std::uint16_t v =
+            page != nullptr ? static_cast<std::uint16_t>((page[a & 0xFFFF] << 8) | page[(a & 0xFFFF) + 1])
+                            : bus->read16(a);
+        access(program ? AccessKind::Fetch : AccessKind::Read, a, 2, v);
         return v;
     }
     std::uint8_t readByte(std::uint32_t addr) {
         cycles += 4;
-        const std::uint8_t v = bus->read8(addr & 0xFFFFFF);
-        access(AccessKind::Read, addr & 0xFFFFFF, 1, v);
+        const std::uint32_t a = addr & 0xFFFFFF;
+        const std::uint8_t* page = bus->fastRead[a >> 16];
+        const std::uint8_t v = page != nullptr ? page[a & 0xFFFF] : bus->read8(a);
+        access(AccessKind::Read, a, 1, v);
         return v;
     }
     void writeWord(std::uint32_t addr, std::uint16_t v) {
@@ -160,13 +166,24 @@ struct CpuCore {
             throwAddressError(addr, false, false);
         }
         cycles += 4;
-        access(AccessKind::Write, addr & 0xFFFFFF, 2, v);
-        bus->write16(addr & 0xFFFFFF, v);
+        const std::uint32_t a = addr & 0xFFFFFF;
+        access(AccessKind::Write, a, 2, v);
+        if (std::uint8_t* page = bus->fastWrite[a >> 16]) {
+            page[a & 0xFFFF] = static_cast<std::uint8_t>(v >> 8);
+            page[(a & 0xFFFF) + 1] = static_cast<std::uint8_t>(v);
+        } else {
+            bus->write16(a, v);
+        }
     }
     void writeByte(std::uint32_t addr, std::uint8_t v) {
         cycles += 4;
-        access(AccessKind::Write, addr & 0xFFFFFF, 1, v);
-        bus->write8(addr & 0xFFFFFF, v);
+        const std::uint32_t a = addr & 0xFFFFFF;
+        access(AccessKind::Write, a, 1, v);
+        if (std::uint8_t* page = bus->fastWrite[a >> 16]) {
+            page[a & 0xFFFF] = v;
+        } else {
+            bus->write8(a, v);
+        }
     }
 
     template <int S>

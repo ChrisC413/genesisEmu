@@ -69,6 +69,12 @@ public:
     // to the instruction time and clears it after each step.
     int waitCycles = 0;
 
+    // Optional direct-access pages: 256 x 64 KB. When fastRead[addr >> 16] is set the CPU reads plain memory
+    // at that pointer (offset addr & $FFFF) instead of calling read8/read16; fastWrite likewise for writes.
+    // Only for side-effect-free memory (ROM, work RAM). Hooks still see every access.
+    std::array<const std::uint8_t*, 256> fastRead{};
+    std::array<std::uint8_t*, 256> fastWrite{};
+
     static constexpr int kAutovector = -1;
     static constexpr int kSpurious = -2;
 };
