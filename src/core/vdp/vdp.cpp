@@ -201,11 +201,12 @@ void Vdp::startDma() {
     s_.dmaActive = true;
     s_.dmaRemaining = dmaLength();
     s_.dmaSource = ((static_cast<std::uint32_t>(s_.regs[23]) & 0x7F) << 17) |
-                   (static_cast<std::uint32_t>(s_.regs[22]) << 9) | (static_cast<std::uint32_t>(s_.regs[21]) << 1);
+                   (static_cast<std::uint32_t>(s_.regs[22]) << 9) |
+                   (static_cast<std::uint32_t>(s_.regs[21]) << 1);
     s_.dmaCredit = 0;
     if (hooks_ != nullptr && hooks_->onDma != nullptr) {
-        hooks_->onDma(hooks_->ctx,
-                      DmaEvent{DmaKind::MemoryToVdp, currentTarget(), s_.dmaSource, s_.address, s_.dmaRemaining});
+        hooks_->onDma(hooks_->ctx, DmaEvent{DmaKind::MemoryToVdp, currentTarget(), s_.dmaSource, s_.address,
+                                            s_.dmaRemaining});
     }
 }
 
@@ -228,7 +229,8 @@ int Vdp::runDma(int mclk) {
     if (words >= s_.dmaRemaining) {
         words = s_.dmaRemaining;
         const std::uint64_t needed = words * kWordCost - before;
-        used = static_cast<int>(std::min<std::uint64_t>((needed + rate - 1) / rate, static_cast<std::uint64_t>(mclk)));
+        used = static_cast<int>(
+            std::min<std::uint64_t>((needed + rate - 1) / rate, static_cast<std::uint64_t>(mclk)));
         s_.dmaCredit = 0;
     } else {
         s_.dmaCredit -= words * kWordCost;
@@ -395,7 +397,8 @@ std::uint64_t Vdp::frameHash() const {
     h.i32(frameWidth_);
     h.i32(frameHeight_);
     for (int y = 0; y < frameHeight_; ++y) {
-        const auto* row = reinterpret_cast<const std::uint8_t*>(fb_.data() + static_cast<std::size_t>(y) * kFbWidth);
+        const auto* row =
+            reinterpret_cast<const std::uint8_t*>(fb_.data() + static_cast<std::size_t>(y) * kFbWidth);
         h.bytes(std::span<const std::uint8_t>(row, static_cast<std::size_t>(frameWidth_) * 4));
     }
     return h.digest();

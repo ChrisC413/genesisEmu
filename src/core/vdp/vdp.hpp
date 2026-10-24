@@ -40,12 +40,12 @@ struct VdpState {
     std::array<std::uint16_t, kCramWords> cram{};
     std::array<std::uint16_t, kVsramWords> vsram{};
     std::array<std::uint8_t, kSatCacheBytes> satCache{};  // internal sprite attribute cache
-    std::uint16_t address = 0;      // 16-bit access address (A15-A0)
-    std::uint16_t addressHigh = 0;  // A15-A14 latched by the last second command word
-    std::uint8_t code = 0;          // CD5-CD0: access target, DMA bit
-    bool pending = false;           // first command word latched, waiting for the second
-    bool fillPending = false;       // DMA fill armed: the next data-port write starts it
-    bool vintPending = false;       // status F flag
+    std::uint16_t address = 0;                            // 16-bit access address (A15-A0)
+    std::uint16_t addressHigh = 0;                        // A15-A14 latched by the last second command word
+    std::uint8_t code = 0;                                // CD5-CD0: access target, DMA bit
+    bool pending = false;      // first command word latched, waiting for the second
+    bool fillPending = false;  // DMA fill armed: the next data-port write starts it
+    bool vintPending = false;  // status F flag
     bool hintPending = false;
     bool spriteOverflow = false;
     bool spriteCollision = false;
@@ -117,6 +117,10 @@ struct DmaEvent {
 }  // namespace gen
 
 namespace gen::vdp {
+
+enum class Intensity : std::uint8_t { Normal, Shadow, Highlight };
+// CRAM word (0000 BBB0 GGG0 RRR0) to RGBA8888 (byte order R, G, B, A) at the given intensity.
+std::uint32_t cramToRgba(std::uint16_t cram, Intensity intensity = Intensity::Normal);
 
 class Vdp {
 public:
@@ -193,7 +197,7 @@ private:
     // Rendering (vdp_render.cpp).
     void renderLine(int line);
     void updatePalette();
-    void renderPlane(std::uint8_t* out, bool planeA, int y, int width, int windowFrom, int windowTo);
+    void renderPlane(std::uint8_t* out, bool planeA, int y, int width);
     void renderWindow(std::uint8_t* out, int y, int from, int to);
     void renderSprites(std::uint8_t* out, int y, int width, int line);
 
