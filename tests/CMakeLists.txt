@@ -45,6 +45,11 @@ add_test(NAME m68k.sst COMMAND gen_m68k_sst --limit ${GENESIS_SST_LIMIT} --show 
 add_test(NAME m68k.sst_selftest COMMAND gen_m68k_sst --only NOP --limit 50 --show 0 --inject-fault --expect-fail)
 set_tests_properties(m68k.sst m68k.sst_selftest PROPERTIES LABELS m68k SKIP_RETURN_CODE 4)
 
+# 68000 throughput microbenchmark (M01-11); run by hand: gen_m68k_bench [millions-of-instructions]
+add_executable(gen_m68k_bench bench/m68k_bench.cpp)
+target_link_libraries(gen_m68k_bench PRIVATE gen_core)
+genesis_set_warnings(gen_m68k_bench)
+
 add_subdirectory(cli)
 if(GENESIS_BUILD_APP)
   add_subdirectory(app)
