@@ -27,6 +27,14 @@ struct SyntheticRomOptions {
 
 std::vector<std::uint8_t> makeSyntheticRom(const SyntheticRomOptions& options = {});
 
+// A runnable 128 KB boot program (tests/support/boot_rom.cpp): Z80 RAM gets F3 C3 00 00, VRAM $0020-$003F
+// gets the words 15..0, CRAM 0 = $0EEE, then the main loop waits for the V-int handler to clear ($FFF000).
+// RAM: $FFF002 main-loop frames (word), $FFF004 V-ints (long), $FFF008 HV counter read in V-int (word).
+inline constexpr std::uint32_t kBootFaultHandler = 0x300;
+inline constexpr std::uint32_t kBootHintHandler = 0x320;
+inline constexpr std::uint32_t kBootVintHandler = 0x340;
+std::vector<std::uint8_t> makeBootTestRom();
+
 // Encodes a plain image as an SMD file (512-byte header + interleaved 16 KB blocks). The image size must be
 // a multiple of 16 KB.
 std::vector<std::uint8_t> encodeSmd(std::span<const std::uint8_t> image);

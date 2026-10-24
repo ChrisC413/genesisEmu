@@ -1,7 +1,8 @@
 # Runs gen_cli and checks its exit code and output.
 #   -DCLI=<path to gen_cli>  -DARGS=<|-separated arguments>  -DEXPECT_CODE=<n>
 #   [-DEXPECT_OUTPUT=<regex>]  [-DCOMPARE_ARGS=<|-separated arguments>]
-# With COMPARE_ARGS, the SHA-1 line printed by both invocations must be identical.
+# With COMPARE_ARGS, the text matching COMPARE_MATCH (default: the SHA-1 line) must be identical in both
+# invocations.
 
 string(REPLACE "|" ";" ARGS "${ARGS}")
 string(REPLACE "|" ";" COMPARE_ARGS "${COMPARE_ARGS}")
@@ -20,9 +21,12 @@ endif()
 
 if(NOT COMPARE_ARGS STREQUAL "")
   execute_process(COMMAND "${CLI}" ${COMPARE_ARGS} RESULT_VARIABLE code2 OUTPUT_VARIABLE out2)
-  string(REGEX MATCH "SHA-1 +[0-9a-f]+" sha_a "${out}")
-  string(REGEX MATCH "SHA-1 +[0-9a-f]+" sha_b "${out2}")
+  if(NOT DEFINED COMPARE_MATCH)
+    set(COMPARE_MATCH "SHA-1 +[0-9a-f]+")
+  endif()
+  string(REGEX MATCH "${COMPARE_MATCH}" sha_a "${out}")
+  string(REGEX MATCH "${COMPARE_MATCH}" sha_b "${out2}")
   if(NOT code2 EQUAL 0 OR sha_a STREQUAL "" OR NOT sha_a STREQUAL sha_b)
-    message(FATAL_ERROR "SHA-1 differs: '${sha_a}' vs '${sha_b}'")
+    message(FATAL_ERROR "compared output differs: '${sha_a}' vs '${sha_b}'")
   endif()
 endif()

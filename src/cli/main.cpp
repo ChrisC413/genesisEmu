@@ -2,15 +2,21 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cstdio>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "common/logging.hpp"
 #include "common/rom_info.hpp"
 #include "core/cart/rom.hpp"
+#include "core/sched/machine.hpp"
+#include "core/state/state_hash.hpp"
 #include "core/version.hpp"
 
 namespace {
@@ -29,14 +35,24 @@ Commands:
       Load a ROM and print its header, SHA-1, CRC32 and identified game.
       --json   print machine-readable JSON instead of text
 
-  run [--rom <file>] [--frames <N>]
-      Run the emulator headless for N frames (default 1). The emulation core
-      arrives in M02; until then this only loads the ROM (if given) and exits.
+  run --rom <file> [--lock-on <file>] [--frames <N>] [--region <r>] [--json]
+      Run the emulator headless for N frames (default 1) and print frames,
+      instructions, time per frame, the state hash, exceptions and bus issues.
+      Exits 3 when the 68k took a fault exception (address error, illegal...).
+      --lock-on <file>  cartridge locked onto --rom (S&K + Sonic 3 = S3K)
+      --region <r>      japan | americas | europe (default: from the header)
+      --frame-log       print V-int count and PCs after every frame
+
+  trace --rom <file> [--lock-on <file>] [--frames <N>] [--start-frame <S>]
+        [--pc <lo>-<hi>] [--out <file>]
+      Run N frames (default 1) and write a text instruction trace (format in
+      docs/specs/08-debugger.md) of frames S..N-1 to --out (default stdout).
+      --pc  only log instructions whose PC is in [lo, hi] (hex)
 
   help [command]
       Show this help.
 
-Planned: trace, coverage, export.
+Planned: coverage, export.
 
 Global options:
   -h, --help      show help
@@ -49,7 +65,13 @@ struct Args {
     std::vector<std::string_view> positional;
     std::optional<std::string_view> rom;
     std::optional<std::string_view> frames;
+    std::optional<std::string_view> lockOn;
+    std::optional<std::string_view> region;
+    std::optional<std::string_view> startFrame;
+    std::optional<std::string_view> pcRange;
+    std::optional<std::string_view> out;
     bool json = false;
+    bool frameLog = false;
     bool help = false;
     bool version = false;
     std::string error;
@@ -74,6 +96,18 @@ Args parseArgs(int argc, char** argv) {
             value(a.rom);
         } else if (arg == "--frames") {
             value(a.frames);
+        } else if (arg == "--lock-on") {
+            value(a.lockOn);
+        } else if (arg == "--region") {
+            value(a.region);
+        } else if (arg == "--start-frame") {
+            value(a.startFrame);
+        } else if (arg == "--pc") {
+            value(a.pcRange);
+        } else if (arg == "--out") {
+            value(a.out);
+        } else if (arg == "--frame-log") {
+            a.frameLog = true;
         } else if (arg == "--json") {
             a.json = true;
         } else if (arg.starts_with("-")) {
@@ -128,21 +162,136 @@ int cmdInfo(const Args& a) {
     return kExitOk;
 }
 
-int cmdRun(const Args& a) {
-    unsigned long long frames = 1;
-    if (a.frames) {
-        const auto* end = a.frames->data() + a.frames->size();
-        const auto [ptr, ec] = std::from_chars(a.frames->data(), end, frames);
-        if (ec != std::errc() || ptr != end) {
-            return usageError("--frames expects a non-negative integer");
-        }
+bool parseU64(std::optional<std::string_view> text, std::uint64_t& out, int base = 10) {
+    if (!text) {
+        return true;
     }
-    if (a.rom && !loadOrReport(*a.rom)) {
+    const auto* end = text->data() + text->size();
+    const auto [ptr, ec] = std::from_chars(text->data(), end, out, base);
+    return ec == std::errc() && ptr == end && !text->empty();
+}
+
+struct LoadedMachine {
+    std::unique_ptr<gen::Machine> machine;
+    std::string title;
+};
+
+// Loads --rom (plus --lock-on) into a Machine; prints the error and returns an exit code on failure.
+int loadMachine(const Args& a, LoadedMachine& out) {
+    if (!a.rom) {
+        return usageError("this command requires --rom <file>");
+    }
+    auto rom = loadOrReport(*a.rom);
+    if (!rom) {
         return kExitLoadError;
     }
-    std::printf("run: emulation core not implemented yet (M02); %llu frame(s) requested, 0 executed\n",
-                frames);
+    std::vector<std::uint8_t> image = rom->data;
+    std::uint8_t regions = rom->header.regions;
+    out.title = rom->known != nullptr ? std::string(rom->known->title) : rom->header.overseasTitle;
+    if (a.lockOn) {
+        const auto locked = loadOrReport(*a.lockOn);
+        if (!locked) {
+            return kExitLoadError;
+        }
+        if (const auto* combined = gen::cart::identifyLockOn(rom->data, locked->data)) {
+            out.title = std::string(combined->title);
+        }
+        image = gen::cart::lockOnImage(rom->data, locked->data);
+        regions = locked->header.regions;
+    }
+    gen::MachineConfig config;
+    if (a.region) {
+        if (*a.region == "japan") {
+            config.region = gen::bus::Region::Japan;
+        } else if (*a.region == "americas") {
+            config.region = gen::bus::Region::Americas;
+        } else if (*a.region == "europe") {
+            config.region = gen::bus::Region::Europe;
+        } else {
+            return usageError("--region expects japan, americas or europe");
+        }
+    }
+    out.machine = std::make_unique<gen::Machine>(std::move(image), regions, config);
     return kExitOk;
+}
+
+int cmdRun(const Args& a) {
+    std::uint64_t frames = 1;
+    if (!parseU64(a.frames, frames)) {
+        return usageError("--frames expects a non-negative integer");
+    }
+    LoadedMachine lm;
+    if (const int rc = loadMachine(a, lm); rc != kExitOk) {
+        return rc;
+    }
+    gen::Machine& m = *lm.machine;
+    const auto t0 = std::chrono::steady_clock::now();
+    gen::RunResult r;
+    if (a.frameLog) {
+        for (std::uint64_t f = 0; f < frames; ++f) {
+            r.instructions += m.run(gen::RunLimit::frames(1)).instructions;
+            std::printf("frame %llu: V-ints %u, last V-int from PC $%06X, PC $%06X\n",
+                        static_cast<unsigned long long>(f), m.stats().vintsLastFrame, m.stats().lastVintPc,
+                        m.cpu().state().pc);
+        }
+    } else {
+        r = m.run(gen::RunLimit::frames(frames));
+    }
+    const double ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    const auto& st = m.stats();
+    const auto& cpu = m.cpu().state();
+    const std::string hash = gen::state::hashToHex(m.stateHash());
+    const double msPerFrame = frames != 0 ? ms / static_cast<double>(frames) : 0.0;
+    if (a.json) {
+        nlohmann::json j;
+        j["title"] = lm.title;
+        j["frames"] = m.frame();
+        j["instructions"] = r.instructions;
+        j["ms"] = ms;
+        j["msPerFrame"] = msPerFrame;
+        j["stateHash"] = hash;
+        j["pc"] = cpu.pc;
+        j["vints"] = st.vints;
+        j["lastVintPc"] = st.lastVintPc;
+        j["faults"] = st.faults;
+        j["firstFaultVector"] = st.firstFaultVector;
+        j["firstFaultPc"] = st.firstFaultPc;
+        j["halted"] = cpu.halted;
+        nlohmann::json issues;
+        for (int i = 0; i < gen::bus::kBusIssueCount; ++i) {
+            const auto kind = static_cast<gen::bus::BusIssue>(i);
+            issues[gen::bus::toString(kind)] = m.bus().issueCount(kind);
+        }
+        j["busIssues"] = issues;
+        std::printf("%s\n", j.dump(2).c_str());
+    } else {
+        std::printf("run: %s\n", lm.title.c_str());
+        std::printf("frames %llu, instructions %llu, %.1f ms (%.3f ms/frame)\n",
+                    static_cast<unsigned long long>(m.frame()),
+                    static_cast<unsigned long long>(r.instructions), ms, msPerFrame);
+        std::printf("state hash %s, PC $%06X, V-ints %llu (last from PC $%06X)\n", hash.c_str(), cpu.pc,
+                    static_cast<unsigned long long>(st.vints), st.lastVintPc);
+        if (st.faults != 0) {
+            std::printf("faults %llu: first vector %d at PC $%06X\n",
+                        static_cast<unsigned long long>(st.faults), st.firstFaultVector, st.firstFaultPc);
+        } else {
+            std::printf("faults none\n");
+        }
+        for (int i = 0; i < gen::bus::kBusIssueCount; ++i) {
+            const auto kind = static_cast<gen::bus::BusIssue>(i);
+            if (const auto n = m.bus().issueCount(kind); n != 0) {
+                std::printf("bus %s: %llu\n", gen::bus::toString(kind), static_cast<unsigned long long>(n));
+            }
+        }
+        const auto& issues = m.bus().issues();
+        for (std::size_t i = 0; i < issues.size() && i < 8; ++i) {
+            const auto& e = issues[i];
+            std::printf("  %s %s.%c $%06X = $%X (PC $%06X)\n", gen::bus::toString(e.issue),
+                        e.write ? "write" : "read", e.size == 1 ? 'b' : 'w', e.addr, e.value, e.pc);
+        }
+    }
+    return st.faults != 0 || cpu.halted ? kExitCheckFailure : kExitOk;
 }
 
 }  // namespace

@@ -35,6 +35,7 @@ int main(int argc, char** argv) {
 
     const bool ok = write(dir / "synthetic.bin", image) &&
                     write(dir / "synthetic.smd", gen::test::encodeSmd(image)) &&
-                    write(dir / "tiny.bin", gen::test::makeSyntheticRom(tiny));
+                    write(dir / "tiny.bin", gen::test::makeSyntheticRom(tiny)) &&
+                    write(dir / "boot.bin", gen::test::makeBootTestRom());
     return ok ? 0 : 1;
 }
