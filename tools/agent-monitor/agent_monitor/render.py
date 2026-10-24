@@ -110,7 +110,8 @@ def render(mon: Monitor, now: datetime, *, width: int = 120, feed: int = 15,
             else:
                 flag = p("BLOCKING", LIVE_ASK) if q.blocking else "open"
             head = f"  {_fit(a.name, 18):<18} {_fit(q.qid, 5):<5} {age:<7} "
-            lines.append(head + flag + " " + _fit(q.text, max(width - len(head) - 27, 10)))
+            plain = len("answered, awaiting pickup") if a.question_status(q.qid) == Q_ANSWERED else (8 if q.blocking else 4)
+            lines.append(head + flag + " " + _fit(q.text, max(width - len(head) - plain - 1, 10)))
             hints = []
             if q.options:
                 hints.append("options: " + " | ".join(q.options))
