@@ -1,0 +1,11 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "import": ["../../cspell.json"],
+  "words": [
+    "worktree", "worktrees", "gitignored", "stdlib", "argparse", "unittest", "ctypes", "lockfile", "npm",
+    "osascript", "jsonl", "Ollama", "cmake", "uncached", "ms", "dedupe", "deduplicated", "relayer",
+    "relayers", "relayed", "msvcrt", "wintypes", "kernel32", "isatty", "fromisoformat", "subtree",
+    "backlogs", "statusline", "ANSI", "unterminated", "piggy", "superproject", "ChrisC413", "genesisEmu"
+  ]
+}
