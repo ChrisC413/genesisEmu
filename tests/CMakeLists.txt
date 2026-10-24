@@ -13,6 +13,7 @@ add_executable(gen_unit_tests
   unit/config_test.cpp
   unit/hash_test.cpp
   unit/logging_test.cpp
+  unit/m68k_test.cpp
   unit/paths_test.cpp
   unit/rom_test.cpp
   unit/skeleton_test.cpp
