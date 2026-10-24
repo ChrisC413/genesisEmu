@@ -29,11 +29,11 @@ TEST_CASE("User ROMs in GENESIS_ROM_DIR are identified by name and revision", "[
             continue;
         }
         const Rom& rom = *result.rom;
-        INFO(entry.path().string());
+        INFO(gen::common::toUtf8(entry.path()));
         CHECK(rom.data.size() == rom.known->size);
         CHECK(rom.crc32 == rom.known->crc32);
-        identified.insert(std::string(toString(rom.known->game)) + " " + std::string(rom.known->revision) + " (" +
-                          std::string(rom.known->region) + ")");
+        identified.insert(std::string(toString(rom.known->game)) + " " + std::string(rom.known->revision) +
+                          " (" + std::string(rom.known->region) + ")");
     }
 
     if (identified.empty()) {
