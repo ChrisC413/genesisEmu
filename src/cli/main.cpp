@@ -18,6 +18,8 @@
 
 #include "analysis/disasm68k/disasm68k.hpp"
 #include "common/logging.hpp"
+#include "common/paths.hpp"
+#include "common/png.hpp"
 #include "common/rom_info.hpp"
 #include "core/cart/rom.hpp"
 #include "core/sched/machine.hpp"
@@ -48,6 +50,9 @@ Commands:
       --lock-on <file>  cartridge locked onto --rom (S&K + Sonic 3 = S3K)
       --region <r>      japan | americas | europe (default: from the header)
       --frame-log       print V-int count and PCs after every frame
+      --dump-frames <list>  comma-separated frame numbers; after each of those
+                        frames the framebuffer is written as PNG to --out
+      --out <dir>       directory for --dump-frames (default: current directory)
 
   trace --rom <file> [--lock-on <file>] [--frames <N>] [--start-frame <S>]
         [--pc <lo>-<hi>] [--first] [--max-records <N>] [--out <file>]
@@ -82,6 +87,7 @@ struct Args {
     bool frameLog = false;
     bool firstOnly = false;
     std::optional<std::string_view> maxRecords;
+    std::optional<std::string_view> dumpFrames;
     bool help = false;
     bool version = false;
     std::string error;
@@ -120,6 +126,8 @@ Args parseArgs(int argc, char** argv) {
             a.firstOnly = true;
         } else if (arg == "--max-records") {
             value(a.maxRecords);
+        } else if (arg == "--dump-frames") {
+            value(a.dumpFrames);
         } else if (arg == "--frame-log") {
             a.frameLog = true;
         } else if (arg == "--json") {
@@ -238,15 +246,43 @@ int cmdRun(const Args& a) {
     if (const int rc = loadMachine(a, lm); rc != kExitOk) {
         return rc;
     }
+    std::vector<std::uint64_t> dumps;
+    if (a.dumpFrames) {
+        std::string_view rest = *a.dumpFrames;
+        while (!rest.empty()) {
+            const auto comma = rest.find(',');
+            std::uint64_t n = 0;
+            if (!parseU64(rest.substr(0, comma), n) || n == 0) {
+                return usageError("--dump-frames expects comma-separated frame numbers (>= 1)");
+            }
+            dumps.push_back(n);
+            rest = comma == std::string_view::npos ? std::string_view{} : rest.substr(comma + 1);
+        }
+        if (!dumps.empty()) {
+            frames = std::max(frames, *std::max_element(dumps.begin(), dumps.end()));
+        }
+    }
+    const std::filesystem::path outDir = a.out ? gen::common::fromUtf8(*a.out) : std::filesystem::path(".");
     gen::Machine& m = *lm.machine;
     const auto t0 = std::chrono::steady_clock::now();
     gen::RunResult r;
-    if (a.frameLog) {
+    if (a.frameLog || !dumps.empty()) {
         for (std::uint64_t f = 0; f < frames; ++f) {
             r.instructions += m.run(gen::RunLimit::frames(1)).instructions;
-            std::printf("frame %llu: V-ints %u, last V-int from PC $%06X, PC $%06X\n",
-                        static_cast<unsigned long long>(f), m.stats().vintsLastFrame, m.stats().lastVintPc,
-                        m.cpu().state().pc);
+            if (a.frameLog) {
+                std::printf("frame %llu: V-ints %u, last V-int from PC $%06X, PC $%06X, frame hash %s\n",
+                            static_cast<unsigned long long>(f), m.stats().vintsLastFrame, m.stats().lastVintPc,
+                            m.cpu().state().pc, gen::state::hashToHex(m.vdp().frameHash()).c_str());
+            }
+            if (std::find(dumps.begin(), dumps.end(), m.frame()) != dumps.end()) {
+                const auto& v = m.vdp();
+                const auto path = outDir / ("frame_" + std::to_string(m.frame()) + ".png");
+                if (!gen::common::writePng(path, v.framebuffer(), v.frameWidth(), v.frameHeight(),
+                                           gen::vdp::kFbWidth)) {
+                    std::fprintf(stderr, "gen_cli: cannot write %s\n", gen::common::toUtf8(path).c_str());
+                    return kExitLoadError;
+                }
+            }
         }
     } else {
         r = m.run(gen::RunLimit::frames(frames));
@@ -265,6 +301,7 @@ int cmdRun(const Args& a) {
         j["ms"] = ms;
         j["msPerFrame"] = msPerFrame;
         j["stateHash"] = hash;
+        j["frameHash"] = gen::state::hashToHex(m.vdp().frameHash());
         j["pc"] = cpu.pc;
         j["vints"] = st.vints;
         j["lastVintPc"] = st.lastVintPc;
@@ -286,6 +323,8 @@ int cmdRun(const Args& a) {
                     static_cast<unsigned long long>(r.instructions), ms, msPerFrame);
         std::printf("state hash %s, PC $%06X, V-ints %llu (last from PC $%06X)\n", hash.c_str(), cpu.pc,
                     static_cast<unsigned long long>(st.vints), st.lastVintPc);
+        std::printf("frame hash %s (%dx%d)\n", gen::state::hashToHex(m.vdp().frameHash()).c_str(),
+                    m.vdp().frameWidth(), m.vdp().frameHeight());
         if (st.faults != 0) {
             std::printf("faults %llu: first vector %d at PC $%06X\n",
                         static_cast<unsigned long long>(st.faults), st.firstFaultVector, st.firstFaultPc);

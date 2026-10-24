@@ -6,6 +6,7 @@ add_library(gen_common STATIC
   config.cpp
   logging.cpp
   paths.cpp
+  png.cpp
   rom_info.cpp
 )
 target_include_directories(gen_common PUBLIC "${PROJECT_SOURCE_DIR}/src")

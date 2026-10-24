@@ -15,6 +15,7 @@ add_library(gen_core STATIC
   state/state_hash.cpp
   util/hash.cpp
   vdp/vdp.cpp
+  vdp/vdp_render.cpp
   version.cpp
   z80/z80_control.cpp
 )
