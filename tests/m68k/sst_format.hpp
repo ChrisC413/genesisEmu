@@ -48,7 +48,10 @@ public:
         if (!in) {
             return false;
         }
-        data_.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+        in.seekg(0, std::ios::end);
+        data_.resize(static_cast<std::size_t>(in.tellg()));
+        in.seekg(0, std::ios::beg);
+        in.read(data_.data(), static_cast<std::streamsize>(data_.size()));
         static constexpr char kMagic[8] = {'S', 'S', 'T', '6', '8', 'K', '\x01', '\x00'};
         if (data_.size() < 52 || std::memcmp(data_.data(), kMagic, 8) != 0) {
             return false;

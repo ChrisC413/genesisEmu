@@ -1,7 +1,7 @@
 #pragma once
 // Motorola 68000 core (spec 02). Instruction-accurate: step() runs one whole instruction (or one exception /
-// interrupt entry) and returns its cycle count. The two-word prefetch queue (IR/IRC) is modelled at the
-// register level; bus-cycle ordering inside an instruction is only modelled as far as it changes visible
+// interrupt entry) and returns its cycle count. The two-word prefetch queue (IR/IRC) is modeled at the
+// register level; bus-cycle ordering inside an instruction is only modeled as far as it changes visible
 // state (cycle counts and the stacked frame of an address error).
 
 #include <array>

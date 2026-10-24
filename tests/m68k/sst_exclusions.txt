@@ -1,6 +1,6 @@
 # SingleStepTests 68000 exclusions (M01-02, M01-11). Format: <test name or prefix*> | reason
 # A line "@ <reason>" sets the reason for the entries that follow it. Every entry is a vector the core
-# deliberately does not match; tests/m68k/README.md explains each group.
+# deliberately does not match; stories/M01-m68k-cpu/M01-11-cycle-timing-audit.md summarizes them.
 
 @ ASR with a register count greater than the operand size on a negative operand: the suite expects C=X=0, but
 @ the shift is a bit-by-bit loop that keeps shifting out the sign bit, so C=X=1 (PRM: "C - set according to the

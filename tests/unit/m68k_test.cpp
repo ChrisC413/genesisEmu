@@ -1,4 +1,4 @@
-// 68000 core behaviour the SingleStepTests suite does not cover: reset, interrupts, STOP, privilege, trace,
+// 68000 core behavior the SingleStepTests suite does not cover: reset, interrupts, STOP, privilege, trace,
 // hooks, the TAS quirk and the decode table (stories M01-01, M01-06, M01-08, M01-09, M01-10).
 
 #include "core/m68k/m68k.hpp"
@@ -86,7 +86,7 @@ TEST_CASE("Decode table builds quickly and marks invalid opcodes", "[m68k]") {
 #ifdef NDEBUG
     CHECK(ms < 50.0);
 #else
-    CHECK(ms < 1000.0);  // unoptimised builds are slower; the 50 ms budget applies to release builds
+    CHECK(ms < 1000.0);  // unoptimized builds are slower; the 50 ms budget applies to release builds
 #endif
     CHECK(valid > 40000);
     CHECK(valid < 65536);
