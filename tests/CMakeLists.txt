@@ -21,6 +21,8 @@ add_executable(gen_unit_tests
   unit/paths_test.cpp
   unit/rom_test.cpp
   unit/skeleton_test.cpp
+  unit/png_test.cpp
+  unit/vdp_render_test.cpp
   unit/vdp_test.cpp
 )
 target_include_directories(gen_unit_tests PRIVATE unit)

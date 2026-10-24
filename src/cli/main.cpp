@@ -1,6 +1,7 @@
 // gen_cli: headless runner for automation and CI.
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <chrono>
 #include <cstdio>
@@ -237,6 +238,18 @@ int loadMachine(const Args& a, LoadedMachine& out) {
     return kExitOk;
 }
 
+struct DmaCounts {
+    std::array<std::uint64_t, 3> count{};
+    std::uint64_t words = 0;
+    static void onDma(void* ctx, const gen::DmaEvent& e) {
+        auto& self = *static_cast<DmaCounts*>(ctx);
+        ++self.count[static_cast<std::size_t>(e.kind)];
+        if (e.kind == gen::vdp::DmaKind::MemoryToVdp) {
+            self.words += e.length;
+        }
+    }
+};
+
 int cmdRun(const Args& a) {
     std::uint64_t frames = 1;
     if (!parseU64(a.frames, frames)) {
@@ -264,17 +277,25 @@ int cmdRun(const Args& a) {
     }
     const std::filesystem::path outDir = a.out ? gen::common::fromUtf8(*a.out) : std::filesystem::path(".");
     gen::Machine& m = *lm.machine;
+    DmaCounts dma;
+    gen::Hooks hooks;
+    hooks.ctx = &dma;
+    hooks.onDma = &DmaCounts::onDma;
+    m.setHooks(hooks);
     const auto t0 = std::chrono::steady_clock::now();
     gen::RunResult r;
     if (a.frameLog || !dumps.empty()) {
-        for (std::uint64_t f = 0; f < frames; ++f) {
+        while (m.frame() < frames) {
+            const std::uint64_t f = m.frame();
             r.instructions += m.run(gen::RunLimit::frames(1)).instructions;
             if (a.frameLog) {
                 std::printf("frame %llu: V-ints %u, last V-int from PC $%06X, PC $%06X, frame hash %s\n",
-                            static_cast<unsigned long long>(f), m.stats().vintsLastFrame, m.stats().lastVintPc,
-                            m.cpu().state().pc, gen::state::hashToHex(m.vdp().frameHash()).c_str());
+                            static_cast<unsigned long long>(f), m.stats().vintsLastFrame,
+                            m.stats().lastVintPc, m.cpu().state().pc,
+                            gen::state::hashToHex(m.vdp().frameHash()).c_str());
             }
-            if (std::find(dumps.begin(), dumps.end(), m.frame()) != dumps.end()) {
+            if (std::any_of(dumps.begin(), dumps.end(),
+                            [&](std::uint64_t n) { return n > f && n <= m.frame(); })) {
                 const auto& v = m.vdp();
                 const auto path = outDir / ("frame_" + std::to_string(m.frame()) + ".png");
                 if (!gen::common::writePng(path, v.framebuffer(), v.frameWidth(), v.frameHeight(),
@@ -302,6 +323,10 @@ int cmdRun(const Args& a) {
         j["msPerFrame"] = msPerFrame;
         j["stateHash"] = hash;
         j["frameHash"] = gen::state::hashToHex(m.vdp().frameHash());
+        j["dma"] = {{"memoryToVdp", dma.count[0]},
+                    {"words", dma.words},
+                    {"fill", dma.count[1]},
+                    {"copy", dma.count[2]}};
         j["pc"] = cpu.pc;
         j["vints"] = st.vints;
         j["lastVintPc"] = st.lastVintPc;
@@ -325,6 +350,10 @@ int cmdRun(const Args& a) {
                     static_cast<unsigned long long>(st.vints), st.lastVintPc);
         std::printf("frame hash %s (%dx%d)\n", gen::state::hashToHex(m.vdp().frameHash()).c_str(),
                     m.vdp().frameWidth(), m.vdp().frameHeight());
+        std::printf("DMA: %llu 68k->VDP (%llu words), %llu fill, %llu copy\n",
+                    static_cast<unsigned long long>(dma.count[0]), static_cast<unsigned long long>(dma.words),
+                    static_cast<unsigned long long>(dma.count[1]),
+                    static_cast<unsigned long long>(dma.count[2]));
         if (st.faults != 0) {
             std::printf("faults %llu: first vector %d at PC $%06X\n",
                         static_cast<unsigned long long>(st.faults), st.firstFaultVector, st.firstFaultPc);

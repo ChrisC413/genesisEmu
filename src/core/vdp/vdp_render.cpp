@@ -19,7 +19,8 @@ constexpr bool opaque(std::uint8_t p) {
 }
 
 // Measured-style 15-step DAC ramp: normal intensity uses the even steps, shadow 0-7, highlight 7-14.
-constexpr std::array<std::uint8_t, 15> kLevels = {0, 29, 52, 70, 87, 101, 116, 130, 144, 158, 172, 187, 206, 228, 255};
+constexpr std::array<std::uint8_t, 15> kLevels = {0,   29,  52,  70,  87,  101, 116, 130,
+                                                  144, 158, 172, 187, 206, 228, 255};
 
 constexpr std::uint32_t rgba(int r, int g, int b) {
     return static_cast<std::uint32_t>(kLevels[static_cast<std::size_t>(r)]) |
@@ -37,20 +38,31 @@ inline int tilePixel(const std::uint8_t* row, int x) {
 
 }  // namespace
 
+std::uint32_t cramToRgba(std::uint16_t cram, Intensity intensity) {
+    const int r = (cram >> 1) & 7;
+    const int g = (cram >> 5) & 7;
+    const int b = (cram >> 9) & 7;
+    switch (intensity) {
+        case Intensity::Shadow:
+            return rgba(r, g, b);
+        case Intensity::Highlight:
+            return rgba(r + 7, g + 7, b + 7);
+        case Intensity::Normal:
+            break;
+    }
+    return rgba(r * 2, g * 2, b * 2);
+}
+
 void Vdp::updatePalette() {
     for (std::size_t i = 0; i < kCramWords; ++i) {
-        const int c = s_.cram[i];
-        const int r = (c >> 1) & 7;
-        const int g = (c >> 5) & 7;
-        const int b = (c >> 9) & 7;
-        palette_[i] = rgba(r * 2, g * 2, b * 2);
-        palette_[64 + i] = rgba(r, g, b);
-        palette_[128 + i] = rgba(r + 7, g + 7, b + 7);
+        palette_[i] = cramToRgba(s_.cram[i], Intensity::Normal);
+        palette_[64 + i] = cramToRgba(s_.cram[i], Intensity::Shadow);
+        palette_[128 + i] = cramToRgba(s_.cram[i], Intensity::Highlight);
     }
     paletteDirty_ = false;
 }
 
-void Vdp::renderPlane(std::uint8_t* out, bool planeA, int y, int width, int /*windowFrom*/, int /*windowTo*/) {
+void Vdp::renderPlane(std::uint8_t* out, bool planeA, int y, int width) {
     const bool im2 = interlace2();
     const int tileH = im2 ? 16 : 8;
     const int tileBytes = im2 ? 64 : 32;
@@ -77,7 +89,8 @@ void Vdp::renderPlane(std::uint8_t* out, bool planeA, int y, int width, int /*wi
         default:
             break;
     }
-    const auto hsAddr = static_cast<std::uint16_t>(((s_.regs[13] & 0x3F) << 10) + hsLine * 4 + (planeA ? 0 : 2));
+    const auto hsAddr =
+        static_cast<std::uint16_t>(((s_.regs[13] & 0x3F) << 10) + hsLine * 4 + (planeA ? 0 : 2));
     const int hs = ((s_.vram[hsAddr] << 8) | s_.vram[static_cast<std::uint16_t>(hsAddr + 1)]) & 0x3FF;
     const bool columnScroll = (s_.regs[11] & 0x04) != 0;
     const int vsMask = im2 ? 0x7FF : 0x3FF;
@@ -99,7 +112,8 @@ void Vdp::renderPlane(std::uint8_t* out, bool planeA, int y, int width, int /*wi
             // 2-cell columns follow the fine-scrolled fetch grid; the partly visible column left of the
             // first one has no VSRAM entry of its own (approximated as entries 38 and 39 ANDed).
             const int n = ((x - fine + 16) >> 4) - 1;
-            vs = n < 0 ? (s_.vsram[38] & s_.vsram[39]) : s_.vsram[static_cast<std::size_t>(std::min(n, 19) * 2 + plane)];
+            vs = n < 0 ? (s_.vsram[38] & s_.vsram[39])
+                       : s_.vsram[static_cast<std::size_t>(std::min(n, 19) * 2 + plane)];
             segEnd = std::min(width, (n + 1) * 16 + fine);
         } else {
             vs = s_.vsram[static_cast<std::size_t>(plane)];
@@ -197,7 +211,9 @@ void Vdp::renderSprites(std::uint8_t* out, int y, int width, int line) {
         const std::uint8_t* c = &s_.satCache[static_cast<std::size_t>(i * 4)];
         const auto ea = static_cast<std::uint16_t>(satBase + i * 8 + 4);
         const int name = (s_.vram[ea] << 8) | s_.vram[static_cast<std::uint16_t>(ea + 1)];
-        const int rawX = ((s_.vram[static_cast<std::uint16_t>(ea + 2)] << 8) | s_.vram[static_cast<std::uint16_t>(ea + 3)]) & 0x1FF;
+        const int rawX = ((s_.vram[static_cast<std::uint16_t>(ea + 2)] << 8) |
+                          s_.vram[static_cast<std::uint16_t>(ea + 3)]) &
+                         0x1FF;
         if (rawX == 0) {
             masked = masked || seenNonZero || s_.prevLineDotOverflow;
         } else {
@@ -277,7 +293,7 @@ void Vdp::renderLine(int line) {
     std::array<std::uint8_t, kFbWidth> bufA{};
     std::array<std::uint8_t, kFbWidth> bufS{};
     if (layers_.planeB) {
-        renderPlane(bufB.data(), false, y, width, 0, 0);
+        renderPlane(bufB.data(), false, y, width);
     }
 
     // Window region on this line: whole line when the vertical condition holds, else the horizontal one.
@@ -297,7 +313,7 @@ void Vdp::renderLine(int line) {
         }
     }
     if (layers_.planeA && (winFrom > 0 || winTo < width)) {
-        renderPlane(bufA.data(), true, y, width, winFrom, winTo);
+        renderPlane(bufA.data(), true, y, width);
     }
     if (winTo > winFrom) {
         if (layers_.window) {
@@ -365,7 +381,10 @@ void Vdp::renderLine(int line) {
                 }
             }
         }
-        dst[x] = palette_[static_cast<std::size_t>((level == 1 ? 64 : level == 2 ? 128 : 0) + (color & kColorMask))];
+        dst[x] = palette_[static_cast<std::size_t>((level == 1   ? 64
+                                                    : level == 2 ? 128
+                                                                 : 0) +
+                                                   (color & kColorMask))];
     }
     if ((s_.regs[0] & 0x20) != 0) {
         std::fill(dst, dst + 8, palette_[backdrop]);

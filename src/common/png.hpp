@@ -10,6 +10,7 @@ namespace gen::common {
 
 // `pixels` is RGBA8888 in byte order R, G, B, A; `stride` is the row pitch in pixels.
 std::vector<std::uint8_t> encodePng(const std::uint32_t* pixels, int width, int height, int stride);
-bool writePng(const std::filesystem::path& path, const std::uint32_t* pixels, int width, int height, int stride);
+bool writePng(const std::filesystem::path& path, const std::uint32_t* pixels, int width, int height,
+              int stride);
 
 }  // namespace gen::common

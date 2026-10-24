@@ -80,7 +80,8 @@ std::vector<std::uint8_t> encodePng(const std::uint32_t* pixels, int width, int 
     return out;
 }
 
-bool writePng(const std::filesystem::path& path, const std::uint32_t* pixels, int width, int height, int stride) {
+bool writePng(const std::filesystem::path& path, const std::uint32_t* pixels, int width, int height,
+              int stride) {
     const auto data = encodePng(pixels, width, height, stride);
     std::ofstream f(path, std::ios::binary);
     f.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
