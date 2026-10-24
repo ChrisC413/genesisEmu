@@ -16,6 +16,15 @@ Platform currentPlatform() {
 #endif
 }
 
+std::string toUtf8(const std::filesystem::path& path) {
+    const std::u8string u8 = path.u8string();
+    return {u8.begin(), u8.end()};
+}
+
+std::filesystem::path fromUtf8(std::string_view utf8) {
+    return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
+}
+
 std::optional<std::filesystem::path> getEnvPath(std::string_view name) {
 #if defined(_WIN32)
     const std::wstring wideName(name.begin(), name.end());

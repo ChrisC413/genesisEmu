@@ -31,3 +31,6 @@ genesis_set_warnings(gen_rom_tests)
 catch_discover_tests(gen_rom_tests DISCOVERY_MODE PRE_TEST PROPERTIES LABELS rom SKIP_RETURN_CODE 4)
 
 add_subdirectory(cli)
+if(GENESIS_BUILD_APP)
+  add_subdirectory(app)
+endif()

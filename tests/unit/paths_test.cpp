@@ -59,6 +59,12 @@ TEST_CASE("Per-ROM data folders are keyed by SHA-1", "[paths]") {
           "/root/roms/69e102855d4389c3fd1a8f3dc7d193f8eee5fe5b");
 }
 
+TEST_CASE("Paths round-trip through UTF-8", "[paths]") {
+    const std::string utf8 = "roms/S\xC3\xB6nic \xE3\x82\xBD\xE3\x83\x8B\xE3\x83\x83\xE3\x82\xAF.bin";
+    CHECK(gen::common::toUtf8(gen::common::fromUtf8(utf8)) == utf8);
+    CHECK(gen::common::fromUtf8(utf8).filename().extension() == ".bin");
+}
+
 TEST_CASE("The real environment resolves on this platform", "[paths]") {
     const auto paths = gen::common::AppPaths::fromEnvironment();
     CHECK(paths.root().is_absolute());

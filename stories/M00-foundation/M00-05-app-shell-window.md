@@ -1,7 +1,7 @@
 # M00-05 · Application shell: SDL3 window with ImGui docking
 
 **Milestone:** [M00 – Foundation](README.md)  
-**Status:** Draft  
+**Status:** In progress  
 **Depends on:** M00-01, M00-03, M00-04  
 **Spec refs:** [07-frontend-platform](../../docs/specs/07-frontend-platform.md#application-shell)
 

@@ -62,6 +62,11 @@ std::uint8_t parseRegions(std::span<const std::uint8_t> d) {
     return kRegionNone;
 }
 
+std::string utf8(const std::filesystem::path& path) {
+    const std::u8string u8 = path.u8string();
+    return {u8.begin(), u8.end()};
+}
+
 std::string lowercaseExtension(std::string_view fileName) {
     const auto dot = fileName.rfind('.');
     if (dot == std::string_view::npos) {
@@ -198,7 +203,7 @@ LoadResult loadRomFile(const std::filesystem::path& path) {
     std::error_code ec;
     const auto size = std::filesystem::file_size(path, ec);
     if (ec) {
-        result.error = "Cannot open '" + path.string() + "': " + ec.message();
+        result.error = "Cannot open '" + utf8(path) + "': " + ec.message();
         return result;
     }
     if (size > kMaxRomSize + kSmdHeaderSize) {
@@ -210,10 +215,10 @@ LoadResult loadRomFile(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
     if (!in || !in.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) {
-        result.error = "Cannot read '" + path.string() + "'";
+        result.error = "Cannot read '" + utf8(path) + "'";
         return result;
     }
-    return loadRom(std::move(bytes), path.filename().string());
+    return loadRom(std::move(bytes), utf8(path.filename()));
 }
 
 std::string_view toString(RomFormat format) {

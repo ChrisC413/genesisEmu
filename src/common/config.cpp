@@ -4,6 +4,8 @@
 #include <fstream>
 #include <system_error>
 
+#include "common/paths.hpp"
+
 namespace gen::common {
 
 using nlohmann::json;
@@ -72,7 +74,7 @@ bool writeFile(const std::filesystem::path& path, const json& doc, std::string& 
     if (path.has_parent_path()) {
         std::filesystem::create_directories(path.parent_path(), ec);
         if (ec) {
-            error = "Cannot create '" + path.parent_path().string() + "': " + ec.message();
+            error = "Cannot create '" + toUtf8(path.parent_path()) + "': " + ec.message();
             return false;
         }
     }
@@ -82,18 +84,18 @@ bool writeFile(const std::filesystem::path& path, const json& doc, std::string& 
     {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
         if (!out) {
-            error = "Cannot write '" + tmp.string() + "'";
+            error = "Cannot write '" + toUtf8(tmp) + "'";
             return false;
         }
         out << doc.dump(2) << '\n';
         if (!out) {
-            error = "Cannot write '" + tmp.string() + "'";
+            error = "Cannot write '" + toUtf8(tmp) + "'";
             return false;
         }
     }
     std::filesystem::rename(tmp, path, ec);
     if (ec) {
-        error = "Cannot replace '" + path.string() + "': " + ec.message();
+        error = "Cannot replace '" + toUtf8(path) + "': " + ec.message();
         return false;
     }
     return true;
@@ -211,8 +213,8 @@ ConfigFile ConfigFile::loadOrCreate(const std::filesystem::path& path) {
         auto bad = path;
         bad += ".bad";
         std::filesystem::rename(path, bad, ec);
-        file.warnings.push_back("'" + path.string() + "' is not a valid config file" +
-                                (ec ? std::string() : "; moved to '" + bad.string() + "'") +
+        file.warnings.push_back("'" + toUtf8(path) + "' is not a valid config file" +
+                                (ec ? std::string() : "; moved to '" + toUtf8(bad) + "'") +
                                 "; using defaults");
         file.save();
         return file;

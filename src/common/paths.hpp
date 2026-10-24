@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace gen::common {
@@ -15,6 +16,10 @@ inline constexpr std::string_view kAppDirName = "genesisEmu";
 
 // Environment variable that overrides the user data root (tests, portable installs).
 inline constexpr std::string_view kHomeOverrideEnv = "GENESISEMU_HOME";
+
+// UTF-8 conversions for paths stored in config files or exchanged with SDL.
+std::string toUtf8(const std::filesystem::path& path);
+std::filesystem::path fromUtf8(std::string_view utf8);
 
 using EnvLookup = std::function<std::optional<std::filesystem::path>(std::string_view name)>;
 
