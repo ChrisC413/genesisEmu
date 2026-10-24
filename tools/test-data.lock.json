@@ -502,5 +502,18 @@
         "size": 1688589
       }
     }
+  },
+  "as": {
+    "name": "The Macro Assembler AS",
+    "license": "GPL-2.0 (downloaded tool, not vendored)",
+    "builds": {
+      "windows": {
+        "url": "http://john.ccac.rwth-aachen.de:8000/ftp/as/precompiled/i386-unknown-win32/aswcurr-142-bld315.zip",
+        "sha256": "39c77113f2963fd83ca7548e35f6b872c28da418e5e33e5724a20a682df883ca",
+        "version": "1.42 build 315",
+        "size": 6144399
+      }
+    },
+    "note": "macOS/Linux: build AS from source (http://john.ccac.rwth-aachen.de:8000/as/) and set GENESIS_ASL to the asl binary."
   }
 }

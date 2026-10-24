@@ -11,6 +11,7 @@ genesis_set_warnings(gen_test_support)
 
 add_executable(gen_unit_tests
   unit/config_test.cpp
+  unit/disasm68k_test.cpp
   unit/hash_test.cpp
   unit/logging_test.cpp
   unit/m68k_test.cpp
@@ -49,6 +50,14 @@ set_tests_properties(m68k.sst m68k.sst_selftest PROPERTIES LABELS m68k SKIP_RETU
 add_executable(gen_m68k_bench bench/m68k_bench.cpp)
 target_link_libraries(gen_m68k_bench PRIVATE gen_core)
 genesis_set_warnings(gen_m68k_bench)
+
+# Disassembler round trip through AS (M01-12); "skipped" when AS has not been fetched.
+add_executable(gen_disasm_roundtrip analysis/disasm_roundtrip.cpp)
+target_link_libraries(gen_disasm_roundtrip PRIVATE gen_analysis gen_common)
+target_compile_definitions(gen_disasm_roundtrip PRIVATE GENESIS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+genesis_set_warnings(gen_disasm_roundtrip)
+add_test(NAME analysis.disasm_roundtrip COMMAND gen_disasm_roundtrip)
+set_tests_properties(analysis.disasm_roundtrip PROPERTIES LABELS analysis SKIP_RETURN_CODE 4)
 
 add_subdirectory(cli)
 if(GENESIS_BUILD_APP)
