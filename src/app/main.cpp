@@ -16,6 +16,9 @@ constexpr const char* kUsage =
     "Options:\n"
     "  --smoke-test[=N]          render N frames (default 60), run self-checks and exit\n"
     "  --expect-restored-layout  smoke check: fail unless a saved dock layout was loaded\n"
+    "  --screenshot=<file>       smoke test: save the last frame as PNG\n"
+    "  --lock-on=<file>          cartridge locked onto the ROM (Sonic & Knuckles + Sonic 3)\n"
+    "  --fast-forward            start in fast-forward (unthrottled)\n"
     "  -h, --help                show this help\n"
     "\n"
     "Set GENESISEMU_HOME to use a different user data directory.\n";
@@ -49,6 +52,10 @@ int main(int argc, char** argv) {
             options.smokeFrames = frames;
         } else if (arg.starts_with("--screenshot=")) {
             options.screenshot = gen::common::fromUtf8(arg.substr(13));
+        } else if (arg.starts_with("--lock-on=")) {
+            options.lockOn = gen::common::fromUtf8(arg.substr(10));
+        } else if (arg == "--fast-forward") {
+            options.fastForward = true;
         } else if (arg == "--expect-restored-layout") {
             options.expectRestoredLayout = true;
         } else if (arg.starts_with("-")) {
