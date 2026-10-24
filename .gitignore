@@ -26,3 +26,6 @@ test-data/
 .DS_Store
 Thumbs.db
 __pycache__/
+
+# Live agent progress events (see tools/agent-monitor)
+.agent-status/
