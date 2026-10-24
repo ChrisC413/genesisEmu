@@ -35,6 +35,22 @@ def _enable_vt() -> bool:
         return False
 
 
+def _is_terminal(stream) -> bool:
+    """isatty() is also true for the Windows NUL device; require a real console there."""
+    if not stream.isatty():
+        return False
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+        import msvcrt
+        mode = ctypes.c_uint32()
+        handle = msvcrt.get_osfhandle(stream.fileno())
+        return bool(ctypes.windll.kernel32.GetConsoleMode(handle, ctypes.byref(mode)))
+    except Exception:
+        return False
+
+
 def snapshot_json(mon: Monitor, now: datetime, warn: timedelta, stale: timedelta,
                   git: dict[str, AgentGit], feed: int) -> dict:
     agents = []
@@ -93,14 +109,14 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             print(json.dumps(snapshot_json(mon, now, warn, stale, git, args.feed), indent=2, default=str))
         else:
-            color = args.color == "always" or (args.color == "auto" and sys.stdout.isatty() and
+            color = args.color == "always" or (args.color == "auto" and _is_terminal(sys.stdout) and
                                                not os.environ.get("NO_COLOR") and _enable_vt())
             width = args.width or min(shutil.get_terminal_size((120, 40)).columns, 160)
             print("\n".join(render(mon, now, width=width, feed=args.feed, warn_after=warn,
                                    stale_after=stale, git=git, color=color, source=str(status_dir))))
         return 0
 
-    if not sys.stdout.isatty():
+    if not _is_terminal(sys.stdout):
         print("live mode needs a terminal; use --once or --json", file=sys.stderr)
         return 2
     vt = _enable_vt()
