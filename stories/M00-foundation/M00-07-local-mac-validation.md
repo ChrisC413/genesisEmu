@@ -1,7 +1,7 @@
 # M00-07 · Local macOS validation script
 
 **Milestone:** [M00 – Foundation](README.md)  
-**Status:** Draft  
+**Status:** In progress  
 **Depends on:** M00-01, M00-02  
 **Spec refs:** [13-testing-strategy](../../docs/specs/13-testing-strategy.md#ci), [07-frontend-platform](../../docs/specs/07-frontend-platform.md#platforms)
 
