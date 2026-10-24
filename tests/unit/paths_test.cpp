@@ -12,9 +12,9 @@ namespace fs = std::filesystem;
 namespace {
 
 gen::common::EnvLookup fakeEnv(std::map<std::string, fs::path> vars) {
-    return [vars = std::move(vars)](std::string_view name) -> std::optional<fs::path> {
-        const auto it = vars.find(std::string(name));
-        return it == vars.end() ? std::nullopt : std::optional<fs::path>(it->second);
+    return [env = std::move(vars)](std::string_view name) -> std::optional<fs::path> {
+        const auto it = env.find(std::string(name));
+        return it == env.end() ? std::nullopt : std::optional<fs::path>(it->second);
     };
 }
 
