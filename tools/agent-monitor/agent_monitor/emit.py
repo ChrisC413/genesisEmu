@@ -9,9 +9,9 @@ CLI use (see ``python tools/agent-monitor/emit.py --help``)::
 
     python tools/agent-monitor/emit.py -a m00-foundation -s M00-04 progress "Header parser done"
 
-Guarantees: a single ``os.write`` of one complete ``\\n``-terminated UTF-8 line opened with
-``O_APPEND`` (concurrent writers never interleave partial lines in practice for lines this
-short), the message collapsed to one line, ``ts`` in UTC with a ``Z`` suffix.
+Guarantees: one complete ``\\n``-terminated UTF-8 line written with a single atomic append
+(``O_APPEND`` on POSIX, a ``FILE_APPEND_DATA`` handle on Windows), so concurrent writers never
+lose or interleave lines; the message collapsed to one line; ``ts`` in UTC with a ``Z`` suffix.
 """
 
 from __future__ import annotations
@@ -65,10 +65,38 @@ def make_event(agent: str, story: str, state: str, message: str, ts: datetime | 
     return ev
 
 
+def _append_windows(path: Path, data: bytes) -> None:
+    """Atomic append on Windows. The C runtime's O_APPEND is seek-then-write (two
+    concurrent writers can overwrite each other); a handle opened with only
+    FILE_APPEND_DATA makes the kernel position every write at end-of-file atomically."""
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateFileW.restype = wintypes.HANDLE
+    k32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+                                wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    k32.WriteFile.argtypes = [wintypes.HANDLE, wintypes.LPCVOID, wintypes.DWORD,
+                              ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID]
+    k32.CloseHandle.argtypes = [wintypes.HANDLE]
+    FILE_APPEND_DATA, SHARE_ALL, OPEN_ALWAYS, NORMAL = 0x0004, 0x7, 4, 0x80
+    h = k32.CreateFileW(str(path), FILE_APPEND_DATA, SHARE_ALL, None, OPEN_ALWAYS, NORMAL, None)
+    if h in (None, wintypes.HANDLE(-1).value):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        written = wintypes.DWORD(0)
+        if not k32.WriteFile(h, data, len(data), ctypes.byref(written), None) or written.value != len(data):
+            raise ctypes.WinError(ctypes.get_last_error())
+    finally:
+        k32.CloseHandle(h)
+
+
 def append_event(path: Path, event: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     data = (json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
-    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0)
+    if os.name == "nt":
+        _append_windows(path, data)
+        return
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
     fd = os.open(path, flags, 0o644)
     try:
         os.write(fd, data)
