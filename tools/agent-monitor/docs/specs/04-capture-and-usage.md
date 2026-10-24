@@ -60,3 +60,5 @@ The measurements below were taken on the development machine (Windows 11, Python
 **Proposed display:** a header line such as `plan: 5h 42% (resets 14:10) · 7d 18% (resets Thu)`, from
 `_usage.json` with its age shown. Per-agent `tok` columns show output tokens and cache-read tokens
 from transcripts, with notional cost as a tooltip-style suffix in `--json` only.
+
+<!-- cspell:words ANSI ChrisC413 OQ Ollama PostToolUse Pro Subagent SubagentStop argparse backlogs cmake ctypes dedupe deduplicated fromisoformat genesisEmu gh gitignored isatty jsonl kernel32 lockfile ms msvcrt npm osascript piggy pipx rate_limits relayed relayer relayers statusLine statusline stdlib subagent subagents subtree superproject termios toolu uncached unittest unterminated wintypes worktree worktrees -->

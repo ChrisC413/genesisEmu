@@ -1,0 +1,6 @@
+{
+  "name": "agent-monitor",
+  "github": {"repo": "", "visibility": "private"},
+  "stories": {"root": "stories"},
+  "issues": {"mode": "off"}
+}

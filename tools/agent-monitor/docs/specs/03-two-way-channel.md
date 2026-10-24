@@ -125,3 +125,5 @@ Two things make the channel work without weakening that protection:
   where possible. Use blocking questions plus `wait` only when continuing would waste work.
 - Read anything printed under `[agent-monitor inbox]` and act on it at the next checkpoint. Confirm
   steers in the next progress event.
+
+<!-- cspell:words ANSI ChrisC413 OQ Ollama PostToolUse Pro Subagent SubagentStop argparse backlogs cmake ctypes dedupe deduplicated fromisoformat genesisEmu gh gitignored isatty jsonl kernel32 lockfile ms msvcrt npm osascript piggy pipx rate_limits relayed relayer relayers statusLine statusline stdlib subagent subagents subtree superproject termios toolu uncached unittest unterminated wintypes worktree worktrees -->

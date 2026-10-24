@@ -1,4 +1,4 @@
-"""Append one status event correctly (spec 17, "Producing events").
+"""Append one status event correctly (docs/specs/01-event-protocol.md, "Producing events").
 
 Library use::
 

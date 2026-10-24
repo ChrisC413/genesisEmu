@@ -50,3 +50,5 @@ labels the tool manages (`story`, `status:*`) are changed; any other labels peop
   `reopen`, `conflict`, `orphan`. It **never writes**: there's no apply flag in this version.
 - `monitor.py issues-sync --apply` (AM3-02, not built): only after the user approves the plan for a
   repository. It needs `issues.mode: "push"` in that repository's registration file.
+
+<!-- cspell:words ANSI ChrisC413 OQ Ollama PostToolUse Pro Subagent SubagentStop argparse backlogs cmake ctypes dedupe deduplicated fromisoformat genesisEmu gh gitignored isatty jsonl kernel32 lockfile ms msvcrt npm osascript piggy pipx rate_limits relayed relayer relayers statusLine statusline stdlib subagent subagents subtree superproject termios toolu uncached unittest unterminated wintypes worktree worktrees -->

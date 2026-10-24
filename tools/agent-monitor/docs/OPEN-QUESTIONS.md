@@ -32,3 +32,5 @@ answered. Answered questions move to the resolved table and into [DECISIONS.md](
 | MQ8 | Tokens and cost? | Yes, including **remaining quota on Claude Pro**. Investigate first: findings in [04](specs/04-capture-and-usage.md); the recommendation is AD-009. |
 | MQ9 | Story-aware view? | Only a summary of the agent's current targeted work, with no parsing of acceptance criteria (AM2-03) |
 | MQ10, MQ11 | Thresholds; naming | Still open, as OQ-1 and OQ-2 |
+
+<!-- cspell:words ANSI ChrisC413 OQ Ollama PostToolUse Pro Subagent SubagentStop argparse backlogs cmake ctypes dedupe deduplicated fromisoformat genesisEmu gh gitignored isatty jsonl kernel32 lockfile ms msvcrt npm osascript piggy pipx rate_limits relayed relayer relayers statusLine statusline stdlib subagent subagents subtree superproject termios toolu uncached unittest unterminated wintypes worktree worktrees -->

@@ -18,3 +18,5 @@ choice from the genesisEmu side.
 | AD-010 | 2026-10-24 | **`gh` lookups on by default, cached 90 s; failed CI counts as an attention signal** (MQ2) | Answer from the user | Accepted |
 | AD-011 | 2026-10-24 | **Notifications: terminal bell always; OS notifications with `--notify`; only for blocked, failed, STALE, a new blocking question, and a finished milestone** (MQ3) | Answer from the user; blocking questions added because of AD-005 | Accepted |
 | AD-012 | 2026-10-24 | **Retention: keep everything, hide agents idle for more than 7 days, archive the files of agents whose worktree is gone** (MQ5) | Answer from the user | Accepted |
+
+<!-- cspell:words ANSI ChrisC413 OQ Ollama PostToolUse Pro Subagent SubagentStop argparse backlogs cmake ctypes dedupe deduplicated fromisoformat genesisEmu gh gitignored isatty jsonl kernel32 lockfile ms msvcrt npm osascript piggy pipx rate_limits relayed relayer relayers statusLine statusline stdlib subagent subagents subtree superproject termios toolu uncached unittest unterminated wintypes worktree worktrees -->

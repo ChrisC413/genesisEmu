@@ -80,3 +80,5 @@ its own repository.
 `python -m unittest discover -s tools/agent-monitor/tests`: protocol parsing, tailing (partial and
 unterminated lines, truncation), state and liveness, emit (including a 4-writer concurrent append), the
 two-way channel lifecycle, backlog parsing, and the issues planner. Each story's test plan names its tests.
+
+<!-- cspell:words ANSI ChrisC413 OQ Ollama PostToolUse Pro Subagent SubagentStop argparse backlogs cmake ctypes dedupe deduplicated fromisoformat genesisEmu gh gitignored isatty jsonl kernel32 lockfile ms msvcrt npm osascript piggy pipx rate_limits relayed relayer relayers statusLine statusline stdlib subagent subagents subtree superproject termios toolu uncached unittest unterminated wintypes worktree worktrees -->

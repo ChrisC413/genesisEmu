@@ -1,4 +1,4 @@
-"""Agent status event protocol (spec 17, "Event protocol").
+"""Agent status event protocol (docs/specs/01-event-protocol.md).
 
 One event per line, JSON object, UTF-8, appended to ``.agent-status/<agent>.jsonl``.
 
