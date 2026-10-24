@@ -1,0 +1,119 @@
+{
+  "emulatorVersion": "0.0.1",
+  "description": "M03-11 golden frames: per canonical ROM (D-023, found by SHA-1) the Vdp::frameHash() after N frames from power-on with no input (SEGA logo, title, attract demos). Hashes only, never images or ROM bytes. Checked by the [rom] frame test and `gen_cli run --check`. Changing them needs a [golden-update] commit with a reason (spec 13).",
+  "games": [
+    {
+      "name": "Sonic 1 REV01",
+      "sha1": "69e102855d4389c3fd1a8f3dc7d193f8eee5fe5b",
+      "checkpoints": [
+        {
+          "frame": 150,
+          "frameHash": "9ecc59a7ac6f4d4c",
+          "what": "SEGA logo"
+        },
+        {
+          "frame": 600,
+          "frameHash": "89d09dd1c74802df",
+          "what": "title screen"
+        },
+        {
+          "frame": 1000,
+          "frameHash": "8706f4c1eef7dd16",
+          "what": "GHZ title card (attract demo)"
+        },
+        {
+          "frame": 1300,
+          "frameHash": "8f7c2e78fdd6f724",
+          "what": "GHZ attract demo"
+        },
+        {
+          "frame": 2000,
+          "frameHash": "854067ded79d3a19",
+          "what": "GHZ attract demo (parallax, water)"
+        },
+        {
+          "frame": 2800,
+          "frameHash": "54a86206c63d4e50",
+          "what": "GHZ attract demo (loop)"
+        }
+      ]
+    },
+    {
+      "name": "Sonic 2 REV01",
+      "sha1": "8bca5dcef1af3e00098666fd892dc1c2a76333f9",
+      "checkpoints": [
+        {
+          "frame": 300,
+          "frameHash": "7ec3def999b03dc4",
+          "what": "SEGA logo"
+        },
+        {
+          "frame": 500,
+          "frameHash": "812e6fc564af3f98",
+          "what": "intro text"
+        },
+        {
+          "frame": 1100,
+          "frameHash": "0c2f23a7c0335c84",
+          "what": "title screen"
+        },
+        {
+          "frame": 1400,
+          "frameHash": "b3a7b890b8c535c3",
+          "what": "EHZ 2P attract demo, interlace mode 2 (title card)"
+        },
+        {
+          "frame": 2000,
+          "frameHash": "1edc48d89c591630",
+          "what": "EHZ 2P attract demo, interlace mode 2"
+        },
+        {
+          "frame": 4600,
+          "frameHash": "2761fb3e8b876c55",
+          "what": "CPZ attract demo"
+        },
+        {
+          "frame": 8000,
+          "frameHash": "c05b5d4dc2c408c2",
+          "what": "ARZ attract demo (water palette via H-int)"
+        }
+      ]
+    },
+    {
+      "name": "Sonic 3 & Knuckles (S&K + Sonic 3 USA)",
+      "sha1": "cfbf98c36c776677290a872547ac47c53d2761d6",
+      "checkpoints": [
+        {
+          "frame": 300,
+          "frameHash": "a0c98574e810e537",
+          "what": "SEGA logo"
+        },
+        {
+          "frame": 800,
+          "frameHash": "7d95ad5486cd1b56",
+          "what": "title screen"
+        },
+        {
+          "frame": 1400,
+          "frameHash": "546158eab3616e0a",
+          "what": "AIZ intro (Tornado)"
+        },
+        {
+          "frame": 1700,
+          "frameHash": "facb224021d30208",
+          "what": "AIZ intro (Super Sonic over the sea)"
+        },
+        {
+          "frame": 2200,
+          "frameHash": "a6491249b53ba453",
+          "what": "AIZ intro (jungle)"
+        },
+        {
+          "frame": 2600,
+          "frameHash": "763f807b5046cac8",
+          "what": "AIZ attract demo"
+        }
+      ]
+    }
+  ]
+}

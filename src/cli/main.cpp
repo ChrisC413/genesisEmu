@@ -18,6 +18,7 @@
 #include <nlohmann/json.hpp>
 
 #include "analysis/disasm68k/disasm68k.hpp"
+#include "common/golden_frames.hpp"
 #include "common/logging.hpp"
 #include "common/paths.hpp"
 #include "common/png.hpp"
@@ -25,6 +26,7 @@
 #include "core/cart/rom.hpp"
 #include "core/sched/machine.hpp"
 #include "core/state/state_hash.hpp"
+#include "core/util/hash.hpp"
 #include "core/version.hpp"
 #include "instrument/trace_writer.hpp"
 
@@ -54,6 +56,11 @@ Commands:
       --dump-frames <list>  comma-separated frame numbers; after each of those
                         frames the framebuffer is written as PNG to --out
       --out <dir>       directory for --dump-frames (default: current directory)
+      --check <file>    golden frame checkpoints (tests/golden/m03_frames.json):
+                        compare the frame hash at each checkpoint of this ROM;
+                        mismatches print, write PNGs to --out and exit 3
+      --dump-vdp        with --dump-frames, also write vdp_<N>.bin (registers,
+                        VRAM, CRAM, VSRAM) for offline inspection
 
   trace --rom <file> [--lock-on <file>] [--frames <N>] [--start-frame <S>]
         [--pc <lo>-<hi>] [--first] [--max-records <N>] [--out <file>]
@@ -86,9 +93,11 @@ struct Args {
     std::optional<std::string_view> out;
     bool json = false;
     bool frameLog = false;
+    bool dumpVdp = false;
     bool firstOnly = false;
     std::optional<std::string_view> maxRecords;
     std::optional<std::string_view> dumpFrames;
+    std::optional<std::string_view> check;
     bool help = false;
     bool version = false;
     std::string error;
@@ -127,8 +136,12 @@ Args parseArgs(int argc, char** argv) {
             a.firstOnly = true;
         } else if (arg == "--max-records") {
             value(a.maxRecords);
+        } else if (arg == "--check") {
+            value(a.check);
         } else if (arg == "--dump-frames") {
             value(a.dumpFrames);
+        } else if (arg == "--dump-vdp") {
+            a.dumpVdp = true;
         } else if (arg == "--frame-log") {
             a.frameLog = true;
         } else if (arg == "--json") {
@@ -197,6 +210,7 @@ bool parseU64(std::optional<std::string_view> text, std::uint64_t& out, int base
 struct LoadedMachine {
     std::unique_ptr<gen::Machine> machine;
     std::string title;
+    std::string sha1;  // of the loaded image (lock-on: the combined image)
 };
 
 // Loads --rom (plus --lock-on) into a Machine; prints the error and returns an exit code on failure.
@@ -234,8 +248,25 @@ int loadMachine(const Args& a, LoadedMachine& out) {
             return usageError("--region expects japan, americas or europe");
         }
     }
+    out.sha1 = gen::toHex(gen::sha1(image));
     out.machine = std::make_unique<gen::Machine>(std::move(image), regions, config);
     return kExitOk;
+}
+
+// Raw VDP memories next to a dumped frame: 24 registers, 64 KB VRAM, CRAM and VSRAM as big-endian words.
+void writeVdpDump(const std::filesystem::path& path, const gen::vdp::VdpState& s) {
+    std::vector<std::uint8_t> out(s.regs.begin(), s.regs.end());
+    out.insert(out.end(), s.vram.begin(), s.vram.end());
+    for (const std::uint16_t w : s.cram) {
+        out.push_back(static_cast<std::uint8_t>(w >> 8));
+        out.push_back(static_cast<std::uint8_t>(w));
+    }
+    for (const std::uint16_t w : s.vsram) {
+        out.push_back(static_cast<std::uint8_t>(w >> 8));
+        out.push_back(static_cast<std::uint8_t>(w));
+    }
+    std::ofstream f(path, std::ios::binary);
+    f.write(reinterpret_cast<const char*>(out.data()), static_cast<std::streamsize>(out.size()));
 }
 
 struct DmaCounts {
@@ -284,7 +315,31 @@ int cmdRun(const Args& a) {
     m.setHooks(hooks);
     const auto t0 = std::chrono::steady_clock::now();
     gen::RunResult r;
-    if (a.frameLog || !dumps.empty()) {
+    // --check: golden frame checkpoints for this image (M03-11).
+    std::vector<gen::common::FrameCheckpoint> checks;
+    std::string checkName;
+    if (a.check) {
+        try {
+            for (const auto& g : gen::common::loadFrameGolden(gen::common::fromUtf8(*a.check))) {
+                if (g.sha1 == lm.sha1) {
+                    checks = g.checkpoints;
+                    checkName = g.name;
+                }
+            }
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "gen_cli: --check: %s\n", e.what());
+            return kExitLoadError;
+        }
+        if (checks.empty()) {
+            std::fprintf(stderr, "gen_cli: --check: no checkpoints for SHA-1 %s\n", lm.sha1.c_str());
+            return kExitCheckFailure;
+        }
+        for (const auto& c : checks) {
+            frames = std::max(frames, c.frame);
+        }
+    }
+    int mismatches = 0;
+    if (a.frameLog || !dumps.empty() || !checks.empty()) {
         while (m.frame() < frames) {
             const std::uint64_t f = m.frame();
             r.instructions += m.run(gen::RunLimit::frames(1)).instructions;
@@ -294,6 +349,25 @@ int cmdRun(const Args& a) {
                             m.stats().lastVintPc, m.cpu().state().pc,
                             gen::state::hashToHex(m.vdp().frameHash()).c_str());
             }
+            for (const auto& c : checks) {
+                if (c.frame <= f || c.frame > m.frame()) {
+                    continue;
+                }
+                const std::string got = gen::state::hashToHex(m.vdp().frameHash());
+                if (got == c.hash) {
+                    std::printf("check %s frame %llu: ok\n", checkName.c_str(),
+                                static_cast<unsigned long long>(c.frame));
+                    gen::common::cacheGoldenFrame(lm.sha1, c, m.vdp());
+                    continue;
+                }
+                ++mismatches;
+                std::printf("check %s frame %llu: MISMATCH expected %s, got %s\n", checkName.c_str(),
+                            static_cast<unsigned long long>(c.frame), c.hash.c_str(), got.c_str());
+                const auto stem = lm.sha1.substr(0, 8) + "_frame_" + std::to_string(c.frame);
+                for (const auto& file : gen::common::writeFrameMismatch(outDir, stem, lm.sha1, c, m.vdp())) {
+                    std::printf("  wrote %s\n", gen::common::toUtf8(file).c_str());
+                }
+            }
             if (std::any_of(dumps.begin(), dumps.end(),
                             [&](std::uint64_t n) { return n > f && n <= m.frame(); })) {
                 const auto& v = m.vdp();
@@ -302,6 +376,9 @@ int cmdRun(const Args& a) {
                                            gen::vdp::kFbWidth)) {
                     std::fprintf(stderr, "gen_cli: cannot write %s\n", gen::common::toUtf8(path).c_str());
                     return kExitLoadError;
+                }
+                if (a.dumpVdp) {
+                    writeVdpDump(outDir / ("vdp_" + std::to_string(m.frame()) + ".bin"), v.state());
                 }
             }
         }
@@ -373,7 +450,10 @@ int cmdRun(const Args& a) {
                         e.write ? "write" : "read", e.size == 1 ? 'b' : 'w', e.addr, e.value, e.pc);
         }
     }
-    return st.faults != 0 || cpu.halted ? kExitCheckFailure : kExitOk;
+    if (mismatches != 0) {
+        std::printf("%d golden frame mismatch(es)\n", mismatches);
+    }
+    return st.faults != 0 || cpu.halted || mismatches != 0 ? kExitCheckFailure : kExitOk;
 }
 
 int cmdTrace(const Args& a) {

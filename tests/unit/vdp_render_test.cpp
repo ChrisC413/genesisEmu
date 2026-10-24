@@ -66,8 +66,9 @@ void setCell(Vdp& v, std::uint16_t base, int col, int row, std::uint16_t e, int 
 // Sprite table entry `i` (raw coordinates: screen + 128).
 void sprite(Vdp& v, int i, int x, int y, int w, int h, int link, std::uint16_t name) {
     vram(v, static_cast<std::uint16_t>(kSat + i * 8),
-         {static_cast<std::uint16_t>(y + 128), static_cast<std::uint16_t>(((w - 1) << 10) | ((h - 1) << 8) | link),
-          name, static_cast<std::uint16_t>(x + 128)});
+         {static_cast<std::uint16_t>(y + 128),
+          static_cast<std::uint16_t>(((w - 1) << 10) | ((h - 1) << 8) | link), name,
+          static_cast<std::uint16_t>(x + 128)});
 }
 
 Vdp makeVdp() {
@@ -274,7 +275,8 @@ TEST_CASE("Window plane replaces plane A in its region and ignores scrolling", "
     CHECK(px(v, 100, 0) == color(v, 0));
 }
 
-TEST_CASE("Sprites: link list, sizes, flips, per-line limits, x = 0 masking, collision", "[vdp][render][sprites]") {
+TEST_CASE("Sprites: link list, sizes, flips, per-line limits, x = 0 masking, collision",
+          "[vdp][render][sprites]") {
     Vdp v = makeVdp();
     solidTile(v, 1, 1);
     solidTile(v, 2, 2);
@@ -375,7 +377,7 @@ TEST_CASE("Shadow / highlight: plane priority shading and sprite operators", "[v
     }
     frame(v);
     CHECK(px(v, 0, 0) == color(v, 5, Intensity::Shadow));  // low-priority planes: shadowed
-    CHECK(px(v, 0, 8) == color(v, 5));                      // high priority: normal
+    CHECK(px(v, 0, 8) == color(v, 5));                     // high priority: normal
     // Palette 3 color 14 = highlight operator, color 15 = shadow operator.
     sprite(v, 0, 0, 0, 1, 1, 1, entry(2, 3));
     sprite(v, 1, 8, 8, 1, 1, 2, entry(2, 3, true));
@@ -384,12 +386,12 @@ TEST_CASE("Shadow / highlight: plane priority shading and sprite operators", "[v
     sprite(v, 4, 32, 8, 1, 1, 5, entry(3, 3, true));
     sprite(v, 5, 40, 8, 1, 1, 0, entry(3, 3, false));
     frame(v);
-    CHECK(px(v, 0, 0) == color(v, 5));                         // shadow + highlight = normal
-    CHECK(px(v, 8, 8) == color(v, 5, Intensity::Highlight));   // highlight on a normal pixel
-    CHECK(px(v, 32, 8) == color(v, 5, Intensity::Shadow));     // shadow operator
+    CHECK(px(v, 0, 0) == color(v, 5));                        // shadow + highlight = normal
+    CHECK(px(v, 8, 8) == color(v, 5, Intensity::Highlight));  // highlight on a normal pixel
+    CHECK(px(v, 32, 8) == color(v, 5, Intensity::Shadow));    // shadow operator
     CHECK(px(v, 40, 8) == color(v, 5));  // a low-priority operator under a high-priority plane does nothing
-    CHECK(px(v, 16, 0) == color(v, 22, Intensity::Shadow));    // low sprite over low planes: shadowed
-    CHECK(px(v, 24, 0) == color(v, 22));                       // high sprite: normal
+    CHECK(px(v, 16, 0) == color(v, 22, Intensity::Shadow));  // low sprite over low planes: shadowed
+    CHECK(px(v, 24, 0) == color(v, 22));                     // high sprite: normal
     reg(v, 12, 0x81);
     frame(v);
     CHECK(px(v, 0, 0) == color(v, 62));  // without S/H the operators are ordinary colors

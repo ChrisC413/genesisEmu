@@ -6,6 +6,7 @@ add_library(gen_common STATIC
   config.cpp
   logging.cpp
   paths.cpp
+  golden_frames.cpp
   png.cpp
   rom_info.cpp
 )
