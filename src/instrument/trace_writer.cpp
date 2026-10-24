@@ -18,7 +18,8 @@ void appendf(std::string& out, const char* fmt, auto... args) {
     char buf[64];
     const int n = std::snprintf(buf, sizeof buf, fmt, args...);
     if (n > 0) {
-        out.append(buf, static_cast<std::size_t>(n) < sizeof buf ? static_cast<std::size_t>(n) : sizeof buf - 1);
+        out.append(buf,
+                   static_cast<std::size_t>(n) < sizeof buf ? static_cast<std::size_t>(n) : sizeof buf - 1);
     }
 }
 
@@ -119,7 +120,8 @@ void TraceWriter::begin(std::uint32_t pc, int irqLevel) {
             text = "?";
         }
         for (int i = 0; i + 1 < length && static_cast<std::size_t>(i + 1) < n; i += 2) {
-            appendf(line_, "%02X%02X ", bytes[static_cast<std::size_t>(i)], bytes[static_cast<std::size_t>(i + 1)]);
+            appendf(line_, "%02X%02X ", bytes[static_cast<std::size_t>(i)],
+                    bytes[static_cast<std::size_t>(i + 1)]);
         }
     }
     pad(line_, wordsAt, kWordsColumn);

@@ -8,9 +8,9 @@
 
 #include <array>
 #include <cstdint>
-#include <ostream>
 #include <functional>
 #include <optional>
+#include <ostream>
 #include <span>
 #include <string>
 #include <vector>
@@ -24,16 +24,16 @@ class Machine;
 namespace gen::instrument {
 
 struct TraceConfig {
-    std::uint64_t startFrame = 0;                     // first frame logged
-    std::uint64_t endFrame = UINT64_MAX;              // first frame not logged
+    std::uint64_t startFrame = 0;                                    // first frame logged
+    std::uint64_t endFrame = UINT64_MAX;                             // first frame not logged
     std::optional<std::pair<std::uint32_t, std::uint32_t>> pcRange;  // inclusive
-    bool firstExecutionOnly = false;                  // log each PC once
+    bool firstExecutionOnly = false;                                 // log each PC once
     std::uint64_t maxRecords = UINT64_MAX;
 };
 
 // Disassembles the instruction at `addr` from `bytes`; returns the text and sets `length` (bytes).
-using DisassembleFn = std::function<std::string(std::span<const std::uint8_t> bytes, std::uint32_t addr,
-                                                int& length)>;
+using DisassembleFn =
+    std::function<std::string(std::span<const std::uint8_t> bytes, std::uint32_t addr, int& length)>;
 
 class TraceWriter {
 public:
