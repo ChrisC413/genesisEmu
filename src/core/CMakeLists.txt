@@ -1,4 +1,7 @@
 add_library(gen_core STATIC
+  cart/known_roms.cpp
+  cart/rom.cpp
+  util/hash.cpp
   version.cpp
 )
 target_include_directories(gen_core PUBLIC "${PROJECT_SOURCE_DIR}/src")

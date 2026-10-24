@@ -1,7 +1,7 @@
 # M00-04 · ROM loading and header parsing
 
 **Milestone:** [M00 – Foundation](README.md)  
-**Status:** Draft  
+**Status:** In progress  
 **Depends on:** M00-01  
 **Spec refs:** [04-memory-bus](../../docs/specs/04-memory-bus.md#cartridge-loading)
 
