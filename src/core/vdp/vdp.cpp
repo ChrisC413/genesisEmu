@@ -30,26 +30,26 @@ std::uint32_t Vdp::dmaLength() const {
 
 void Vdp::writeTarget(std::uint16_t value) {
     switch (s_.code & 0x0F) {
-    case 0x01: {  // VRAM write; an odd address swaps the bytes
-        const std::uint16_t v = (s_.address & 1) != 0 ? static_cast<std::uint16_t>((value << 8) | (value >> 8))
-                                                       : value;
-        const std::size_t a = s_.address & 0xFFFE;
-        s_.vram[a] = static_cast<std::uint8_t>(v >> 8);
-        s_.vram[a + 1] = static_cast<std::uint8_t>(v);
-        break;
-    }
-    case 0x03:  // CRAM write: 9-bit color 0000 BBB0 GGG0 RRR0
-        s_.cram[(s_.address >> 1) & 0x3F] = static_cast<std::uint16_t>(value & 0x0EEE);
-        break;
-    case 0x05: {  // VSRAM write
-        const std::size_t i = (s_.address >> 1) & 0x3F;
-        if (i < kVsramWords) {
-            s_.vsram[i] = static_cast<std::uint16_t>(value & 0x07FF);
+        case 0x01: {  // VRAM write; an odd address swaps the bytes
+            const std::uint16_t v =
+                (s_.address & 1) != 0 ? static_cast<std::uint16_t>((value << 8) | (value >> 8)) : value;
+            const std::size_t a = s_.address & 0xFFFE;
+            s_.vram[a] = static_cast<std::uint8_t>(v >> 8);
+            s_.vram[a + 1] = static_cast<std::uint8_t>(v);
+            break;
         }
-        break;
-    }
-    default:  // read codes or invalid: the write is dropped
-        break;
+        case 0x03:  // CRAM write: 9-bit color 0000 BBB0 GGG0 RRR0
+            s_.cram[(s_.address >> 1) & 0x3F] = static_cast<std::uint16_t>(value & 0x0EEE);
+            break;
+        case 0x05: {  // VSRAM write
+            const std::size_t i = (s_.address >> 1) & 0x3F;
+            if (i < kVsramWords) {
+                s_.vsram[i] = static_cast<std::uint16_t>(value & 0x07FF);
+            }
+            break;
+        }
+        default:  // read codes or invalid: the write is dropped
+            break;
     }
     s_.address = static_cast<std::uint16_t>(s_.address + autoIncrement());
 }
@@ -58,21 +58,21 @@ std::uint16_t Vdp::readData() {
     s_.pending = false;
     std::uint16_t v = 0;
     switch (s_.code & 0x0F) {
-    case 0x00: {
-        const std::size_t a = s_.address & 0xFFFE;
-        v = static_cast<std::uint16_t>((s_.vram[a] << 8) | s_.vram[a + 1]);
-        break;
-    }
-    case 0x08:
-        v = s_.cram[(s_.address >> 1) & 0x3F];
-        break;
-    case 0x04: {
-        const std::size_t i = (s_.address >> 1) & 0x3F;
-        v = i < kVsramWords ? s_.vsram[i] : 0;
-        break;
-    }
-    default:
-        break;
+        case 0x00: {
+            const std::size_t a = s_.address & 0xFFFE;
+            v = static_cast<std::uint16_t>((s_.vram[a] << 8) | s_.vram[a + 1]);
+            break;
+        }
+        case 0x08:
+            v = s_.cram[(s_.address >> 1) & 0x3F];
+            break;
+        case 0x04: {
+            const std::size_t i = (s_.address >> 1) & 0x3F;
+            v = i < kVsramWords ? s_.vsram[i] : 0;
+            break;
+        }
+        default:
+            break;
     }
     s_.address = static_cast<std::uint16_t>(s_.address + autoIncrement());
     return v;
@@ -189,12 +189,12 @@ std::uint8_t Vdp::vCounter() const {
     }
     v &= 0x1FF;
     switch ((s_.regs[12] >> 1) & 0x03) {
-    case 1:  // interlace mode 1: bit 0 shows bit 8
-        return static_cast<std::uint8_t>((v & 0xFE) | ((v >> 8) & 1));
-    case 3:  // interlace mode 2: doubled line number, bit 0 shows bit 8
-        return static_cast<std::uint8_t>(((v << 1) & 0xFE) | ((v >> 8) & 1));
-    default:
-        return static_cast<std::uint8_t>(v);
+        case 1:  // interlace mode 1: bit 0 shows bit 8
+            return static_cast<std::uint8_t>((v & 0xFE) | ((v >> 8) & 1));
+        case 3:  // interlace mode 2: doubled line number, bit 0 shows bit 8
+            return static_cast<std::uint8_t>(((v << 1) & 0xFE) | ((v >> 8) & 1));
+        default:
+            return static_cast<std::uint8_t>(v);
     }
 }
 

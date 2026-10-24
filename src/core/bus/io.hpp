@@ -29,9 +29,9 @@ enum PadButton : std::uint16_t {
 
 struct IoState {
     std::uint8_t version = 0;
-    std::array<std::uint8_t, 3> data{};     // $A10003/5/7: last written output bits
-    std::array<std::uint8_t, 3> control{};  // $A10009/B/D: 1 = pin is an output
-    std::array<std::uint8_t, 9> serial{};   // $A1000F-$A1001F (odd addresses): stored, no transfer
+    std::array<std::uint8_t, 3> data{};      // $A10003/5/7: last written output bits
+    std::array<std::uint8_t, 3> control{};   // $A10009/B/D: 1 = pin is an output
+    std::array<std::uint8_t, 9> serial{};    // $A1000F-$A1001F (odd addresses): stored, no transfer
     std::array<std::uint16_t, 2> buttons{};  // pressed buttons of pads 1 and 2 (PadButton mask)
 };
 

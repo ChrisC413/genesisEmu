@@ -43,10 +43,10 @@ struct RunLimit {
 
 enum class StopReason : std::uint8_t {
     LimitReached,
-    Breakpoint,  // onInstr returned Break; the instruction has not executed
-    Watchpoint,  // reserved (M06-04)
-    Exception,   // a fault exception was taken and MachineConfig::stopOnFault is set
-    Unsupported, // step() on a CPU that does not execute yet (Z80 until M04)
+    Breakpoint,   // onInstr returned Break; the instruction has not executed
+    Watchpoint,   // reserved (M06-04)
+    Exception,    // a fault exception was taken and MachineConfig::stopOnFault is set
+    Unsupported,  // step() on a CPU that does not execute yet (Z80 until M04)
 };
 const char* toString(StopReason reason);
 
@@ -66,10 +66,10 @@ struct MachineStats {
     std::uint64_t faults = 0;
     int firstFaultVector = -1;
     std::uint32_t firstFaultPc = 0;
-    std::uint64_t vints = 0;            // level-6 interrupts taken
-    std::uint32_t lastVintPc = 0;       // interrupted PC of the most recent V-int
+    std::uint64_t vints = 0;       // level-6 interrupts taken
+    std::uint32_t lastVintPc = 0;  // interrupted PC of the most recent V-int
     std::uint32_t vintsThisFrame = 0;
-    std::uint32_t vintsLastFrame = 0;   // V-ints taken during the last completed frame
+    std::uint32_t vintsLastFrame = 0;  // V-ints taken during the last completed frame
 };
 
 class Machine {

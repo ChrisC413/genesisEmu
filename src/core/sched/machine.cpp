@@ -12,16 +12,16 @@ constexpr int kVintVector = 24 + 6;
 
 const char* toString(StopReason reason) {
     switch (reason) {
-    case StopReason::LimitReached:
-        return "limit";
-    case StopReason::Breakpoint:
-        return "breakpoint";
-    case StopReason::Watchpoint:
-        return "watchpoint";
-    case StopReason::Exception:
-        return "exception";
-    case StopReason::Unsupported:
-        return "unsupported";
+        case StopReason::LimitReached:
+            return "limit";
+        case StopReason::Breakpoint:
+            return "breakpoint";
+        case StopReason::Watchpoint:
+            return "watchpoint";
+        case StopReason::Exception:
+            return "exception";
+        case StopReason::Unsupported:
+            return "unsupported";
     }
     return "?";
 }
@@ -128,23 +128,23 @@ RunResult Machine::run(RunLimit limit) {
     const std::uint64_t targetMclk = clock_.cpuMclk + limit.count;
     for (;;) {
         switch (limit.kind) {
-        case RunLimit::Kind::Frames:
-            if (frame_ >= targetFrame) {
-                return result;
-            }
-            break;
-        case RunLimit::Kind::Instructions:
-            if (result.instructions >= limit.count) {
-                return result;
-            }
-            break;
-        case RunLimit::Kind::Mclk:
-            if (clock_.cpuMclk >= targetMclk) {
-                return result;
-            }
-            break;
-        case RunLimit::Kind::UntilBreak:
-            break;
+            case RunLimit::Kind::Frames:
+                if (frame_ >= targetFrame) {
+                    return result;
+                }
+                break;
+            case RunLimit::Kind::Instructions:
+                if (result.instructions >= limit.count) {
+                    return result;
+                }
+                break;
+            case RunLimit::Kind::Mclk:
+                if (clock_.cpuMclk >= targetMclk) {
+                    return result;
+                }
+                break;
+            case RunLimit::Kind::UntilBreak:
+                break;
         }
         if (!stepCpu(result)) {
             return result;

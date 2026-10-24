@@ -6,14 +6,14 @@ namespace gen::bus {
 
 const char* toString(BusIssue issue) {
     switch (issue) {
-    case BusIssue::Unmapped:
-        return "unmapped";
-    case BusIssue::RomWrite:
-        return "rom-write";
-    case BusIssue::Z80NotOwned:
-        return "z80-not-owned";
-    case BusIssue::VdpLocked:
-        return "vdp-locked";
+        case BusIssue::Unmapped:
+            return "unmapped";
+        case BusIssue::RomWrite:
+            return "rom-write";
+        case BusIssue::Z80NotOwned:
+            return "z80-not-owned";
+        case BusIssue::VdpLocked:
+            return "vdp-locked";
     }
     return "?";
 }
@@ -94,25 +94,26 @@ std::uint16_t SystemBus::dmaRead(void* ctx, std::uint32_t addr) {
     return self.openBus();
 }
 
-// ---- Dispatch ----------------------------------------------------------------------------------------------
+// ---- Dispatch
+// ----------------------------------------------------------------------------------------------
 
 std::uint8_t SystemBus::read8(std::uint32_t addr) {
     addr &= 0xFFFFFF;
     const std::uint16_t odd = addr & 1;
     switch (pages_[addr >> 16]) {
-    case PageKind::Rom:
-    case PageKind::Ram:
-        return fastRead[addr >> 16][addr & 0xFFFF];
-    case PageKind::Z80:
-        return static_cast<std::uint8_t>(readZ80(addr, 1));
-    case PageKind::Io:
-        return static_cast<std::uint8_t>(readIo(addr, 1));
-    case PageKind::Vdp: {
-        const std::uint16_t w = readVdp(addr & ~1u, 1);
-        return static_cast<std::uint8_t>(odd != 0 ? w : w >> 8);
-    }
-    case PageKind::Unmapped:
-        break;
+        case PageKind::Rom:
+        case PageKind::Ram:
+            return fastRead[addr >> 16][addr & 0xFFFF];
+        case PageKind::Z80:
+            return static_cast<std::uint8_t>(readZ80(addr, 1));
+        case PageKind::Io:
+            return static_cast<std::uint8_t>(readIo(addr, 1));
+        case PageKind::Vdp: {
+            const std::uint16_t w = readVdp(addr & ~1u, 1);
+            return static_cast<std::uint8_t>(odd != 0 ? w : w >> 8);
+        }
+        case PageKind::Unmapped:
+            break;
     }
     const std::uint16_t ob = openBus();
     report(BusIssue::Unmapped, addr, 1, 0, false);
@@ -122,19 +123,19 @@ std::uint8_t SystemBus::read8(std::uint32_t addr) {
 std::uint16_t SystemBus::read16(std::uint32_t addr) {
     addr &= 0xFFFFFE;
     switch (pages_[addr >> 16]) {
-    case PageKind::Rom:
-    case PageKind::Ram: {
-        const std::uint8_t* p = fastRead[addr >> 16] + (addr & 0xFFFF);
-        return static_cast<std::uint16_t>((p[0] << 8) | p[1]);
-    }
-    case PageKind::Z80:
-        return readZ80(addr, 2);
-    case PageKind::Io:
-        return readIo(addr, 2);
-    case PageKind::Vdp:
-        return readVdp(addr, 2);
-    case PageKind::Unmapped:
-        break;
+        case PageKind::Rom:
+        case PageKind::Ram: {
+            const std::uint8_t* p = fastRead[addr >> 16] + (addr & 0xFFFF);
+            return static_cast<std::uint16_t>((p[0] << 8) | p[1]);
+        }
+        case PageKind::Z80:
+            return readZ80(addr, 2);
+        case PageKind::Io:
+            return readIo(addr, 2);
+        case PageKind::Vdp:
+            return readVdp(addr, 2);
+        case PageKind::Unmapped:
+            break;
     }
     report(BusIssue::Unmapped, addr, 2, 0, false);
     return openBus();
@@ -143,23 +144,23 @@ std::uint16_t SystemBus::read16(std::uint32_t addr) {
 void SystemBus::write8(std::uint32_t addr, std::uint8_t value) {
     addr &= 0xFFFFFF;
     switch (pages_[addr >> 16]) {
-    case PageKind::Ram:
-        state_.ram[addr & 0xFFFF] = value;
-        return;
-    case PageKind::Rom:
-        report(BusIssue::RomWrite, addr, 1, value, true);
-        return;
-    case PageKind::Z80:
-        writeZ80(addr, value, 1);
-        return;
-    case PageKind::Io:
-        writeIo(addr, value, 1);
-        return;
-    case PageKind::Vdp:
-        writeVdp(addr, value, 1);
-        return;
-    case PageKind::Unmapped:
-        break;
+        case PageKind::Ram:
+            state_.ram[addr & 0xFFFF] = value;
+            return;
+        case PageKind::Rom:
+            report(BusIssue::RomWrite, addr, 1, value, true);
+            return;
+        case PageKind::Z80:
+            writeZ80(addr, value, 1);
+            return;
+        case PageKind::Io:
+            writeIo(addr, value, 1);
+            return;
+        case PageKind::Vdp:
+            writeVdp(addr, value, 1);
+            return;
+        case PageKind::Unmapped:
+            break;
     }
     report(BusIssue::Unmapped, addr, 1, value, true);
 }
@@ -167,30 +168,31 @@ void SystemBus::write8(std::uint32_t addr, std::uint8_t value) {
 void SystemBus::write16(std::uint32_t addr, std::uint16_t value) {
     addr &= 0xFFFFFE;
     switch (pages_[addr >> 16]) {
-    case PageKind::Ram:
-        state_.ram[addr & 0xFFFF] = static_cast<std::uint8_t>(value >> 8);
-        state_.ram[(addr & 0xFFFF) + 1] = static_cast<std::uint8_t>(value);
-        return;
-    case PageKind::Rom:
-        report(BusIssue::RomWrite, addr, 2, value, true);
-        return;
-    case PageKind::Z80:
-        // Word writes reach the Z80 bus as their high byte.
-        writeZ80(addr, static_cast<std::uint8_t>(value >> 8), 2);
-        return;
-    case PageKind::Io:
-        writeIo(addr, value, 2);
-        return;
-    case PageKind::Vdp:
-        writeVdp(addr, value, 2);
-        return;
-    case PageKind::Unmapped:
-        break;
+        case PageKind::Ram:
+            state_.ram[addr & 0xFFFF] = static_cast<std::uint8_t>(value >> 8);
+            state_.ram[(addr & 0xFFFF) + 1] = static_cast<std::uint8_t>(value);
+            return;
+        case PageKind::Rom:
+            report(BusIssue::RomWrite, addr, 2, value, true);
+            return;
+        case PageKind::Z80:
+            // Word writes reach the Z80 bus as their high byte.
+            writeZ80(addr, static_cast<std::uint8_t>(value >> 8), 2);
+            return;
+        case PageKind::Io:
+            writeIo(addr, value, 2);
+            return;
+        case PageKind::Vdp:
+            writeVdp(addr, value, 2);
+            return;
+        case PageKind::Unmapped:
+            break;
     }
     report(BusIssue::Unmapped, addr, 2, value, true);
 }
 
-// ---- Z80 area ($A00000-$A0FFFF) ----------------------------------------------------------------------------
+// ---- Z80 area ($A00000-$A0FFFF)
+// ----------------------------------------------------------------------------
 
 std::uint16_t SystemBus::readZ80(std::uint32_t addr, std::uint8_t size) {
     const std::uint16_t ob = openBus();
@@ -219,7 +221,8 @@ void SystemBus::writeZ80(std::uint32_t addr, std::uint8_t value, std::uint8_t si
     z80_.write(static_cast<std::uint16_t>(addr & 0x7FFF), value);
 }
 
-// ---- I/O and control ($A10000-$A1FFFF) ---------------------------------------------------------------------
+// ---- I/O and control ($A10000-$A1FFFF)
+// ---------------------------------------------------------------------
 
 std::uint16_t SystemBus::readIo(std::uint32_t addr, std::uint8_t size) {
     const std::uint32_t off = addr & 0xFFFF;
@@ -237,7 +240,8 @@ std::uint16_t SystemBus::readIo(std::uint32_t addr, std::uint8_t size) {
         const std::uint16_t busy = z80_.busGranted() ? 0 : 0x0100;
         return byteOf(static_cast<std::uint16_t>((ob & 0xFEFF) | busy));
     }
-    if ((off >= 0x1000 && off < 0x1100) || (off >= 0x1200 && off < 0x1300) || (off >= 0x4000 && off < 0x4004)) {
+    if ((off >= 0x1000 && off < 0x1100) || (off >= 0x1200 && off < 0x1300) ||
+        (off >= 0x4000 && off < 0x4004)) {
         return byteOf(ob);  // write-only registers
     }
     report(BusIssue::Unmapped, addr, size, 0, false);
@@ -284,7 +288,8 @@ void SystemBus::writeIo(std::uint32_t addr, std::uint16_t value, std::uint8_t si
     report(BusIssue::Unmapped, addr, size, value, true);
 }
 
-// ---- VDP ($C00000-$DFFFFF, mirrored every 32 bytes) --------------------------------------------------------
+// ---- VDP ($C00000-$DFFFFF, mirrored every 32 bytes)
+// --------------------------------------------------------
 
 std::uint16_t SystemBus::readVdp(std::uint32_t addr, std::uint8_t size) {
     if (vdpLocked()) {

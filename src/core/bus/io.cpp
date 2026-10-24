@@ -16,12 +16,12 @@ Region regionFromHeader(std::uint8_t headerRegions) {
 
 const char* toString(Region region) {
     switch (region) {
-    case Region::Japan:
-        return "japan";
-    case Region::Americas:
-        return "americas";
-    case Region::Europe:
-        return "europe";
+        case Region::Japan:
+            return "japan";
+        case Region::Americas:
+            return "americas";
+        case Region::Europe:
+            return "europe";
     }
     return "?";
 }
