@@ -1,11 +1,12 @@
 // Master-clock scheduler, run limits and the synthetic boot ROM (stories M02-04, M02-05, M02-07).
 
+#include "core/sched/machine.hpp"
+
 #include <cstdint>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "core/cart/rom.hpp"
-#include "core/sched/machine.hpp"
 #include "support/synthetic_rom.hpp"
 
 using namespace gen;

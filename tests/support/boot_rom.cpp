@@ -54,13 +54,13 @@ std::vector<std::uint8_t> makeBootTestRom() {
     putLong(rom, 30 * 4, kBootVintHandler);
 
     Emitter e(rom, 0x200);
-    e.w({0x46FC, 0x2700});                  // move.w #$2700,sr
-    e.w({0x1039, 0x00A1, 0x0001});          // move.b ($A10001).l,d0
-    e.w({0x0200, 0x000F});                  // andi.b #$0F,d0
-    e.w({0x670A});                          // beq.s (skip the TMSS write)
+    e.w({0x46FC, 0x2700});                          // move.w #$2700,sr
+    e.w({0x1039, 0x00A1, 0x0001});                  // move.b ($A10001).l,d0
+    e.w({0x0200, 0x000F});                          // andi.b #$0F,d0
+    e.w({0x670A});                                  // beq.s (skip the TMSS write)
     e.w({0x23FC, 0x5345, 0x4741, 0x00A1, 0x4000});  // move.l #'SEGA',($A14000).l
-    e.w({0x33FC, 0x0100, 0x00A1, 0x1100});  // move.w #$100,($A11100).l   Z80 bus request
-    e.w({0x33FC, 0x0100, 0x00A1, 0x1200});  // move.w #$100,($A11200).l   Z80 reset released
+    e.w({0x33FC, 0x0100, 0x00A1, 0x1100});          // move.w #$100,($A11100).l   Z80 bus request
+    e.w({0x33FC, 0x0100, 0x00A1, 0x1200});          // move.w #$100,($A11200).l   Z80 reset released
     const std::uint32_t waitBus = e.here();
     e.w({0x0839, 0x0000, 0x00A1, 0x1100});  // btst #0,($A11100).l
     e.branch(0x6600, waitBus);              // bne.s waitBus
@@ -81,18 +81,18 @@ std::vector<std::uint8_t> makeBootTestRom() {
     e.w({0x45F9, 0x00C0, 0x0000});          // lea ($C00000).l,a2
     e.w({0x720F});                          // moveq #15,d1
     const std::uint32_t tileLoop = e.here();
-    e.w({0x3481});                          // move.w d1,(a2)
+    e.w({0x3481});                                                         // move.w d1,(a2)
     e.w({0x51C9, static_cast<std::uint16_t>(tileLoop - (e.here() + 2))});  // dbf d1,tileLoop
-    e.w({0x22BC, 0xC000, 0x0000});          // move.l #$C0000000,(a1)   CRAM write 0
-    e.w({0x34BC, 0x0EEE});                  // move.w #$0EEE,(a2)
-    e.w({0x46FC, 0x2000});                  // move.w #$2000,sr
+    e.w({0x22BC, 0xC000, 0x0000});  // move.l #$C0000000,(a1)   CRAM write 0
+    e.w({0x34BC, 0x0EEE});          // move.w #$0EEE,(a2)
+    e.w({0x46FC, 0x2000});          // move.w #$2000,sr
     const std::uint32_t mainLoop = e.here();
-    e.w({0x11FC, 0x0001, 0xF000});          // move.b #1,($F000).w   V-int flag
+    e.w({0x11FC, 0x0001, 0xF000});  // move.b #1,($F000).w   V-int flag
     const std::uint32_t waitVint = e.here();
-    e.w({0x4A38, 0xF000});                  // tst.b ($F000).w
-    e.branch(0x6600, waitVint);             // bne.s waitVint
-    e.w({0x5278, 0xF002});                  // addq.w #1,($F002).w   main-loop frame counter
-    e.branch(0x6000, mainLoop);             // bra.s mainLoop
+    e.w({0x4A38, 0xF000});       // tst.b ($F000).w
+    e.branch(0x6600, waitVint);  // bne.s waitVint
+    e.w({0x5278, 0xF002});       // addq.w #1,($F002).w   main-loop frame counter
+    e.branch(0x6000, mainLoop);  // bra.s mainLoop
 
     Emitter fault(rom, kBootFaultHandler);
     fault.w({0x60FE});  // bra.s *

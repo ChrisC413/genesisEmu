@@ -49,8 +49,8 @@ TEST_CASE("Cartridge ROM is readable through fast pages and ignores writes", "[b
 TEST_CASE("Space past the ROM image, expansion and 32X areas are open bus and logged", "[bus]") {
     Machine m = makeMachine();
     auto& b = m.bus();
-    for (const std::uint32_t addr : {0x020000u, 0x3FFFFEu, 0x400000u, 0x7FFFFEu, 0x800000u, 0x9FFFFEu,
-                                     0xB00000u, 0xBFFFFEu}) {
+    for (const std::uint32_t addr :
+         {0x020000u, 0x3FFFFEu, 0x400000u, 0x7FFFFEu, 0x800000u, 0x9FFFFEu, 0xB00000u, 0xBFFFFEu}) {
         INFO("address " << addr);
         CHECK(b.pageKind(addr) == bus::PageKind::Unmapped);
         CHECK(b.read16(addr) == m.cpu().state().irc);  // open bus: last prefetched word
@@ -126,7 +126,7 @@ TEST_CASE("Idle controllers read $7F with TH high and the 3-button TH-low patter
     Machine m = makeMachine();
     auto& b = m.bus();
     CHECK(b.read8(0xA10003) == 0x7F);  // TH is an input, pulled high
-    b.write8(0xA10009, 0x40);           // TH = output
+    b.write8(0xA10009, 0x40);          // TH = output
     b.write8(0xA10003, 0x40);
     CHECK(b.read8(0xA10003) == 0x7F);
     b.write8(0xA10003, 0x00);

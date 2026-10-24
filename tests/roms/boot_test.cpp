@@ -60,7 +60,8 @@ std::map<std::string, GameImage> scanRoms(const fs::path& dir) {
     for (const auto& a : sk) {
         for (const auto& b : s3) {
             if (const auto* combined = cart::identifyLockOn(a.data, b.data)) {
-                out.emplace(std::string(combined->sha1), GameImage{cart::lockOnImage(a.data, b.data), b.header.regions});
+                out.emplace(std::string(combined->sha1),
+                            GameImage{cart::lockOnImage(a.data, b.data), b.header.regions});
             }
         }
     }
@@ -139,8 +140,9 @@ BootReport boot(const GameImage& game, std::uint64_t frames, bool probe) {
     for (const std::uint32_t pc : vintPcs) {
         ++counts[pc];
     }
-    const auto mode = std::max_element(counts.begin(), counts.end(),
-                                       [](const auto& a, const auto& b) { return a.second < b.second; })->first;
+    const auto mode = std::max_element(counts.begin(), counts.end(), [](const auto& a, const auto& b) {
+                          return a.second < b.second;
+                      })->first;
     r.loopLo = mode;
     r.loopHi = mode;
     int inside = 0;

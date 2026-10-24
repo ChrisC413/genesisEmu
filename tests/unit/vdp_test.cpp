@@ -1,10 +1,10 @@
 // VDP port stub: command parsing, memories, status, HV counter, interrupts, DMA (story M02-04; spec 05).
 
+#include "core/vdp/vdp.hpp"
+
 #include <cstdint>
 
 #include <catch2/catch_test_macros.hpp>
-
-#include "core/vdp/vdp.hpp"
 
 using namespace gen::vdp;
 
@@ -114,8 +114,8 @@ TEST_CASE("DMA fill, copy and 68k-to-VRAM transfers", "[vdp]") {
     v.writeControl(0x8F02);
     v.writeControl(0x9304);
     v.writeControl(0x9400);
-    v.writeControl(0x9500);           // source bits 1-8
-    v.writeControl(0x9680);           // source bits 9-16: $FF0000 >> 9 = $7F80
+    v.writeControl(0x9500);  // source bits 1-8
+    v.writeControl(0x9680);  // source bits 9-16: $FF0000 >> 9 = $7F80
     v.writeControl(0x977F);
     command(v, static_cast<std::uint8_t>(kVramWrite | kDma), 0x0C00);
     CHECK(v.state().vram[0x0C00] == 0x00);
@@ -141,7 +141,7 @@ TEST_CASE("Status V-blank / H-blank bits and the HV counter", "[vdp]") {
     v.beginLine(261);
     CHECK((v.readHvCounter(0) >> 8) == 0xFF);
     CHECK((v.readHvCounter(3419) & 0xFF) >= 0xE4);  // H40 jump near the end of the line
-    v.writeControl(0x8C00);                          // H32
+    v.writeControl(0x8C00);                         // H32
     CHECK((v.readHvCounter(3419) & 0xFF) >= 0xE9);
     CHECK((v.readHvCounter(1000) & 0xFF) == 50);
 }
