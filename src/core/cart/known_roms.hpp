@@ -6,7 +6,7 @@
 
 namespace gen::cart {
 
-enum class Game { Sonic1, Sonic2, Sonic3, Sonic3AndKnuckles };
+enum class Game { Sonic1, Sonic2, Sonic3, SonicAndKnuckles, Sonic3AndKnuckles };
 
 struct KnownRom {
     std::string_view sha1;  // lowercase hex

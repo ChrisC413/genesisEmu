@@ -24,6 +24,9 @@ constexpr std::array kKnownRoms{
              "Sonic the Hedgehog 3", "REV00", "Europe"},
     KnownRom{"7b98b21b7274233e962132bc22a7ccdf548c0ddb", 0xF4951D1F, 0x200000, Game::Sonic3,
              "Sonic the Hedgehog 3", "REV00", "Japan, Korea"},
+    // Standalone Sonic & Knuckles cartridge (the lock-on half of the combined images below).
+    KnownRom{"88d6499d874dcb5721ff58d76fe1b9af811192e3", 0x0658F691, 0x200000, Game::SonicAndKnuckles,
+             "Sonic & Knuckles", "REV00", "World"},
     KnownRom{"cfbf98c36c776677290a872547ac47c53d2761d6", 0x63522553, 0x400000, Game::Sonic3AndKnuckles,
              "Sonic & Knuckles + Sonic the Hedgehog 3", "REV00", "USA"},
     KnownRom{"45ca797353756787c8abaacbe84ce662166ac0ee", 0x92F0929E, 0x400000, Game::Sonic3AndKnuckles,
@@ -55,6 +58,8 @@ std::string_view toString(Game game) {
             return "Sonic 2";
         case Game::Sonic3:
             return "Sonic 3";
+        case Game::SonicAndKnuckles:
+            return "Sonic & Knuckles";
         case Game::Sonic3AndKnuckles:
             return "Sonic 3 & Knuckles";
     }

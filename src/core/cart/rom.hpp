@@ -86,8 +86,9 @@ struct LoadResult {
     explicit operator bool() const { return rom.has_value(); }
 };
 
-// True if `file` looks like an SMD dump: a 512-byte header followed by whole 16 KB blocks, with either the
-// $AA $BB signature at offsets 8-9 or an .smd file extension.
+// True if `file` looks like an SMD dump: a 512-byte header followed by whole 16 KB blocks, and either the
+// $AA $BB signature at offsets 8-9 or a "SEGA" console name only in the de-interleaved layout. The .smd
+// extension only breaks ties (many ".smd" files are plain images).
 bool isSmd(std::span<const std::uint8_t> file, std::string_view extension);
 
 // Converts an SMD file (header + interleaved blocks) to a plain image. Each 16 KB block stores the odd
@@ -103,6 +104,14 @@ std::uint16_t computeChecksum(std::span<const std::uint8_t> image);
 // Builds a Rom from raw file contents. `fileName` is only used for its extension.
 LoadResult loadRom(std::vector<std::uint8_t> file, std::string_view fileName);
 LoadResult loadRomFile(const std::filesystem::path& path);
+
+// Sonic & Knuckles lock-on: the combined image is the locking cartridge (S&K, 2 MB) followed by the
+// locked-on cartridge (e.g. Sonic 3). Loading lock-on pairs is backlog BL-03; these helpers only identify
+// one.
+std::vector<std::uint8_t> lockOnImage(std::span<const std::uint8_t> lockingCart,
+                                      std::span<const std::uint8_t> lockedOnCart);
+const KnownRom* identifyLockOn(std::span<const std::uint8_t> lockingCart,
+                               std::span<const std::uint8_t> lockedOnCart);
 
 std::string_view toString(RomFormat format);
 std::string_view toString(SramLanes lanes);

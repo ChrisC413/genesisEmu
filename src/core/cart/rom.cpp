@@ -67,6 +67,22 @@ std::string utf8(const std::filesystem::path& path) {
     return {u8.begin(), u8.end()};
 }
 
+// Offset of a Master System / Game Gear "TMR SEGA" header, if the image has one.
+std::optional<std::size_t> findSmsHeader(std::span<const std::uint8_t> image) {
+    constexpr std::string_view kMagic = "TMR SEGA";
+    for (const std::size_t offset : {std::size_t{0x7FF0}, std::size_t{0x3FF0}, std::size_t{0x1FF0}}) {
+        if (image.size() >= offset + kMagic.size() &&
+            std::equal(kMagic.begin(), kMagic.end(), image.begin() + static_cast<std::ptrdiff_t>(offset))) {
+            return offset;
+        }
+    }
+    return std::nullopt;
+}
+
+bool isNonGenesisExtension(std::string_view ext) {
+    return ext == ".sms" || ext == ".gg" || ext == ".sg";
+}
+
 std::string lowercaseExtension(std::string_view fileName) {
     const auto dot = fileName.rfind('.');
     if (dot == std::string_view::npos) {
@@ -84,8 +100,21 @@ bool isSmd(std::span<const std::uint8_t> file, std::string_view extension) {
     if (file.size() < kSmdHeaderSize + kSmdBlockSize || (file.size() - kSmdHeaderSize) % kSmdBlockSize != 0) {
         return false;
     }
-    const bool signature = file[8] == 0xAA && file[9] == 0xBB;
-    return signature || extension == ".smd";
+    if (file[8] == 0xAA && file[9] == 0xBB) {
+        return true;
+    }
+    // Decide by content: whichever layout puts "SEGA" at image offset $100 wins. In an SMD file the even
+    // image bytes of the first block sit in its second half and the odd bytes in its first half.
+    const auto plainHasSega =
+        file[0x100] == 'S' && file[0x101] == 'E' && file[0x102] == 'G' && file[0x103] == 'A';
+    const std::size_t odd = kSmdHeaderSize + 0x80;
+    const std::size_t even = kSmdHeaderSize + kSmdBlockSize / 2 + 0x80;
+    const auto smdHasSega =
+        file[even] == 'S' && file[odd] == 'E' && file[even + 1] == 'G' && file[odd + 1] == 'A';
+    if (plainHasSega != smdHasSega) {
+        return smdHasSega;
+    }
+    return extension == ".smd";  // neither (or both) layouts look like a Genesis header
 }
 
 std::vector<std::uint8_t> deinterleaveSmd(std::span<const std::uint8_t> file) {
@@ -175,6 +204,26 @@ LoadResult loadRom(std::vector<std::uint8_t> file, std::string_view fileName) {
     }
 
     rom.header = parseHeader(rom.data);
+
+    // A Genesis image always has "SEGA" at $100. Without it, a Master System / Game Gear header or extension
+    // means the file is for another console: reject it instead of loading garbage with a warning.
+    if (!rom.header.consoleName.starts_with("SEGA")) {
+        if (const auto sms = findSmsHeader(rom.data)) {
+            char buf[160];
+            std::snprintf(
+                buf, sizeof buf,
+                "Not a Mega Drive/Genesis ROM: no \"SEGA\" console name at $100, and a Master System "
+                "/ Game Gear \"TMR SEGA\" header at $%04zX",
+                *sms);
+            result.error = buf;
+            return result;
+        }
+        if (isNonGenesisExtension(ext)) {
+            result.error = "Not a Mega Drive/Genesis ROM: no \"SEGA\" console name at $100, and the '" + ext +
+                           "' extension belongs to another console";
+            return result;
+        }
+    }
     rom.computedChecksum = computeChecksum(rom.data);
     rom.sha1 = sha1(rom.data);
     rom.sha1Hex = toHex(rom.sha1);
@@ -196,6 +245,20 @@ LoadResult loadRom(std::vector<std::uint8_t> file, std::string_view fileName) {
 
     result.rom = std::move(rom);
     return result;
+}
+
+std::vector<std::uint8_t> lockOnImage(std::span<const std::uint8_t> lockingCart,
+                                      std::span<const std::uint8_t> lockedOnCart) {
+    std::vector<std::uint8_t> image;
+    image.reserve(lockingCart.size() + lockedOnCart.size());
+    image.insert(image.end(), lockingCart.begin(), lockingCart.end());
+    image.insert(image.end(), lockedOnCart.begin(), lockedOnCart.end());
+    return image;
+}
+
+const KnownRom* identifyLockOn(std::span<const std::uint8_t> lockingCart,
+                               std::span<const std::uint8_t> lockedOnCart) {
+    return identifyRom(toHex(sha1(lockOnImage(lockingCart, lockedOnCart))));
 }
 
 LoadResult loadRomFile(const std::filesystem::path& path) {

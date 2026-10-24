@@ -7,7 +7,6 @@ When a question is answered, it moves to the resolved table and into [DECISIONS.
 
 | # | Question | Blocks | Recommended default |
 |---|----------|--------|---------------------|
-| Q5 | **Which ROM revisions are canonical?** Sonic 1 REV00/REV01, Sonic 2 REV00/01/02, S3K combined vs. locked-on. | M02 | *TBD: the user will provide a ROM folder when needed.* Until then, identify ROMs by SHA-1 and prefer the revision each Sonic Retro disassembly builds by default. |
 | Q9 | **Rewind / input movies later?** | — | *TBD.* Out of scope per D-007; the deterministic core (D-011) keeps both cheap to add. |
 | Q12 | **Which special stages go into which game?** Sonic 2 is the target (the hardware mod is for Sonic 2). Donors could be the Sonic 1 rotating maze and the Sonic 3 / S&K Blue Sphere stages. Should we also support other targets? | M11 | Target: Sonic 2 only. First donor: Sonic 1 (smaller, 68k sound driver, well documented); second donor: S3K Blue Sphere. |
 | Q13 | **How is a spliced stage chosen in-game?** Replace the S2 halfpipe, rotate between stages, or pick per emerald / per entry? | M11 | A configurable stage table indexed by emerald number, defaulting to the original order. Shipped as a build-time option. |
@@ -21,6 +20,7 @@ When a question is answered, it moves to the resolved table and into [DECISIONS.
 
 | # | Answer | Decision |
 |---|--------|----------|
+| Q5 | Canonical set (from the user's ROM folder, 2026-10-24): **Sonic 1 REV01** (`69e10285…`), **Sonic 2 REV01** (`8bca5dce…`), **S3K = Sonic & Knuckles + Sonic 3 USA combined** (`cfbf98c3…`, NTSC; standalone S&K `88d6499d…` + S3 USA `75e9c470…`). Secondary (PAL): S3 Europe (`2ff45bb0…`), giving S3K Europe (`45ca7973…`). The folder also holds modified or unknown dumps that stay unidentified (a patched Sonic 2 REV01 SMD `9e1834a8…`, an S&K with 3 changed bytes `e86b85ee…`, an unknown Sonic 1 with a REV00 header `f83bdaab…`, and Universal Soldier) and three Master System `.sms` files, which the loader rejects. | D-023 |
 | Q1 | Use ymfm | D-013 |
 | Q2 | MIT | D-014 |
 | Q3 | Windows 11, macOS 13+ | D-015 |

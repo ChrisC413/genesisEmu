@@ -1,7 +1,9 @@
 #include "core/cart/rom.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <set>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -120,6 +122,40 @@ TEST_CASE("SMD is detected by signature regardless of extension", "[cart]") {
     CHECK(loaded.rom->sourceFormat == RomFormat::Smd);
 }
 
+TEST_CASE("Plain images named .smd are detected as BIN by content", "[cart]") {
+    // Whole-16 KB sizes can never be SMD (no 512-byte header).
+    const auto plain = makeSyntheticRom();
+    const auto loaded = loadRom(plain, "misnamed.smd");
+    REQUIRE(loaded);
+    CHECK(loaded.rom->sourceFormat == RomFormat::Bin);
+    CHECK(loaded.rom->data == plain);
+
+    // 512 + n * 16 KB bytes with "SEGA" at $100 in the plain layout: still a plain image.
+    SyntheticRomOptions odd;
+    odd.size = kSmdHeaderSize + 2 * kSmdBlockSize;
+    const auto oddPlain = makeSyntheticRom(odd);
+    CHECK_FALSE(isSmd(oddPlain, ".smd"));
+    const auto oddLoaded = loadRom(oddPlain, "odd.smd");
+    REQUIRE(oddLoaded);
+    CHECK(oddLoaded.rom->sourceFormat == RomFormat::Bin);
+
+    // A real SMD without the $AA $BB signature is still found by its de-interleaved header.
+    auto smd = encodeSmd(makeSyntheticRom());
+    smd[8] = 0;
+    smd[9] = 0;
+    CHECK(isSmd(smd, ".bin"));
+}
+
+TEST_CASE("Lock-on combinations are identified by their combined hash", "[cart]") {
+    const std::vector<std::uint8_t> a(0x10, 0x11);
+    const std::vector<std::uint8_t> b(0x10, 0x22);
+    const auto combined = lockOnImage(a, b);
+    REQUIRE(combined.size() == 0x20);
+    CHECK(combined[0x0F] == 0x11);
+    CHECK(combined[0x10] == 0x22);
+    CHECK(identifyLockOn(a, b) == nullptr);
+}
+
 TEST_CASE("ROMs smaller than 512 bytes or larger than 4 MB are rejected", "[cart]") {
     SyntheticRomOptions tiny;
     tiny.size = 511;
@@ -184,6 +220,39 @@ TEST_CASE("Known-ROM table is well formed and searchable", "[cart]") {
     };
     CHECK(count(Game::Sonic1) == 2);
     CHECK(count(Game::Sonic2) == 3);
+    CHECK(count(Game::SonicAndKnuckles) == 1);
     CHECK(count(Game::Sonic3AndKnuckles) >= 1);
     CHECK(identifyRom("0000000000000000000000000000000000000000") == nullptr);
+}
+
+TEST_CASE("Master System and other non-Genesis images are rejected", "[cart]") {
+    const auto putTmrSega = [](std::vector<std::uint8_t>& image, std::size_t offset) {
+        constexpr std::string_view kMagic = "TMR SEGA";
+        std::copy(kMagic.begin(), kMagic.end(), image.begin() + static_cast<std::ptrdiff_t>(offset));
+    };
+
+    SyntheticRomOptions sms;
+    sms.size = 0x40000;
+    sms.consoleName = "";  // SMS images have Z80 code at $100, not a console name
+    auto smsImage = makeSyntheticRom(sms);
+    putTmrSega(smsImage, 0x7FF0);
+    const auto rejected = loadRom(smsImage, "game.bin");
+    CHECK_FALSE(rejected);
+    CHECK(rejected.error.find("Not a Mega Drive/Genesis ROM") != std::string::npos);
+    CHECK(rejected.error.find("TMR SEGA") != std::string::npos);
+
+    // No SMS header, but an SMS extension and no "SEGA" console name.
+    const auto byExtension = loadRom(makeSyntheticRom(sms), "game.sms");
+    CHECK_FALSE(byExtension);
+    CHECK(byExtension.error.find("'.sms'") != std::string::npos);
+
+    // A real Genesis header wins: "TMR SEGA" bytes in the body do not reject it.
+    auto genesis = makeSyntheticRom();
+    putTmrSega(genesis, 0x7FF0);
+    CHECK(loadRom(genesis, "game.bin"));
+
+    // A header-less image without SMS markers still loads, with a warning.
+    const auto unknown = loadRom(makeSyntheticRom(sms), "game.bin");
+    REQUIRE(unknown);
+    CHECK_FALSE(unknown.rom->warnings.empty());
 }
