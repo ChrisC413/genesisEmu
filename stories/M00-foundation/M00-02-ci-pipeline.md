@@ -1,7 +1,7 @@
 # M00-02 · CI on GitHub Actions (Windows, free tier)
 
 **Milestone:** [M00 – Foundation](README.md)  
-**Status:** Draft  
+**Status:** In progress  
 **Depends on:** M00-01  
 **Spec refs:** [13-testing-strategy](../../docs/specs/13-testing-strategy.md#ci)
 

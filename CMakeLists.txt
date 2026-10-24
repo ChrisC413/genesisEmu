@@ -33,6 +33,19 @@ if(GENESIS_BUILD_APP)
   add_subdirectory(src/app)
 endif()
 
+install(TARGETS gen_cli RUNTIME DESTINATION .)
+if(GENESIS_BUILD_APP)
+  install(TARGETS gen_app RUNTIME DESTINATION . BUNDLE DESTINATION .)
+endif()
+install(FILES LICENSE THIRD_PARTY_NOTICES.md DESTINATION .)
+if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+  # Licenses of the statically linked dependencies.
+  install(DIRECTORY "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/"
+    DESTINATION licenses
+    FILES_MATCHING PATTERN "copyright"
+    PATTERN "catch2" EXCLUDE)
+endif()
+
 if(GENESIS_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
