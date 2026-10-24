@@ -26,3 +26,5 @@
 | T01-10 | [Multi-machine aggregation](T01-10-multi-machine.md) | T01-02 | Draft |
 | T01-11 | [Spike: token and cost reporting](T01-11-token-cost-spike.md) | T01-04 | Draft |
 | T01-12 | [Run agent-monitor tests in CI](T01-12-tools-ci.md) | T01-02, M00-02 | Draft |
+
+<!-- cspell:words worktree worktrees gitignored stdlib argparse unittest ctypes lockfile npm osascript jsonl -->

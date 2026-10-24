@@ -26,3 +26,5 @@ As a **developer**, I want an optional browser view of the same data, so that I 
 ## Notes
 
 Only if the user wants a browser view (MQ1).
+
+<!-- cspell:words worktree worktrees gitignored stdlib argparse unittest ctypes lockfile npm osascript jsonl -->

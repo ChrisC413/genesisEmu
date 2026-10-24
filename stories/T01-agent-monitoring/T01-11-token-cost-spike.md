@@ -25,3 +25,5 @@ As a **developer**, I want to know whether an agent's token usage and cost can b
 ## Notes
 
 Timebox: half a day.
+
+<!-- cspell:words worktree worktrees gitignored stdlib argparse unittest ctypes lockfile npm osascript jsonl -->

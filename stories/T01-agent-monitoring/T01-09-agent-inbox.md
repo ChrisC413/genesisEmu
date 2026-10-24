@@ -27,3 +27,5 @@ As a **developer**, I want to leave a message for an agent that it reads between
 ## Notes
 
 Only if the user wants two-way communication (MQ6). Not a command channel: messages are advice, not instructions with elevated authority.
+
+<!-- cspell:words worktree worktrees gitignored stdlib argparse unittest ctypes lockfile npm osascript jsonl -->

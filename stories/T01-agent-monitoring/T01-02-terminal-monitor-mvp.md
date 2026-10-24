@@ -33,3 +33,5 @@ As a **developer**, I want a live terminal view of all agents with a recent-even
 ## Notes
 
 Marked Done for the Windows MVP; the macOS hand check is still open (no Mac in the session that built it). Nothing platform-specific is used on macOS beyond ANSI escapes and `O_APPEND`.
+
+<!-- cspell:words worktree worktrees gitignored stdlib argparse unittest ctypes lockfile npm osascript jsonl -->

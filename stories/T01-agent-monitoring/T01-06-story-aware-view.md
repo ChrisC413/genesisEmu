@@ -26,3 +26,5 @@ As a **developer**, I want to see each agent's story title and how many acceptan
 ## Notes
 
 —
+
+<!-- cspell:words worktree worktrees gitignored stdlib argparse unittest ctypes lockfile npm osascript jsonl -->

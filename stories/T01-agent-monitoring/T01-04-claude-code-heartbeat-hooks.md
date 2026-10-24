@@ -28,3 +28,5 @@ As a **developer**, I want liveness reported automatically by Claude Code hooks,
 ## Notes
 
 Needs the user's go-ahead: hooks change every agent's behavior in this repo.
+
+<!-- cspell:words worktree worktrees gitignored stdlib argparse unittest ctypes lockfile npm osascript jsonl -->

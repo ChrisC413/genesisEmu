@@ -145,7 +145,8 @@ Python too. A browser view, if wanted (MQ1), can be served by `http.server` from
 | LIVE | blank = fine; `QUIET` after 5 min; `STALE` after 15 min (`--warn-minutes`, `--stale-minutes`); never for done/failed agents. Future timestamps (clock skew) count as age 0. |
 | MESSAGE | `[ 60%]` prefix when `percent` is present, then the last message |
 
-Under each row: `branch <name> | <sha> <subject> (<age>) | PR #12 draft open  CI pass`, and the list of
+Under each row: `branch <name> | PR #12 draft open CI pass | <sha> <subject> (<age>)` (the commit
+subject is truncated first), and the list of
 stories that agent has finished (`done: M00-01, M00-02`).
 
 **Recent events:** the newest N events across all agents, by time (heartbeats excluded). In live mode the
@@ -196,3 +197,5 @@ Recommended defaults are what the MVP does today or what the next stories would 
 | MQ9 | **Story-aware view?** | Yes, next: read the story file from the agent's branch (`git show <branch>:stories/...`) to show its title and acceptance-criteria progress (`3/5 [x]`), which is a better progress measure than self-reported `percent`. |
 | MQ10 | **Liveness thresholds?** | QUIET at 5 min, STALE at 15 min, global. Agents should send a heartbeat before builds or test runs expected to take longer. Per-agent overrides only if false alarms appear. |
 | MQ11 | **Agent naming?** | Agent name = branch name, enforced by the emit helper's default once hooks exist (MQ7). Explicit `branch` field otherwise. |
+
+<!-- cspell:words worktree worktrees gitignored stdlib argparse unittest ctypes lockfile npm osascript jsonl -->

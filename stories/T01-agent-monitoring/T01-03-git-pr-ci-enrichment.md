@@ -30,3 +30,5 @@ As a **developer**, I want each agent's row to show its branch, latest commit, P
 ## Notes
 
 Failed CI does not yet count as an attention signal (see T01-05).
+
+<!-- cspell:words worktree worktrees gitignored stdlib argparse unittest ctypes lockfile npm osascript jsonl -->

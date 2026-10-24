@@ -84,17 +84,16 @@ def render(mon: Monitor, now: datetime, *, width: int = 120, feed: int = 15,
         lines.append(" ".join(cells))
         g = (git or {}).get(a.name)
         if g and (g.branch or g.pr):
-            bits = []
-            if g.branch:
-                bits.append(f"branch {g.branch}")
-            if g.commit:
-                bits.append(g.commit)
+            # Short, important fields first; the commit subject absorbs truncation.
+            head = "  " + (f"branch {g.branch}" if g.branch else "")
             if g.pr:
-                bits.append(f"PR {g.pr}")
-            line = "  " + " | ".join(bits)
-            line = p(_fit(line, width - (12 if g.checks else 0)), "dim")
+                head += f" | PR {g.pr}"
+            line = p(_ascii(head), "dim")
             if g.checks:
-                line += " CI " + p(g.checks, g.checks)
+                head += f" CI {g.checks}"
+                line += p(" CI ", "dim") + p(g.checks, g.checks)
+            if g.commit:
+                line += p(_fit(" | " + g.commit, width - len(head)), "dim")
             lines.append(line)
         if a.stories_done:
             lines.append(p(_fit(f"  done: {', '.join(a.stories_done)}", width), "dim"))

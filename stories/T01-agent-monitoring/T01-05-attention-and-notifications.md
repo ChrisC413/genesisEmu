@@ -28,3 +28,5 @@ As a **developer**, I want to be told when an agent becomes blocked, fails, goes
 ## Notes
 
 —
+
+<!-- cspell:words worktree worktrees gitignored stdlib argparse unittest ctypes lockfile npm osascript jsonl -->

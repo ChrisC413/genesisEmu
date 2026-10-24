@@ -27,3 +27,5 @@ As a **developer**, I want old agents hidden and finished logs archived, so that
 ## Notes
 
 —
+
+<!-- cspell:words worktree worktrees gitignored stdlib argparse unittest ctypes lockfile npm osascript jsonl -->

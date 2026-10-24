@@ -25,3 +25,5 @@ As a **developer**, I want the tool's tests to run in GitHub Actions, so that pr
 ## Notes
 
 Waits for M00-02 (owned by the M00 agent) to avoid editing the workflow concurrently. T01-01..03 are marked Done with tests passing locally only.
+
+<!-- cspell:words worktree worktrees gitignored stdlib argparse unittest ctypes lockfile npm osascript jsonl -->

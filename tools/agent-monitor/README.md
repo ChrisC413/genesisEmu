@@ -62,3 +62,5 @@ python -m unittest discover -s tools/agent-monitor/tests -v
 | `agent_monitor/render.py` | ASCII table + feed renderer |
 | `agent_monitor/cli.py` | `monitor.py` entry point (live, `--once`, `--json`) |
 | `agent_monitor/emit.py` | `emit.py` entry point and library helper |
+
+<!-- cspell:words worktree worktrees gitignored stdlib argparse unittest ctypes lockfile npm osascript jsonl -->

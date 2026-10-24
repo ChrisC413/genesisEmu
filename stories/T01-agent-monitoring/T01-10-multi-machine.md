@@ -26,3 +26,5 @@ As a **developer**, I want to see agents running on my Windows desktop and my Ma
 ## Notes
 
 Deferred until agents actually run on both machines.
+
+<!-- cspell:words worktree worktrees gitignored stdlib argparse unittest ctypes lockfile npm osascript jsonl -->

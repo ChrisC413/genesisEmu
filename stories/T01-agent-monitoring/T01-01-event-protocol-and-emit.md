@@ -30,3 +30,5 @@ As a **developer**, I want a documented, append-only event format and a helper t
 ## Notes
 
 Found during testing: the Windows C runtime's `O_APPEND` is seek-then-write; concurrent writers lost 18 of 200 lines. The helper uses a `FILE_APPEND_DATA` handle on Windows.
+
+<!-- cspell:words worktree worktrees gitignored stdlib argparse unittest ctypes lockfile npm osascript jsonl -->
