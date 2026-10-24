@@ -62,7 +62,7 @@ jobs:
 
       - name: Restore vcpkg binary cache
         id: vcpkg-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ${{ env.VCPKG_BINARY_CACHE }}
           key: vcpkg-x64-windows-static-md-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
@@ -72,8 +72,9 @@ jobs:
         run: cmake --preset win-${{ matrix.config }} -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
 
       - name: Save vcpkg binary cache
-        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        # Also after a failed configure: vcpkg has usually finished building by then.
+        if: ${{ !cancelled() && steps.vcpkg-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
         continue-on-error: true  # the other matrix job may have saved the same key first
         with:
           path: ${{ env.VCPKG_BINARY_CACHE }}
