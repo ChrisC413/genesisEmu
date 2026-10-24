@@ -1,0 +1,18 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "ignorePaths": ["build/**", "third_party/**", "vcpkg_installed/**"],
+  "words": [
+    "asm", "BCHG", "BCLR", "BSET", "BTST", "BUSREQ", "CPLD", "CRAM", "DBcc", "decompilation", "decompile",
+    "decompiled", "decompressor", "decompressors", "deinterleave", "disasm", "disassemblies", "dockable",
+    "DPLC", "EEPROM", "Enigma", "FRAM", "genproj", "Hilbert", "imgui", "interlace", "Kosinski", "libcurl",
+    "lockstep", "MCLK", "MEMPTR", "modded", "modding", "MOVEM", "MOVEP", "Musashi", "NBCD", "Nemesis",
+    "netplay", "nlohmann", "opcode", "opcodes", "prefetch", "reassemblable", "recompilation", "recompiled",
+    "recompiler", "resampler", "resampling", "Saxman", "SBCD", "sinc", "skdisasm", "SMPS", "spdlog",
+    "SRAM", "SSEG", "TMSS", "TRAPV", "vcpkg", "VDP", "vendored", "vsync", "VSRAM", "xxhash", "xxHash",
+    "ymfm", "zexall", "zexdoc", "Zilog", "Chaotix", "halfpipe", "Hblank", "Vblank", "UNLK", "ABCD",
+    "RTE", "RTR", "STOP", "SST", "IXH", "IXL", "IYH", "IYL", "DDCB", "FDCB", "LFSR", "Xcode", "binclude",
+    "srm", "genesisEmu", "Catch2", "ImPlot"
+  ],
+  "ignoreRegExpList": ["\\$[0-9A-Fa-f]+", "`[^`]*`"]
+}

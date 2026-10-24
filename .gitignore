@@ -1,0 +1,28 @@
+# Build output
+build/
+out/
+vcpkg_installed/
+CMakeUserPresets.json
+.vs/
+*.user
+
+# ROMs and user data — never commit commercial ROMs
+*.bin
+*.md.rom
+*.gen
+*.smd
+*.srm
+*.state
+roms/
+
+# Downloaded test data
+test-data/
+
+# Projects/workspaces (user analysis data)
+*.genproj
+*.genws
+
+# OS / editor
+.DS_Store
+Thumbs.db
+__pycache__/
