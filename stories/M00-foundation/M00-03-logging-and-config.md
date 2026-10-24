@@ -18,10 +18,10 @@ As a **developer**, I want structured logging and a JSON config stored in the ri
 
 ## Acceptance criteria
 
-- [ ] Missing config → defaults written on first run
-- [ ] Unknown keys preserved on save
-- [ ] Log level per subsystem configurable from the config file
-- [ ] Paths resolve correctly on both platforms
+- [x] Missing config → defaults written on first run — unit test `[config]`, and the app smoke test with a fresh `GENESISEMU_HOME`
+- [x] Unknown keys preserved on save — unit test `[config]`
+- [x] Log level per subsystem configurable from the config file — `log.subsystems` in the config; unit test `[logging]`
+- [ ] Paths resolve correctly on both platforms — Windows verified (real `%APPDATA%` test); the macOS rule is unit-tested on Windows but *not yet run on a Mac*
 
 ## Test plan
 

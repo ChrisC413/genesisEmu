@@ -18,10 +18,10 @@ As a **reverse engineer**, I want to open any Genesis ROM dump and see its ident
 
 ## Acceptance criteria
 
-- [ ] Interleaved SMD and plain BIN of the same game yield the same SHA-1
-- [ ] Header checksum mismatch is reported but doesn't block loading
-- [ ] Target-game ROMs are identified by name and revision
-- [ ] Files > 4 MB or < 512 bytes are rejected with a clear error
+- [x] Interleaved SMD and plain BIN of the same game yield the same SHA-1 — synthetic-ROM unit test and `cli.info_smd_matches_bin`
+- [x] Header checksum mismatch is reported but doesn't block loading — unit test `[cart]`
+- [ ] Target-game ROMs are identified by name and revision — known-ROM table (No-Intro SHA-1s) and lookup are unit-tested; *unverified against real dumps* (no ROMs available; run `tools/validate-roms` with `GENESIS_ROM_DIR`)
+- [x] Files > 4 MB or < 512 bytes are rejected with a clear error — unit test `[cart]` and `cli.info_too_small`
 
 ## Test plan
 

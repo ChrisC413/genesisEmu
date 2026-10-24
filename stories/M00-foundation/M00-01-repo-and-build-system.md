@@ -20,10 +20,10 @@ As a **developer**, I want a CMake + vcpkg project skeleton with presets for Win
 
 ## Acceptance criteria
 
-- [ ] `cmake --preset win-debug && cmake --build --preset win-debug` succeeds on Windows 11 (MSVC 2022)
-- [ ] `cmake --preset mac-debug && cmake --build --preset mac-debug` succeeds on macOS arm64
-- [ ] C++20 enabled; warnings at `/W4` / `-Wall -Wextra`, treated as errors in CI
-- [ ] A trivial Catch2 test runs via `ctest`
+- [x] `cmake --preset win-debug && cmake --build --preset win-debug` succeeds on Windows 11 (MSVC 2022) — verified locally (VS 2022, MSVC 14.41) and in CI (`windows-latest`, which now ships VS 2026 / MSVC 14.51; the presets use CMake's default Visual Studio generator)
+- [ ] `cmake --preset mac-debug && cmake --build --preset mac-debug` succeeds on macOS arm64 — *unverified: no Mac available; run `tools/validate-mac.sh`*
+- [x] C++20 enabled; warnings at `/W4` / `-Wall -Wextra`, treated as errors in CI — CI and `validate-mac.sh` pass `-DCMAKE_COMPILE_WARNING_AS_ERROR=ON`; MSVC builds are warning-free (clang side unverified)
+- [x] A trivial Catch2 test runs via `ctest` — locally and in CI
 
 ## Test plan
 

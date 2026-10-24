@@ -20,10 +20,10 @@ As a **reverse engineer**, I want a desktop window with a docking layout, menus 
 
 ## Acceptance criteria
 
-- [ ] App launches on both platforms and renders at the display refresh rate
-- [ ] Panels can be docked/undocked; layout restored on restart
-- [ ] Opening a ROM populates the ROM info panel
-- [ ] Window is crisp on Retina / 150% scaling displays
+- [ ] App launches on both platforms and renders at the display refresh rate — Windows: launches and renders with vsync (`app.smoke_*` CTest, local GPU); macOS *unverified*; refresh rate not measured
+- [x] Panels can be docked/undocked; layout restored on restart — layout persisted in `config.json`; `app.smoke_layout_restored` checks the panels are docked after a restart. Interactive drag/undock not exercised
+- [x] Opening a ROM populates the ROM info panel — smoke test loads a synthetic ROM; checked on a captured screenshot (Windows)
+- [ ] Window is crisp on Retina / 150% scaling displays — *unverified*: Hi-DPI code paths exist (content-scale sizing, `FontScaleDpi`, `NSHighResolutionCapable`) but only a 100% display was available
 
 ## Test plan
 
