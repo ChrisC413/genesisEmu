@@ -63,3 +63,35 @@ Typical flow: **pause → configure → begin trace → resume/step → stop tra
 - **Ring-buffer mode**: always-on capture of the last N (default 100,000) instructions in memory; dumpable after a breakpoint hits — answers "how did we get here?".
 - Traces can be started from a breakpoint action ("on hit: begin trace for 2 frames").
 - Text trace format is stable and documented so traces from two runs can be diffed with standard tools.
+
+### Text trace format (v1)
+
+Written by `gen::instrument::TraceWriter` (`gen_cli trace`, M02-06). The file starts with the line
+`# genesisEmu trace v1`; other lines starting with `#` are comments. Every other line is one record, in
+execution order, with LF line endings:
+
+```
+<frame> <line> <mclk> <cpu> <pc>  <words> <disassembly> | <register deltas> | <memory writes>
+0   0        280 M68K 000200  46FC 2700               move.w #$2700,sr                   | - | -
+0 224     766080 M68K 0002A4                          interrupt level 6                  | A7=00FFFDFA SR=2600 | W.W FFFDFC=0000 W.W FFFDFE=02A4 W.W FFFDFA=2000
+```
+
+| Field | Format |
+|-------|--------|
+| frame | decimal frame number (0 = first frame after reset) |
+| line | scanline the instruction started on, decimal, width 3 |
+| mclk | master clock at the start of the instruction, decimal, width 10 |
+| cpu | `M68K` (`Z80` from M04) |
+| pc | 6 hex digits, upper case |
+| words | opcode and extension words, 4 hex digits each, padded to 24 columns; empty for an interrupt entry |
+| disassembly | AS syntax from the M01-12 disassembler with tabs replaced by spaces, padded to 34 columns; `interrupt level N` for an interrupt entry (its record covers the stacking and vector fetch, and its PC is the interrupted PC) |
+| register deltas | registers whose value changed, in the order `D0-D7`, `A0-A7` (A7 = active stack pointer), `USP`/`SSP` (the inactive one), `SR`, as `NAME=hex`; `-` if none |
+| memory writes | bus writes in order as `W.<B/W> <addr>=<value>` (a long write appears as two word writes); at most 16, then `+N`; `-` if none |
+
+Filters: frame range (`--start-frame`, `--frames`), PC range (`--pc lo-hi`; interrupt entries are then
+omitted), first execution only (`--first`) and a record limit (`--max-records`).
+
+`tools/trace-diff.py ours.txt reference.txt` compares two traces record by record and prints the first
+divergence with the preceding records. It ignores the frame/line/mclk columns unless `--timing` is given;
+`--no-writes` and `--no-disasm` relax the comparison further. A reference emulator's trace has to be
+converted to this format first.

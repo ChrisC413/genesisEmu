@@ -4,20 +4,26 @@
 #include <charconv>
 #include <chrono>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include <nlohmann/json.hpp>
 
+#include "analysis/disasm68k/disasm68k.hpp"
 #include "common/logging.hpp"
 #include "common/rom_info.hpp"
 #include "core/cart/rom.hpp"
 #include "core/sched/machine.hpp"
 #include "core/state/state_hash.hpp"
 #include "core/version.hpp"
+#include "instrument/trace_writer.hpp"
 
 namespace {
 
@@ -44,10 +50,12 @@ Commands:
       --frame-log       print V-int count and PCs after every frame
 
   trace --rom <file> [--lock-on <file>] [--frames <N>] [--start-frame <S>]
-        [--pc <lo>-<hi>] [--out <file>]
+        [--pc <lo>-<hi>] [--first] [--max-records <N>] [--out <file>]
       Run N frames (default 1) and write a text instruction trace (format in
       docs/specs/08-debugger.md) of frames S..N-1 to --out (default stdout).
-      --pc  only log instructions whose PC is in [lo, hi] (hex)
+      --pc           only log instructions whose PC is in [lo, hi] (hex)
+      --first        log each PC only the first time it executes
+      --max-records  stop logging after N records
 
   help [command]
       Show this help.
@@ -72,6 +80,8 @@ struct Args {
     std::optional<std::string_view> out;
     bool json = false;
     bool frameLog = false;
+    bool firstOnly = false;
+    std::optional<std::string_view> maxRecords;
     bool help = false;
     bool version = false;
     std::string error;
@@ -106,6 +116,10 @@ Args parseArgs(int argc, char** argv) {
             value(a.pcRange);
         } else if (arg == "--out") {
             value(a.out);
+        } else if (arg == "--first") {
+            a.firstOnly = true;
+        } else if (arg == "--max-records") {
+            value(a.maxRecords);
         } else if (arg == "--frame-log") {
             a.frameLog = true;
         } else if (arg == "--json") {
@@ -294,6 +308,68 @@ int cmdRun(const Args& a) {
     return st.faults != 0 || cpu.halted ? kExitCheckFailure : kExitOk;
 }
 
+int cmdTrace(const Args& a) {
+    std::uint64_t frames = 1;
+    std::uint64_t startFrame = 0;
+    if (!parseU64(a.frames, frames) || !parseU64(a.startFrame, startFrame)) {
+        return usageError("--frames and --start-frame expect non-negative integers");
+    }
+    gen::instrument::TraceConfig config;
+    config.startFrame = startFrame;
+    config.endFrame = frames;
+    config.firstExecutionOnly = a.firstOnly;
+    if (!parseU64(a.maxRecords, config.maxRecords)) {
+        return usageError("--max-records expects a non-negative integer");
+    }
+    if (a.pcRange) {
+        const auto dash = a.pcRange->find('-');
+        std::uint64_t lo = 0;
+        std::uint64_t hi = 0;
+        if (dash == std::string_view::npos || !parseU64(a.pcRange->substr(0, dash), lo, 16) ||
+            !parseU64(a.pcRange->substr(dash + 1), hi, 16) || lo > hi) {
+            return usageError("--pc expects <lo>-<hi> in hex, e.g. 200-3FF");
+        }
+        config.pcRange = std::pair{static_cast<std::uint32_t>(lo), static_cast<std::uint32_t>(hi)};
+    }
+    LoadedMachine lm;
+    if (const int rc = loadMachine(a, lm); rc != kExitOk) {
+        return rc;
+    }
+    std::ofstream file;
+    std::ostream* out = &std::cout;
+    if (a.out) {
+        file.open(std::filesystem::path(std::string(*a.out)), std::ios::binary);
+        out = &file;
+        if (!file) {
+            std::fprintf(stderr, "gen_cli: cannot write '%.*s'\n", static_cast<int>(a.out->size()),
+                         a.out->data());
+            return kExitLoadError;
+        }
+    }
+    std::uint64_t records = 0;
+    {
+        gen::instrument::TraceWriter writer(
+            *lm.machine, out, config,
+            [](std::span<const std::uint8_t> bytes, std::uint32_t addr, int& length) {
+                const auto ins = gen::analysis::disasm68k::disassemble(bytes, addr);
+                length = ins.length;
+                return ins.text();
+            });
+        writer.attach();
+        lm.machine->run(gen::RunLimit::frames(frames));
+        writer.finish();
+        records = writer.records();
+    }
+    if (a.out) {
+        file.close();
+        std::printf("trace: %llu records, frames %llu-%llu, state hash %s\n",
+                    static_cast<unsigned long long>(records), static_cast<unsigned long long>(startFrame),
+                    static_cast<unsigned long long>(frames == 0 ? 0 : frames - 1),
+                    gen::state::hashToHex(lm.machine->stateHash()).c_str());
+    }
+    return lm.machine->stats().faults != 0 ? kExitCheckFailure : kExitOk;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -327,6 +403,9 @@ int main(int argc, char** argv) {
     }
     if (command == "run") {
         return cmdRun(a);
+    }
+    if (command == "trace") {
+        return cmdTrace(a);
     }
     return usageError("unknown command '" + std::string(command) + "'");
 }

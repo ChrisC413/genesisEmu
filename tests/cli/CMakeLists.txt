@@ -47,3 +47,15 @@ genesis_cli_test(help_command 0 "help" EXPECT "Commands:")
 genesis_cli_test(no_command 1 "" EXPECT "Usage:")
 genesis_cli_test(unknown_command 1 "frobnicate" EXPECT "unknown command")
 genesis_cli_test(unknown_option 1 "info|--bogus" EXPECT "unknown option")
+
+# M02-06: golden trace of the synthetic boot ROM and the trace-diff self-test (needs Python).
+find_package(Python3 COMPONENTS Interpreter QUIET)
+set(trace_defs -DCLI=$<TARGET_FILE:gen_cli> "-DROM=${rom_dir}/boot.bin"
+  "-DGOLDEN=${PROJECT_SOURCE_DIR}/tests/golden/boot_trace.txt" "-DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}")
+if(Python3_Interpreter_FOUND)
+  list(APPEND trace_defs "-DPYTHON=${Python3_EXECUTABLE}" "-DTRACE_DIFF=${PROJECT_SOURCE_DIR}/tools/trace-diff.py")
+endif()
+add_test(NAME cli.trace_golden COMMAND "${CMAKE_COMMAND}" ${trace_defs} -P "${CMAKE_CURRENT_SOURCE_DIR}/trace_test.cmake")
+set_tests_properties(cli.trace_golden PROPERTIES FIXTURES_REQUIRED cli_roms LABELS cli)
+genesis_cli_test(trace_requires_rom 1 "trace" EXPECT "requires --rom")
+genesis_cli_test(trace_bad_pc 1 "trace|--rom|${rom_dir}/boot.bin|--pc|zz" EXPECT "--pc expects")
