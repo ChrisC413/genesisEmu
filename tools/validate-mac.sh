@@ -55,7 +55,8 @@ run_step() {
 # test_summary <logfile>: "<passed> passed, <failed> failed, <skipped> skipped of <total>"
 test_summary() {
   local logfile="$1" total failed_count skipped
-  total=$(sed -n 's/.*tests failed out of \([0-9][0-9]*\).*/\1/p' "$logfile" | tail -n 1)
+  # CTest prints "100% tests passed, 0 tests failed out of N" (older) or "100% tests passed out of N".
+  total=$(sed -n 's/.*tests passed.* out of \([0-9][0-9]*\).*/\1/p' "$logfile" | tail -n 1)
   failed_count=$(sed -n 's/.*tests passed, \([0-9][0-9]*\) tests* failed out of.*/\1/p' "$logfile" | tail -n 1)
   skipped=$(grep -c '(Skipped)$' "$logfile" || true)
   if [[ -z "$total" ]]; then
