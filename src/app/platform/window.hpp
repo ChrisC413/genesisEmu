@@ -45,7 +45,9 @@ private:
     void* glContext_ = nullptr;
     float contentScale_ = 1.0f;
     bool sdlInitialised_ = false;
-    bool imguiInitialised_ = false;
+    bool imguiContext_ = false;
+    bool sdlBackend_ = false;
+    bool glBackend_ = false;
 };
 
 }  // namespace gen::app

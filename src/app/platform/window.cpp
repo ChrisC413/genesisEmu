@@ -1,6 +1,7 @@
 #include "app/platform/window.hpp"
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -66,12 +67,20 @@ bool Window::create(const WindowOptions& options, std::string& error) {
     }
     glContext_ = context;
     SDL_GL_MakeCurrent(window_, context);
+    // Some drivers (e.g. Windows' GDI fallback on headless machines) hand out a legacy context anyway.
+    const auto* glVersion = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+    if (glVersion == nullptr || std::atoi(glVersion) < 3) {
+        error = std::string("OpenGL 3.3 is not available (driver reports ") +
+                (glVersion != nullptr ? glVersion : "nothing") + ")";
+        return false;
+    }
     SDL_GL_SetSwapInterval(options.vsync ? 1 : 0);
     SDL_SetWindowPosition(window_, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_ShowWindow(window_);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    imguiContext_ = true;
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_DockingEnable;
     io.IniFilename = nullptr;  // the layout is persisted in the JSON config instead
@@ -81,9 +90,16 @@ bool Window::create(const WindowOptions& options, std::string& error) {
     style.ScaleAllSizes(contentScale_);
     style.FontScaleDpi = contentScale_;
 
-    ImGui_ImplSDL3_InitForOpenGL(window_, context);
-    ImGui_ImplOpenGL3_Init(kGlslVersion);
-    imguiInitialised_ = true;
+    if (!ImGui_ImplSDL3_InitForOpenGL(window_, context)) {
+        error = "Dear ImGui SDL3 backend initialisation failed";
+        return false;
+    }
+    sdlBackend_ = true;
+    if (!ImGui_ImplOpenGL3_Init(kGlslVersion)) {
+        error = "Dear ImGui OpenGL 3 backend initialisation failed";
+        return false;
+    }
+    glBackend_ = true;
     return true;
 }
 
@@ -142,11 +158,17 @@ void Window::logicalSize(int& width, int& height, bool& maximized) const {
 }
 
 void Window::destroy() {
-    if (imguiInitialised_) {
+    if (glBackend_) {
         ImGui_ImplOpenGL3_Shutdown();
+        glBackend_ = false;
+    }
+    if (sdlBackend_) {
         ImGui_ImplSDL3_Shutdown();
+        sdlBackend_ = false;
+    }
+    if (imguiContext_) {
         ImGui::DestroyContext();
-        imguiInitialised_ = false;
+        imguiContext_ = false;
     }
     if (glContext_ != nullptr) {
         SDL_GL_DestroyContext(static_cast<SDL_GLContext>(glContext_));

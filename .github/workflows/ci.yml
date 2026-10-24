@@ -44,15 +44,17 @@ jobs:
       fail-fast: false
       matrix:
         config: [debug, release]
-    env:
-      VCPKG_ROOT: ${{ github.workspace }}\..\vcpkg
-      VCPKG_BINARY_CACHE: ${{ github.workspace }}\..\vcpkg-binary-cache
     steps:
       - uses: actions/checkout@v5
 
       - name: Fetch and bootstrap vcpkg
         shell: pwsh
         run: |
+          # Outside the checkout, and without '..' segments (actions/cache rejects them).
+          $env:VCPKG_ROOT = "$env:RUNNER_TEMP\vcpkg"
+          $env:VCPKG_BINARY_CACHE = "$env:RUNNER_TEMP\vcpkg-binary-cache"
+          "VCPKG_ROOT=$env:VCPKG_ROOT" >> $env:GITHUB_ENV
+          "VCPKG_BINARY_CACHE=$env:VCPKG_BINARY_CACHE" >> $env:GITHUB_ENV
           git init -q "$env:VCPKG_ROOT"
           git -C "$env:VCPKG_ROOT" fetch -q --depth 1 https://github.com/microsoft/vcpkg $env:VCPKG_COMMIT
           git -C "$env:VCPKG_ROOT" checkout -q FETCH_HEAD
