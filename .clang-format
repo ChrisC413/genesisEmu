@@ -3,7 +3,7 @@ Language: Cpp
 BasedOnStyle: Google
 Standard: c++20
 IndentWidth: 4
-AccessModifierOffset: -2
+AccessModifierOffset: -4
 ColumnLimit: 110
 AllowShortFunctionsOnASingleLine: Inline
 AllowShortIfStatementsOnASingleLine: Never

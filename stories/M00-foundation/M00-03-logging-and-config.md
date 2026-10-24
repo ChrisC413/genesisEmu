@@ -1,7 +1,7 @@
 # M00-03 · Logging, configuration and platform paths
 
 **Milestone:** [M00 – Foundation](README.md)  
-**Status:** Draft  
+**Status:** In progress  
 **Depends on:** M00-01  
 **Spec refs:** [07-frontend-platform](../../docs/specs/07-frontend-platform.md#configuration-and-paths), [07-frontend-platform](../../docs/specs/07-frontend-platform.md#logging)
 

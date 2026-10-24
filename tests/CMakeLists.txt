@@ -2,6 +2,9 @@ find_package(Catch2 3 CONFIG REQUIRED)
 include(Catch)
 
 add_executable(gen_unit_tests
+  unit/config_test.cpp
+  unit/logging_test.cpp
+  unit/paths_test.cpp
   unit/skeleton_test.cpp
 )
 target_link_libraries(gen_unit_tests PRIVATE gen_analysis gen_common Catch2::Catch2WithMain)
