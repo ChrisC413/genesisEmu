@@ -80,7 +80,10 @@ def parse_ts(value: str) -> datetime:
     """Parse an ISO-8601 timestamp. Naive timestamps are taken as UTC."""
     if not isinstance(value, str) or not value:
         raise ValueError("ts must be a non-empty string")
-    dt = datetime.fromisoformat(value.strip())
+    text = value.strip()
+    if text[-1:] in ("Z", "z"):  # fromisoformat accepts "Z" only from Python 3.11
+        text = text[:-1] + "+00:00"
+    dt = datetime.fromisoformat(text)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
