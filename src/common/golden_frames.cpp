@@ -35,7 +35,8 @@ std::vector<GoldenGame> loadFrameGolden(const fs::path& path) {
         game.name = g.at("name").get<std::string>();
         game.sha1 = g.at("sha1").get<std::string>();
         for (const auto& c : g.at("checkpoints")) {
-            game.checkpoints.push_back({c.at("frame").get<std::uint64_t>(), c.at("frameHash").get<std::string>()});
+            game.checkpoints.push_back(
+                {c.at("frame").get<std::uint64_t>(), c.at("frameHash").get<std::string>()});
         }
         games.push_back(std::move(game));
     }
@@ -62,13 +63,15 @@ void cacheGoldenFrame(const std::string& sha1, const FrameCheckpoint& cp, const 
     const std::int32_t dims[2] = {vdp.frameWidth(), vdp.frameHeight()};
     out.write(reinterpret_cast<const char*>(dims), sizeof dims);
     for (int y = 0; y < vdp.frameHeight(); ++y) {
-        out.write(reinterpret_cast<const char*>(vdp.framebuffer() + static_cast<std::size_t>(y) * vdp::kFbWidth),
-                  static_cast<std::streamsize>(vdp.frameWidth()) * 4);
+        out.write(
+            reinterpret_cast<const char*>(vdp.framebuffer() + static_cast<std::size_t>(y) * vdp::kFbWidth),
+            static_cast<std::streamsize>(vdp.frameWidth()) * 4);
     }
 }
 
-std::vector<fs::path> writeFrameMismatch(const fs::path& dir, const std::string& stem, const std::string& sha1,
-                                         const FrameCheckpoint& cp, const vdp::Vdp& vdp) {
+std::vector<fs::path> writeFrameMismatch(const fs::path& dir, const std::string& stem,
+                                         const std::string& sha1, const FrameCheckpoint& cp,
+                                         const vdp::Vdp& vdp) {
     std::vector<fs::path> written;
     std::error_code ec;
     fs::create_directories(dir, ec);
@@ -84,8 +87,10 @@ std::vector<fs::path> writeFrameMismatch(const fs::path& dir, const std::string&
         dims[0] > vdp::kFbWidth || dims[1] > vdp::kFbHeight) {
         return written;  // no cached expected frame
     }
-    std::vector<std::uint32_t> expected(static_cast<std::size_t>(dims[0]) * static_cast<std::size_t>(dims[1]));
-    if (!in.read(reinterpret_cast<char*>(expected.data()), static_cast<std::streamsize>(expected.size() * 4))) {
+    std::vector<std::uint32_t> expected(static_cast<std::size_t>(dims[0]) *
+                                        static_cast<std::size_t>(dims[1]));
+    if (!in.read(reinterpret_cast<char*>(expected.data()),
+                 static_cast<std::streamsize>(expected.size() * 4))) {
         return written;
     }
     const fs::path exp = dir / (stem + "_expected.png");
@@ -100,7 +105,8 @@ std::vector<fs::path> writeFrameMismatch(const fs::path& dir, const std::string&
         for (int x = 0; x < dw; ++x) {
             const bool inA = x < w && y < h;
             const bool inE = x < dims[0] && y < dims[1];
-            const std::uint32_t a = inA ? vdp.framebuffer()[static_cast<std::size_t>(y) * vdp::kFbWidth + x] : 0;
+            const std::uint32_t a =
+                inA ? vdp.framebuffer()[static_cast<std::size_t>(y) * vdp::kFbWidth + x] : 0;
             const std::uint32_t e = inE ? expected[static_cast<std::size_t>(y) * dims[0] + x] : 0;
             std::uint32_t& d = diff[static_cast<std::size_t>(y) * dw + x];
             if (inA != inE || a != e) {

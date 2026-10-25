@@ -37,8 +37,8 @@ void cacheGoldenFrame(const std::string& sha1, const FrameCheckpoint& cp, const 
 
 // Writes <dir>/<stem>_actual.png and, when the expected frame is in the cache, <stem>_expected.png and
 // <stem>_diff.png (differing pixels in red over the dimmed actual frame). Returns the files written.
-std::vector<std::filesystem::path> writeFrameMismatch(const std::filesystem::path& dir, const std::string& stem,
-                                                      const std::string& sha1, const FrameCheckpoint& cp,
-                                                      const vdp::Vdp& vdp);
+std::vector<std::filesystem::path> writeFrameMismatch(const std::filesystem::path& dir,
+                                                      const std::string& stem, const std::string& sha1,
+                                                      const FrameCheckpoint& cp, const vdp::Vdp& vdp);
 
 }  // namespace gen::common

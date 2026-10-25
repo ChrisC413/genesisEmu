@@ -24,7 +24,8 @@ TEST_CASE("Golden frame checkpoints of the SEGA logo, title screens and attract 
         SKIP("GENESIS_ROM_DIR is not set or not a directory");
     }
     const auto roms = test::scanRoms(*romDir);
-    const auto golden = common::loadFrameGolden(fs::path(GENESIS_SOURCE_DIR) / "tests" / "golden" / "m03_frames.json");
+    const auto golden =
+        common::loadFrameGolden(fs::path(GENESIS_SOURCE_DIR) / "tests" / "golden" / "m03_frames.json");
     const fs::path diffDir = fs::temp_directory_path() / "genesisEmu-frame-diffs";
     int tested = 0;
     for (const auto& game : golden) {
@@ -53,7 +54,8 @@ TEST_CASE("Golden frame checkpoints of the SEGA logo, title screens and attract 
                     common::cacheGoldenFrame(game.sha1, cp, m.vdp());
                 } else {
                     const auto stem = game.sha1.substr(0, 8) + "_frame_" + std::to_string(cp.frame);
-                    for (const auto& file : common::writeFrameMismatch(diffDir, stem, game.sha1, cp, m.vdp())) {
+                    for (const auto& file :
+                         common::writeFrameMismatch(diffDir, stem, game.sha1, cp, m.vdp())) {
                         UNSCOPED_INFO("wrote " << common::toUtf8(file));
                     }
                 }
