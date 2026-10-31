@@ -1,0 +1,7 @@
+{
+  "name": "genesisEmu",
+  "github": {"repo": "ChrisC413/genesisEmu", "visibility": "private"},
+  "status_dir": ".agent-status",
+  "stories": {"root": "stories", "milestone_glob": "*", "story_glob": "*-[0-9][0-9]-*.md"},
+  "issues": {"mode": "off"}
+}
