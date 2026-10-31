@@ -1,7 +1,7 @@
 # M00-03 · Logging, configuration and platform paths
 
 **Milestone:** [M00 – Foundation](README.md)  
-**Status:** Draft  
+**Status:** In progress  
 **Depends on:** M00-01  
 **Spec refs:** [07-frontend-platform](../../docs/specs/07-frontend-platform.md#configuration-and-paths), [07-frontend-platform](../../docs/specs/07-frontend-platform.md#logging)
 
@@ -18,10 +18,10 @@ As a **developer**, I want structured logging and a JSON config stored in the ri
 
 ## Acceptance criteria
 
-- [ ] Missing config → defaults written on first run
-- [ ] Unknown keys preserved on save
-- [ ] Log level per subsystem configurable from the config file
-- [ ] Paths resolve correctly on both platforms
+- [x] Missing config → defaults written on first run — unit test `[config]`, and the app smoke test with a fresh `GENESISEMU_HOME`
+- [x] Unknown keys preserved on save — unit test `[config]`
+- [x] Log level per subsystem configurable from the config file — `log.subsystems` in the config; unit test `[logging]`
+- [ ] Paths resolve correctly on both platforms — Windows verified (real `%APPDATA%` test); the macOS rule is unit-tested on Windows but *not yet run on a Mac*
 
 ## Test plan
 
