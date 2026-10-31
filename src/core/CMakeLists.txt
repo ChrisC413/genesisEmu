@@ -4,6 +4,7 @@ add_library(gen_core STATIC
   bus/system_bus.cpp
   cart/known_roms.cpp
   cart/rom.cpp
+  cart/sram.cpp
   m68k/m68k.cpp
   m68k/ops_arith.cpp
   m68k/ops_bcd.cpp

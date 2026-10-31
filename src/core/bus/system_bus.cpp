@@ -27,14 +27,33 @@ void SystemBus::attach(const std::vector<std::uint8_t>& rom, m68k::M68k& cpu, bo
     rom_ = &rom;
     cpu_ = &cpu;
     tmss_ = tmss;
+    buildPages();
+}
+
+void SystemBus::setCartDevices(std::vector<cart::ICartDevice*> devices) {
+    devices_ = std::move(devices);
+    buildPages();
+}
+
+void SystemBus::buildPages() {
     pages_.fill(PageKind::Unmapped);
     fastRead.fill(nullptr);
     fastWrite.fill(nullptr);
     // Cartridge: $000000-$3FFFFF, only the pages the image covers (the Machine pads it to 64 KB pages).
-    const std::size_t romPages = std::min<std::size_t>(rom.size() >> 16, 0x40);
+    const std::size_t romPages = rom_ != nullptr ? std::min<std::size_t>(rom_->size() >> 16, 0x40) : 0;
     for (std::size_t p = 0; p < romPages; ++p) {
         pages_[p] = PageKind::Rom;
-        fastRead[p] = rom.data() + (p << 16);
+        fastRead[p] = rom_->data() + (p << 16);
+    }
+    // Pages a device overlays lose their fast path and go through the chain.
+    for (const cart::ICartDevice* d : devices_) {
+        if (d->memFirst() > d->memLast()) {
+            continue;
+        }
+        for (std::uint32_t p = d->memFirst() >> 16; p <= (d->memLast() >> 16) && p < 0x40; ++p) {
+            pages_[p] = PageKind::Cart;
+            fastRead[p] = nullptr;
+        }
     }
     pages_[0xA0] = PageKind::Z80;
     pages_[0xA1] = PageKind::Io;
@@ -47,6 +66,31 @@ void SystemBus::attach(const std::vector<std::uint8_t>& rom, m68k::M68k& cpu, bo
         fastRead[p] = state_.ram.data();
         fastWrite[p] = state_.ram.data();
     }
+}
+
+std::uint8_t SystemBus::cartRead8(std::uint32_t addr) {
+    std::uint8_t v = 0;
+    for (cart::ICartDevice* d : devices_) {
+        if (d->memRead(addr, v)) {
+            return v;
+        }
+    }
+    if (rom_ != nullptr && addr < rom_->size()) {
+        return (*rom_)[addr];
+    }
+    const std::uint16_t ob = openBus();
+    return static_cast<std::uint8_t>((addr & 1) != 0 ? ob : ob >> 8);
+}
+
+bool SystemBus::cartWrite8(std::uint32_t addr, std::uint8_t value) {
+    bool consumed = false;
+    for (cart::ICartDevice* d : devices_) {
+        if (d->memWrite(addr, value)) {
+            consumed = true;
+            break;
+        }
+    }
+    return consumed;
 }
 
 void SystemBus::reset() {
@@ -104,6 +148,8 @@ std::uint8_t SystemBus::read8(std::uint32_t addr) {
         case PageKind::Rom:
         case PageKind::Ram:
             return fastRead[addr >> 16][addr & 0xFFFF];
+        case PageKind::Cart:
+            return cartRead8(addr);
         case PageKind::Z80:
             return static_cast<std::uint8_t>(readZ80(addr, 1));
         case PageKind::Io:
@@ -128,6 +174,8 @@ std::uint16_t SystemBus::read16(std::uint32_t addr) {
             const std::uint8_t* p = fastRead[addr >> 16] + (addr & 0xFFFF);
             return static_cast<std::uint16_t>((p[0] << 8) | p[1]);
         }
+        case PageKind::Cart:
+            return static_cast<std::uint16_t>((cartRead8(addr) << 8) | cartRead8(addr + 1));
         case PageKind::Z80:
             return readZ80(addr, 2);
         case PageKind::Io:
@@ -148,7 +196,10 @@ void SystemBus::write8(std::uint32_t addr, std::uint8_t value) {
             state_.ram[addr & 0xFFFF] = value;
             return;
         case PageKind::Rom:
-            report(BusIssue::RomWrite, addr, 1, value, true);
+        case PageKind::Cart:
+            if (!cartWrite8(addr, value)) {
+                report(BusIssue::RomWrite, addr, 1, value, true);
+            }
             return;
         case PageKind::Z80:
             writeZ80(addr, value, 1);
@@ -173,8 +224,14 @@ void SystemBus::write16(std::uint32_t addr, std::uint16_t value) {
             state_.ram[(addr & 0xFFFF) + 1] = static_cast<std::uint8_t>(value);
             return;
         case PageKind::Rom:
-            report(BusIssue::RomWrite, addr, 2, value, true);
+        case PageKind::Cart: {
+            const bool hi = cartWrite8(addr, static_cast<std::uint8_t>(value >> 8));
+            const bool lo = cartWrite8(addr + 1, static_cast<std::uint8_t>(value));
+            if (!hi && !lo) {
+                report(BusIssue::RomWrite, addr, 2, value, true);
+            }
             return;
+        }
         case PageKind::Z80:
             // Word writes reach the Z80 bus as their high byte.
             writeZ80(addr, static_cast<std::uint8_t>(value >> 8), 2);
@@ -244,6 +301,16 @@ std::uint16_t SystemBus::readIo(std::uint32_t addr, std::uint8_t size) {
         (off >= 0x4000 && off < 0x4004)) {
         return byteOf(ob);  // write-only registers
     }
+    if (off >= 0x3000 && off < 0x3100) {
+        // /TIME: the cartridge device chain. A word read returns the odd register in the low byte.
+        std::uint8_t v = 0;
+        const auto reg = static_cast<std::uint8_t>(size == 2 ? (off | 1) : off);
+        for (cart::ICartDevice* d : devices_) {
+            if (d->timeRead(reg, v)) {
+                return size == 2 ? static_cast<std::uint16_t>((ob & 0xFF00) | v) : v;
+            }
+        }
+    }
     report(BusIssue::Unmapped, addr, size, 0, false);
     return byteOf(ob);
 }
@@ -278,8 +345,15 @@ void SystemBus::writeIo(std::uint32_t addr, std::uint16_t value, std::uint8_t si
         }
         return;
     }
-    if (off == 0x30F1 && size == 1) {
-        state_.sramControl = static_cast<std::uint8_t>(value);  // SRAM itself arrives in M04-08
+    if (off >= 0x3000 && off < 0x3100) {
+        // /TIME: the cartridge device chain. A word write puts the odd register in the low byte.
+        const auto reg = static_cast<std::uint8_t>(size == 2 ? (off | 1) : off);
+        for (cart::ICartDevice* d : devices_) {
+            if (d->timeWrite(reg, static_cast<std::uint8_t>(value))) {
+                return;
+            }
+        }
+        report(BusIssue::Unmapped, addr, size, value, true);  // unclaimed /TIME register
         return;
     }
     if (off >= 0x4000 && off < 0x4004) {
@@ -336,7 +410,8 @@ void SystemBus::writeVdp(std::uint32_t addr, std::uint16_t value, std::uint8_t s
     }
     if (port >= 0x10 && port < 0x18) {
         if (size == 2 || (addr & 1) != 0) {
-            z80_.psgWrite(static_cast<std::uint8_t>(value), CpuId::M68k, cpu_ != nullptr ? cpu_->currentPc() : 0);
+            z80_.psgWrite(static_cast<std::uint8_t>(value), CpuId::M68k,
+                          cpu_ != nullptr ? cpu_->currentPc() : 0);
         }
         return;
     }

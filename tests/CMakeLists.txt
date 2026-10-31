@@ -12,9 +12,11 @@ genesis_set_warnings(gen_test_support)
 
 add_executable(gen_unit_tests
   unit/bus_test.cpp
+  unit/cart_device_test.cpp
   unit/config_test.cpp
   unit/disasm68k_test.cpp
   unit/hash_test.cpp
+  unit/input_script_test.cpp
   unit/io_test.cpp
   unit/logging_test.cpp
   unit/machine_test.cpp
@@ -38,6 +40,7 @@ add_executable(gen_rom_tests
   roms/frame_test.cpp
   roms/rom_scan.cpp
   roms/rom_identify_test.cpp
+  roms/script_test.cpp
 )
 target_link_libraries(gen_rom_tests PRIVATE gen_common Catch2::Catch2WithMain)
 target_compile_definitions(gen_rom_tests PRIVATE GENESIS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")

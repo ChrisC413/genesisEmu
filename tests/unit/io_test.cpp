@@ -1,8 +1,8 @@
 // Controller port protocol (M04-01): the read sequences games use for 3- and 6-button pads.
 
-#include <catch2/catch_test_macros.hpp>
-
 #include "core/bus/io.hpp"
+
+#include <catch2/catch_test_macros.hpp>
 
 using namespace gen::bus;
 

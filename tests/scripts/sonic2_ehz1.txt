@@ -1,0 +1,18 @@
+# Sonic 2 REV01: start a 1-player game from the title screen and run right through the start of Emerald Hill
+# Zone act 1. Scripted-input regression (M04-03 / M04-09, spec 13). Hashes only; recorded with --update-script.
+# frame  port  buttons
+rom 8bca5dcef1af3e00098666fd892dc1c2a76333f9
+0        1     -
+950      1     START
+960      1     -
+1100     1     RIGHT
+1200     1     RIGHT+C
+1210     1     RIGHT
+1320     1     RIGHT+C
+1330     1     RIGHT
+1500     1     -
+checkpoint 970 frame_hash 042a2b90cefdfa35
+checkpoint 1100 frame_hash 090d2fd6e59ff11d
+checkpoint 1300 frame_hash c2f554462b66e2f8
+checkpoint 1500 frame_hash 079aed91a575ebea
+checkpoint 1500 state_hash 6f482a461c97330a

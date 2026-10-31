@@ -10,6 +10,8 @@
 
 #include "core/bus/io.hpp"
 #include "core/bus/system_bus.hpp"
+#include "core/cart/cart_device.hpp"
+#include "core/cart/sram.hpp"
 #include "core/hooks.hpp"
 #include "core/m68k/m68k.hpp"
 #include "core/vdp/vdp.hpp"
@@ -85,8 +87,8 @@ public:
     void hardReset();
 
     RunResult run(RunLimit limit);
-    // Exactly one instruction on `cpu`; line / frame boundaries it crosses are processed. A Z80 step while the
-    // Z80 is held (BUSREQ / RESET) executes nothing and reports 0 instructions.
+    // Exactly one instruction on `cpu`; line / frame boundaries it crosses are processed. A Z80 step while
+    // the Z80 is held (BUSREQ / RESET) executes nothing and reports 0 instructions.
     RunResult step(CpuId cpu);
 
     // Controller input (M04-01): the buttons (bus::PadButton mask) of pad `port` (0 or 1). Latched into the
@@ -122,6 +124,12 @@ public:
     std::uint64_t z80Mclk() const { return z80Mclk_; }  // master clock the Z80 has run up to
     const std::vector<std::uint8_t>& rom() const { return rom_; }
 
+    // Cartridge device chain (M04-08). The SRAM controller is created from the header's SRAM declaration
+    // (for a lock-on image, the locked-on cartridge's header) and is null when none is declared.
+    void addCartDevice(std::unique_ptr<cart::ICartDevice> device);
+    cart::SramDevice* sram() { return sram_; }
+    const cart::SramDevice* sram() const { return sram_; }
+
     const MachineStats& stats() const { return stats_; }
 
     // XXH3-64 over every component's state (CPU, RAM, VDP, I/O, Z80 side, scheduler).
@@ -152,6 +160,8 @@ private:
     int line_ = 0;
     MachineStats stats_;
     std::array<std::uint16_t, 2> pendingInput_{};
+    std::vector<std::unique_ptr<cart::ICartDevice>> devices_;
+    cart::SramDevice* sram_ = nullptr;
 };
 
 }  // namespace gen

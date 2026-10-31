@@ -1,6 +1,6 @@
 #pragma once
-// Sound-chip register write log (spec 06 A-2): a ring buffer of every YM2612 / PSG write with the frame, line,
-// CPU and PC that made it. Used to reverse engineer the SMPS drivers; exported as CSV (M05-05).
+// Sound-chip register write log (spec 06 A-2): a ring buffer of every YM2612 / PSG write with the frame,
+// line, CPU and PC that made it. Used to reverse engineer the SMPS drivers; exported as CSV (M05-05).
 
 #include <cstdint>
 #include <string>
@@ -35,7 +35,8 @@ public:
     void setEnabled(bool on) { enabled_ = on; }
     bool enabled() const { return enabled_; }
 
-    void push(CpuId cpu, Chip chip, std::uint8_t port, std::uint8_t reg, std::uint8_t value, std::uint32_t pc) {
+    void push(CpuId cpu, Chip chip, std::uint8_t port, std::uint8_t reg, std::uint8_t value,
+              std::uint32_t pc) {
         if (!enabled_ || entries_.empty()) {
             return;
         }

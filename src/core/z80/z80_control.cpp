@@ -88,11 +88,13 @@ void Z80Control::write68k(std::uint16_t addr, std::uint8_t value, std::uint32_t 
 // ---- Z80 side
 // ----------------------------------------------------------------------------------------------
 
-void Z80Control::reportWindow(AccessKind kind, std::uint16_t addr, std::uint32_t m68kAddr, std::uint8_t value) {
+void Z80Control::reportWindow(AccessKind kind, std::uint16_t addr, std::uint32_t m68kAddr,
+                              std::uint8_t value) {
     waitCycles += timing_.z80Wait;
     m68kStall_ += timing_.m68kStall;
     if (hooks_ != nullptr && hooks_->onZ80Window != nullptr) {
-        hooks_->onZ80Window(hooks_->ctx, kind, addr, m68kAddr, value, cpu_ != nullptr ? cpu_->currentPc() : 0);
+        hooks_->onZ80Window(hooks_->ctx, kind, addr, m68kAddr, value,
+                            cpu_ != nullptr ? cpu_->currentPc() : 0);
     }
 }
 

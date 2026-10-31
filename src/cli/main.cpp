@@ -8,6 +8,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -19,10 +21,12 @@
 
 #include "analysis/disasm68k/disasm68k.hpp"
 #include "common/golden_frames.hpp"
+#include "common/input_script.hpp"
 #include "common/logging.hpp"
 #include "common/paths.hpp"
 #include "common/png.hpp"
 #include "common/rom_info.hpp"
+#include "common/sram_file.hpp"
 #include "core/cart/rom.hpp"
 #include "core/sched/machine.hpp"
 #include "core/state/state_hash.hpp"
@@ -63,6 +67,15 @@ Commands:
                         VRAM, CRAM, VSRAM) for offline inspection
       --reg-log <file>  write the sound-chip register write log (YM2612 / PSG,
                         last 65536 writes) as CSV
+      --input <file>    scripted input (spec 13): button lines and checkpoints;
+                        runs at least to the script's last frame and prints
+                        every checkpoint hash
+      --check           (with --input, no value) fail with exit 3 when a
+                        checkpoint mismatches or has no expected hash
+      --update-script   (with --input) write the computed hashes into the script
+      --sram <file>     load battery SRAM from <file> before the run (if it
+                        exists) and save it there afterwards
+      --pad <3|6>       controller type of both ports (default 3)
 
   trace --rom <file> [--lock-on <file>] [--frames <N>] [--start-frame <S>]
         [--pc <lo>-<hi>] [--first] [--max-records <N>] [--out <file>]
@@ -101,6 +114,11 @@ struct Args {
     std::optional<std::string_view> dumpFrames;
     std::optional<std::string_view> check;
     std::optional<std::string_view> regLog;
+    std::optional<std::string_view> input;
+    std::optional<std::string_view> sram;
+    std::optional<std::string_view> pad;
+    bool checkScript = false;
+    bool updateScript = false;
     bool help = false;
     bool version = false;
     std::string error;
@@ -140,7 +158,19 @@ Args parseArgs(int argc, char** argv) {
         } else if (arg == "--max-records") {
             value(a.maxRecords);
         } else if (arg == "--check") {
-            value(a.check);
+            if (i + 1 >= argc || std::string_view(argv[i + 1]).starts_with("--")) {
+                a.checkScript = true;  // scripted-input checkpoints
+            } else {
+                value(a.check);
+            }
+        } else if (arg == "--input") {
+            value(a.input);
+        } else if (arg == "--sram") {
+            value(a.sram);
+        } else if (arg == "--pad") {
+            value(a.pad);
+        } else if (arg == "--update-script") {
+            a.updateScript = true;
         } else if (arg == "--dump-frames") {
             value(a.dumpFrames);
         } else if (arg == "--reg-log") {
@@ -313,6 +343,44 @@ int cmdRun(const Args& a) {
     }
     const std::filesystem::path outDir = a.out ? gen::common::fromUtf8(*a.out) : std::filesystem::path(".");
     gen::Machine& m = *lm.machine;
+    if (a.pad) {
+        if (*a.pad != "3" && *a.pad != "6") {
+            return usageError("--pad expects 3 or 6");
+        }
+        const auto type = *a.pad == "6" ? gen::bus::PadType::SixButton : gen::bus::PadType::ThreeButton;
+        m.setPadType(0, type);
+        m.setPadType(1, type);
+    }
+    if (a.sram && m.sram() != nullptr && gen::common::loadSram(*m.sram(), gen::common::fromUtf8(*a.sram))) {
+        std::printf("sram: loaded %s\n", std::string(*a.sram).c_str());
+    }
+    std::optional<gen::common::InputScript> script;
+    std::string scriptText;
+    if (a.input) {
+        std::ifstream in(gen::common::fromUtf8(*a.input), std::ios::binary);
+        if (!in) {
+            std::fprintf(stderr, "gen_cli: cannot read %s\n", std::string(*a.input).c_str());
+            return kExitLoadError;
+        }
+        scriptText.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+        std::string error;
+        script = gen::common::parseInputScript(scriptText, error);
+        if (!script) {
+            std::fprintf(stderr, "gen_cli: %s: %s\n", std::string(*a.input).c_str(), error.c_str());
+            return kExitUsage;
+        }
+        frames = std::max(frames, script->lastFrame());
+        if (!script->romSha1.empty() && script->romSha1 != lm.sha1) {
+            std::fprintf(stderr, "gen_cli: warning: the script is for SHA-1 %s, the image is %s\n",
+                         script->romSha1.c_str(), lm.sha1.c_str());
+        }
+    }
+    std::optional<gen::common::InputPlayer> player;
+    if (script) {
+        player.emplace(*script);
+    }
+    std::map<std::size_t, std::string> scriptHashes;
+    int scriptFailures = 0;
     DmaCounts dma;
     gen::Hooks hooks;
     hooks.ctx = &dma;
@@ -344,10 +412,45 @@ int cmdRun(const Args& a) {
         }
     }
     int mismatches = 0;
-    if (a.frameLog || !dumps.empty() || !checks.empty()) {
+    if (a.frameLog || !dumps.empty() || !checks.empty() || script) {
         while (m.frame() < frames) {
             const std::uint64_t f = m.frame();
+            if (player) {
+                player->beforeFrame(m);
+            }
             r.instructions += m.run(gen::RunLimit::frames(1)).instructions;
+            if (script) {
+                for (const auto& c : script->checkpoints) {
+                    if (c.frame <= f || c.frame > m.frame()) {
+                        continue;  // a DMA can carry one run past a frame boundary
+                    }
+                    std::string got;
+                    if (c.kind == gen::common::CheckKind::FrameHash) {
+                        got = gen::state::hashToHex(m.vdp().frameHash());
+                    } else if (c.kind == gen::common::CheckKind::StateHash) {
+                        got = gen::state::hashToHex(m.stateHash());
+                    } else {
+                        std::printf("checkpoint %llu %s: not supported yet\n",
+                                    static_cast<unsigned long long>(c.frame), gen::common::toString(c.kind));
+                        continue;
+                    }
+                    scriptHashes[c.line] = got;
+                    const char* verdict = !c.expected          ? "(no expected hash)"
+                                          : *c.expected == got ? "ok"
+                                                               : "MISMATCH";
+                    if (a.checkScript && (!c.expected || *c.expected != got)) {
+                        ++scriptFailures;
+                    }
+                    std::printf("checkpoint %llu %s %s %s\n", static_cast<unsigned long long>(c.frame),
+                                gen::common::toString(c.kind), got.c_str(), verdict);
+                    if (c.expected && *c.expected != got && c.kind == gen::common::CheckKind::FrameHash) {
+                        const auto& v = m.vdp();
+                        const auto path = outDir / ("checkpoint_" + std::to_string(c.frame) + ".png");
+                        gen::common::writePng(path, v.framebuffer(), v.frameWidth(), v.frameHeight(),
+                                              gen::vdp::kFbWidth);
+                    }
+                }
+            }
             if (a.frameLog) {
                 std::printf("frame %llu: V-ints %u, last V-int from PC $%06X, PC $%06X, frame hash %s\n",
                             static_cast<unsigned long long>(f), m.stats().vintsLastFrame,
@@ -459,11 +562,28 @@ int cmdRun(const Args& a) {
                         e.write ? "write" : "read", e.size == 1 ? 'b' : 'w', e.addr, e.value, e.pc);
         }
     }
+    if (a.sram && m.sram() != nullptr) {
+        if (!gen::common::saveSram(*m.sram(), gen::common::fromUtf8(*a.sram))) {
+            std::fprintf(stderr, "gen_cli: cannot write %s\n", std::string(*a.sram).c_str());
+            return kExitLoadError;
+        }
+    }
+    if (a.updateScript && script) {
+        std::ofstream outScript(gen::common::fromUtf8(*a.input), std::ios::binary);
+        outScript << gen::common::updateScriptHashes(scriptText, scriptHashes);
+        std::printf("updated %zu checkpoint hash(es) in %s\n", scriptHashes.size(),
+                    std::string(*a.input).c_str());
+    }
+    if (scriptFailures != 0) {
+        std::printf("%d scripted checkpoint failure(s)\n", scriptFailures);
+        mismatches += scriptFailures;
+    }
     if (a.regLog) {
         std::ofstream csv(gen::common::fromUtf8(*a.regLog), std::ios::binary);
         csv << m.z80().log().toCsv();
         if (!csv) {
-            std::fprintf(stderr, "gen_cli: cannot write %.*s\n", static_cast<int>(a.regLog->size()), a.regLog->data());
+            std::fprintf(stderr, "gen_cli: cannot write %.*s\n", static_cast<int>(a.regLog->size()),
+                         a.regLog->data());
             return kExitLoadError;
         }
     }

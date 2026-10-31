@@ -44,6 +44,19 @@ Machine::Machine(std::vector<std::uint8_t> rom, std::uint8_t headerRegions, cons
     z80_.attach(z80cpu_.get(), bus_.get(), &hooks_);
     z80_.setWindowTiming(config_.z80Window);
     bus_->setZ80Sync(&Machine::syncZ80, this);
+    // SRAM from the header at $1B0; a lock-on image declares it in the locked-on cartridge's header.
+    if (rom_.size() >= cart::kMinRomSize) {
+        cart::SramDeclaration sram = cart::parseHeader(rom_).sram;
+        if (!sram.declared && rom_.size() > 0x200000 + cart::kMinRomSize &&
+            std::equal(rom_.begin() + 0x200100, rom_.begin() + 0x200104, "SEGA")) {
+            sram = cart::parseHeader(std::span(rom_).subspan(0x200000)).sram;
+        }
+        if (sram.declared && sram.range.end >= sram.range.start) {
+            auto device = std::make_unique<cart::SramDevice>(sram, rom_.size());
+            sram_ = device.get();
+            addCartDevice(std::move(device));
+        }
+    }
     vdp_.setHooks(&hooks_);
     hardReset();
 }
@@ -59,6 +72,9 @@ void Machine::hardReset() {
     bus_->clearIssues();
     io_.reset(region_, pal_, config_.tmss);
     io_.state().buttons = pendingInput_;
+    for (const auto& d : devices_) {
+        d->reset();
+    }
     z80_.reset();
     z80_.log().clear();
     z80cpu_->state() = z80::Z80State{};
@@ -71,6 +87,15 @@ void Machine::hardReset() {
     clock_.cpuMclk = static_cast<std::uint64_t>(cycles) * kM68kDivider;
     vdp_.beginLine(0);
     bus_->updateIrq();
+}
+
+void Machine::addCartDevice(std::unique_ptr<cart::ICartDevice> device) {
+    devices_.push_back(std::move(device));
+    std::vector<cart::ICartDevice*> chain;
+    for (const auto& d : devices_) {
+        chain.push_back(d.get());
+    }
+    bus_->setCartDevices(std::move(chain));
 }
 
 void Machine::setHooks(const Hooks& hooks) {
@@ -245,7 +270,6 @@ std::uint64_t Machine::stateHash() const {
     h.tag("BUS ");
     h.bytes(b.ram);
     h.u32(b.tmssRegister);
-    h.u8(b.sramControl);
 
     const vdp::VdpState& v = vdp_.state();
     h.tag("VDP ");
@@ -320,6 +344,10 @@ std::uint64_t Machine::stateHash() const {
         h.boolean(flag);
     }
     h.u64(z80Mclk_);
+
+    for (const auto& d : devices_) {
+        d->hashState(h);
+    }
 
     h.tag("SCHD");
     h.u64(frame_);
