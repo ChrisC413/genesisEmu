@@ -121,6 +121,11 @@ public:
     void setTasWriteback(bool enabled);
 
     Flow lastFlow() const;
+    // Vector number of the exception, trap or interrupt the last step entered (e.g. 3 = address error,
+    // 30 = level-6 autovector), or -1 when it entered none. Reset is not reported.
+    int lastException() const;
+    // Address of the instruction being executed; valid inside bus callbacks during step().
+    std::uint32_t currentPc() const;
 
     // Re-fills IR/IRC from memory at state().pc (after editing PC from a debugger or test).
     void refillPrefetch();

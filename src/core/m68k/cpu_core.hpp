@@ -131,6 +131,7 @@ struct CpuCore {
     bool skipBreak = false;
     bool broke = false;
     Flow flow = Flow::Sequential;
+    int lastVector = -1;  // exception vector entered by the current step, or -1
 
     // ---- Bus primitives
     // -------------------------------------------------------------------------------------

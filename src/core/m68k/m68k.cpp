@@ -44,6 +44,7 @@ void addressError(CpuCore& c, const AddressErrorTrap& e, std::uint16_t opcode, i
         c.writeWord(sp + 4, static_cast<std::uint16_t>(e.addr));
         c.writeWord(sp + 2, static_cast<std::uint16_t>(e.addr >> 16));
         c.writeWord(sp + 0, status);
+        c.lastVector = kVectorAddressError;
         c.jump(c.read<4>(kVectorAddressError * 4));
     } catch (const AddressErrorTrap&) {
         c.s.halted = true;  // double bus fault
@@ -67,6 +68,7 @@ void CpuCore::exception(int vector, std::uint32_t stackedPc, int idleCycles) {
     idle(idleCycles);
     push32(stackedPc);
     push16(oldSr);
+    lastVector = vector;
     jump(read<4>(static_cast<std::uint32_t>(vector) * 4));
     flow = Flow::Exception;
 }
@@ -152,6 +154,7 @@ int M68k::step() {
     c.cycles = 0;
     c.broke = false;
     c.flow = Flow::Sequential;
+    c.lastVector = -1;
     if (c.s.halted) {
         c.flow = Flow::Stopped;
         return 4;
@@ -181,6 +184,7 @@ int M68k::step() {
             c.idle(16);  // includes the IACK cycle
             c.push32(stackedPc);
             c.push16(oldSr);
+            c.lastVector = vector;
             c.jump(c.read<4>(static_cast<std::uint32_t>(vector) * 4));
             c.flow = Flow::Exception;
         } catch (const AddressErrorTrap&) {
@@ -256,6 +260,14 @@ void M68k::setTasWriteback(bool enabled) {
 
 Flow M68k::lastFlow() const {
     return core_->flow;
+}
+
+int M68k::lastException() const {
+    return core_->lastVector;
+}
+
+std::uint32_t M68k::currentPc() const {
+    return core_->instrPc;
 }
 
 void M68k::refillPrefetch() {

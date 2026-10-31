@@ -11,6 +11,7 @@ none are vendored in this repository yet.
 | spdlog | `gen_common` (logging) | MIT | <https://github.com/gabime/spdlog> |
 | {fmt} (via spdlog) | `gen_common` | MIT | <https://github.com/fmtlib/fmt> |
 | nlohmann/json | `gen_common` (configuration) | MIT | <https://github.com/nlohmann/json> |
+| xxHash | `gen_core` (state hashes, XXH3-64) | BSD-2-Clause | <https://github.com/Cyan4973/xxHash> |
 | Catch2 | tests only (not distributed) | BSL-1.0 | <https://github.com/catchorg/Catch2> |
 
 Dependencies listed in the architecture spec but not yet used (SQLite, libcurl, xxHash, ImPlot, ymfm) will
