@@ -15,6 +15,7 @@ add_executable(gen_unit_tests
   unit/cart_device_test.cpp
   unit/config_test.cpp
   unit/disasm68k_test.cpp
+  unit/disasmz80_test.cpp
   unit/hash_test.cpp
   unit/input_script_test.cpp
   unit/io_test.cpp
@@ -94,6 +95,14 @@ target_compile_definitions(gen_disasm_roundtrip PRIVATE GENESIS_SOURCE_DIR="${PR
 genesis_set_warnings(gen_disasm_roundtrip)
 add_test(NAME analysis.disasm_roundtrip COMMAND gen_disasm_roundtrip)
 set_tests_properties(analysis.disasm_roundtrip PROPERTIES LABELS analysis SKIP_RETURN_CODE 4)
+
+# Z80 disassembler round trip through AS (M04-06).
+add_executable(gen_disasmz80_roundtrip analysis/disasmz80_roundtrip.cpp)
+target_link_libraries(gen_disasmz80_roundtrip PRIVATE gen_analysis gen_common)
+target_compile_definitions(gen_disasmz80_roundtrip PRIVATE GENESIS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+genesis_set_warnings(gen_disasmz80_roundtrip)
+add_test(NAME analysis.disasmz80_roundtrip COMMAND gen_disasmz80_roundtrip)
+set_tests_properties(analysis.disasmz80_roundtrip PROPERTIES LABELS analysis SKIP_RETURN_CODE 4)
 
 add_subdirectory(cli)
 if(GENESIS_BUILD_APP)

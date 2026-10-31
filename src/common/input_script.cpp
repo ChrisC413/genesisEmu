@@ -44,7 +44,9 @@ std::string upper(std::string_view s) {
 }
 
 bool isHash(std::string_view s) {
-    return s.size() == 16 && std::all_of(s.begin(), s.end(), [](char c) { return std::isxdigit(static_cast<unsigned char>(c)) != 0; });
+    return s.size() == 16 && std::all_of(s.begin(), s.end(), [](char c) {
+               return std::isxdigit(static_cast<unsigned char>(c)) != 0;
+           });
 }
 
 }  // namespace
@@ -77,9 +79,9 @@ std::optional<std::uint16_t> parseButtons(std::string_view text) {
         return std::uint16_t{0};
     }
     static constexpr std::pair<std::string_view, std::uint16_t> kNames[] = {
-        {"UP", bus::kPadUp},       {"DOWN", bus::kPadDown}, {"LEFT", bus::kPadLeft}, {"RIGHT", bus::kPadRight},
-        {"A", bus::kPadA},         {"B", bus::kPadB},       {"C", bus::kPadC},       {"START", bus::kPadStart},
-        {"X", bus::kPadX},         {"Y", bus::kPadY},       {"Z", bus::kPadZ},       {"MODE", bus::kPadMode},
+        {"UP", bus::kPadUp}, {"DOWN", bus::kPadDown}, {"LEFT", bus::kPadLeft}, {"RIGHT", bus::kPadRight},
+        {"A", bus::kPadA},   {"B", bus::kPadB},       {"C", bus::kPadC},       {"START", bus::kPadStart},
+        {"X", bus::kPadX},   {"Y", bus::kPadY},       {"Z", bus::kPadZ},       {"MODE", bus::kPadMode},
     };
     std::uint16_t mask = 0;
     const std::string u = upper(text);
@@ -87,7 +89,8 @@ std::optional<std::uint16_t> parseButtons(std::string_view text) {
     while (!rest.empty()) {
         const std::size_t plus = rest.find('+');
         const std::string_view name = rest.substr(0, plus);
-        const auto* it = std::find_if(std::begin(kNames), std::end(kNames), [&](const auto& n) { return n.first == name; });
+        const auto* it = std::find_if(std::begin(kNames), std::end(kNames),
+                                      [&](const auto& n) { return n.first == name; });
         if (it == std::end(kNames)) {
             return std::nullopt;
         }
@@ -115,13 +118,15 @@ std::optional<InputScript> parseInputScript(std::string_view text, std::string& 
             return std::nullopt;
         };
         if (t[0] == "rom") {
-            if (t.size() != 2 || t[1].size() != 40 ||
-                !std::all_of(t[1].begin(), t[1].end(), [](char ch) { return std::isxdigit(static_cast<unsigned char>(ch)) != 0; })) {
+            if (t.size() != 2 || t[1].size() != 40 || !std::all_of(t[1].begin(), t[1].end(), [](char ch) {
+                    return std::isxdigit(static_cast<unsigned char>(ch)) != 0;
+                })) {
                 return fail("expected 'rom <40-digit SHA-1>'");
             }
             script.romSha1.assign(t[1]);
-            std::transform(script.romSha1.begin(), script.romSha1.end(), script.romSha1.begin(),
-                           [](char ch) { return static_cast<char>(std::tolower(static_cast<unsigned char>(ch))); });
+            std::transform(script.romSha1.begin(), script.romSha1.end(), script.romSha1.begin(), [](char ch) {
+                return static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+            });
             continue;
         }
         if (t[0] == "checkpoint") {
@@ -144,8 +149,9 @@ std::optional<InputScript> parseInputScript(std::string_view text, std::string& 
                     return fail("expected a 16-digit hex hash");
                 }
                 std::string h(t[3]);
-                std::transform(h.begin(), h.end(), h.begin(),
-                               [](char ch) { return static_cast<char>(std::tolower(static_cast<unsigned char>(ch))); });
+                std::transform(h.begin(), h.end(), h.begin(), [](char ch) {
+                    return static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                });
                 c.expected = h;
             }
             script.checkpoints.push_back(c);

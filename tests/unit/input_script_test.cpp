@@ -1,10 +1,11 @@
 // Scripted input format (M04-03, spec 13).
 
+#include "common/input_script.hpp"
+
 #include <string>
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "common/input_script.hpp"
 #include "core/bus/io.hpp"
 #include "core/cart/rom.hpp"
 #include "core/sched/machine.hpp"
@@ -60,7 +61,8 @@ TEST_CASE("InputPlayer latches buttons at the frame they are scripted for", "[in
         player.beforeFrame(m);
         m.run(RunLimit::frames(1));
         if (m.frame() == 3) {
-            latchedFrame3 = m.io().state().buttons[0];  // frame 2 has just completed; frame 3 latched at its start
+            latchedFrame3 =
+                m.io().state().buttons[0];  // frame 2 has just completed; frame 3 latched at its start
         }
         if (m.frame() == 4) {
             latchedFrame4 = m.io().state().buttons[0];

@@ -28,8 +28,9 @@ public:
         return false;
     }
 
-    // Cartridge-space overlay: [first, last] of the 68k addresses the device may answer (empty: first > last).
-    // The bus routes every access in the 64 KB pages that range touches through the chain before the ROM.
+    // Cartridge-space overlay: [first, last] of the 68k addresses the device may answer (empty: first >
+    // last). The bus routes every access in the 64 KB pages that range touches through the chain before the
+    // ROM.
     virtual std::uint32_t memFirst() const { return 1; }
     virtual std::uint32_t memLast() const { return 0; }
     // Return true when the device answered the read / consumed the write. Writes to plain ROM space are

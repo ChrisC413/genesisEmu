@@ -45,7 +45,7 @@ struct ScriptCheckpoint {
 struct InputScript {
     std::vector<ScriptEvent> events;  // sorted by frame (stable)
     std::vector<ScriptCheckpoint> checkpoints;
-    std::string romSha1;  // lowercase hex; empty when the script does not name its ROM
+    std::string romSha1;              // lowercase hex; empty when the script does not name its ROM
     std::uint64_t lastFrame() const;  // the latest frame any line names
 };
 

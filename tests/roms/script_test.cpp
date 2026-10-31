@@ -1,5 +1,5 @@
-// [rom] scripted-input regressions (M04-03 / M04-09): every tests/scripts/*.txt names its image by SHA-1, plays
-// its input from power on and must reproduce the recorded frame / state hashes at each checkpoint.
+// [rom] scripted-input regressions (M04-03 / M04-09): every tests/scripts/*.txt names its image by SHA-1,
+// plays its input from power on and must reproduce the recorded frame / state hashes at each checkpoint.
 
 #include <algorithm>
 #include <filesystem>
