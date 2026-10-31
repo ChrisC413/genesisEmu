@@ -88,7 +88,8 @@ public:
                 right += dac_discontinuity(temp.data[1]);
             }
             if (m_dac_enable != 0) {
-                const bool on = (mask & (1u << kFmChannelDac)) != 0;
+                // The DAC replaces channel 6: muting FM 6 or the DAC silences it.
+                const bool on = (mask & (1u << kFmChannelDac)) != 0 && (mask & (1u << 5)) != 0;
                 const std::int32_t dac =
                     dac_discontinuity(on ? (static_cast<std::int16_t>(m_dac_data << 7) >> 7) : 0);
                 left += m_fm.regs().ch_output_0(0x102) != 0 ? dac : dac_discontinuity(0);

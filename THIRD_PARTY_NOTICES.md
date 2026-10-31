@@ -2,7 +2,7 @@
 
 genesisEmu is MIT licensed (see [LICENSE](LICENSE)). Per D-014, only permissively licensed third-party
 code is used or consulted. Dependencies are fetched and built by vcpkg (manifest: [vcpkg.json](vcpkg.json));
-none are vendored in this repository yet.
+the one vendored component is ymfm in `third_party/ymfm/` (unmodified upstream sources plus its LICENSE).
 
 | Component | Used by | License | Upstream |
 |-----------|---------|---------|----------|
@@ -13,8 +13,9 @@ none are vendored in this repository yet.
 | nlohmann/json | `gen_common` (configuration) | MIT | <https://github.com/nlohmann/json> |
 | xxHash | `gen_core` (state hashes, XXH3-64) | BSD-2-Clause | <https://github.com/Cyan4973/xxHash> |
 | Catch2 | tests only (not distributed) | BSL-1.0 | <https://github.com/catchorg/Catch2> |
+| ymfm (vendored, commit `81aec25c`) | `gen_core` (YM2612 FM synthesis, D-013) | BSD-3-Clause, Copyright (c) 2021 Aaron Giles; full text in `third_party/ymfm/LICENSE` | <https://github.com/aaronsgiles/ymfm> |
 
-Dependencies listed in the architecture spec but not yet used (SQLite, libcurl, xxHash, ImPlot, ymfm) will
+Dependencies listed in the architecture spec but not yet used (SQLite, libcurl, ImPlot) will
 be added here when the milestone that needs them lands.
 
 The full license texts of the vcpkg-built dependencies are installed by vcpkg under

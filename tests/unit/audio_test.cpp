@@ -113,6 +113,15 @@ TEST_CASE("YM2612 sine voice plays at the programmed pitch", "[audio][fm]") {
     // Muting channel 1 silences it (only the DAC-discontinuity offset remains, identical on every sample).
     fm->generate(out.data(), 1000, 0x7E);
     CHECK(out[0] == out[1998]);
+
+    // FM state round-trips (save states): restoring replays the same samples.
+    const std::vector<std::uint8_t> saved = fm->serialize();
+    std::vector<std::int32_t> first(2 * 500);
+    fm->generate(first.data(), 500, 0x7F);
+    fm->deserialize(saved);
+    std::vector<std::int32_t> second(2 * 500);
+    fm->generate(second.data(), 500, 0x7F);
+    CHECK(first == second);
 }
 
 TEST_CASE("YM2612 DAC replaces channel 6", "[audio][fm]") {
@@ -129,6 +138,9 @@ TEST_CASE("YM2612 DAC replaces channel 6", "[audio][fm]") {
     std::vector<std::int32_t> muted(20);
     fm->generate(muted.data(), 10, 0x3F);  // DAC muted
     CHECK(std::abs(muted[18]) < std::abs(lo[18]));
+    std::vector<std::int32_t> fm6Muted(20);
+    fm->generate(fm6Muted.data(), 10, 0x5F);  // FM 6 muted: the DAC replaces channel 6, so it is silent too
+    CHECK(fm6Muted[18] == muted[18]);
 }
 
 TEST_CASE("YM2612 timer A sets its status flag", "[audio][fm]") {
