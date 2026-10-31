@@ -85,8 +85,9 @@ int main(int argc, char** argv) {
         std::vector<std::uint8_t> prefix;
         bool displacementFirst;
     };
-    const std::vector<Group> groups = {{{}, false},     {{0xCB}, false},       {{0xED}, false}, {{0xDD}, false},
-                                       {{0xFD}, false}, {{0xDD, 0xCB}, true}, {{0xFD, 0xCB}, true}};
+    const std::vector<Group> groups = {{{}, false},         {{0xCB}, false}, {{0xED}, false},
+                                       {{0xDD}, false},     {{0xFD}, false}, {{0xDD, 0xCB}, true},
+                                       {{0xFD, 0xCB}, true}};
     const std::array<std::array<std::uint8_t, 3>, 2> operandSets{{{0x12, 0x34, 0x56}, {0x85, 0xFE, 0x7F}}};
 
     std::vector<std::uint8_t> expected;
@@ -136,12 +137,14 @@ int main(int argc, char** argv) {
         }
         return 1;
     }
-    if (run(quoted(p2bin) + " " + quoted(pFile) + " " + quoted(binFile) + " > " + quoted(logFile) + " 2>&1") != 0) {
+    if (run(quoted(p2bin) + " " + quoted(pFile) + " " + quoted(binFile) + " > " + quoted(logFile) +
+            " 2>&1") != 0) {
         std::printf("p2bin failed\n");
         return 1;
     }
     std::ifstream in(binFile, std::ios::binary);
-    const std::vector<std::uint8_t> actual((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    const std::vector<std::uint8_t> actual((std::istreambuf_iterator<char>(in)),
+                                           std::istreambuf_iterator<char>());
     std::size_t mismatches = 0;
     for (std::size_t i = 0; i < expected.size(); ++i) {
         if (i >= actual.size() || actual[i] != expected[i]) {

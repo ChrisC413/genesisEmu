@@ -1,13 +1,13 @@
 // Z80 disassembler cases (M04-06): syntax, lengths, flow and targets.
 
+#include "analysis/disasmz80/disasmz80.hpp"
+
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
-
-#include "analysis/disasmz80/disasmz80.hpp"
 
 namespace dz = gen::analysis::disasmz80;
 
@@ -55,8 +55,8 @@ TEST_CASE("Encodings AS cannot reproduce become db", "[disasm][z80]") {
     CHECK(nopPrefix.text() == "db\t$DD");
     CHECK(nopPrefix.length == 1);
     CHECK_FALSE(nopPrefix.valid());
-    CHECK(dis({0xED, 0x4C}).text() == "db\t$ED,$4C");                    // NEG mirror
+    CHECK(dis({0xED, 0x4C}).text() == "db\t$ED,$4C");                      // NEG mirror
     CHECK(dis({0xED, 0x63, 0x00, 0x10}).text() == "db\t$ED,$63,$00,$10");  // long LD (nn),HL
-    CHECK(dis({0xDD, 0xCB, 0x01, 0x40}).length == 4);                     // BIT with a register field
-    CHECK(dis({0x21, 0x34}).text() == "db\t$21");                         // truncated operand
+    CHECK(dis({0xDD, 0xCB, 0x01, 0x40}).length == 4);                      // BIT with a register field
+    CHECK(dis({0x21, 0x34}).text() == "db\t$21");                          // truncated operand
 }

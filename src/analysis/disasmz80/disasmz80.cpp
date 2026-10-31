@@ -240,7 +240,8 @@ private:
                     return;
                 }
                 default: {
-                    static constexpr const char* kAcc[8] = {"rlca", "rrca", "rla", "rra", "daa", "cpl", "scf", "ccf"};
+                    static constexpr const char* kAcc[8] = {"rlca", "rrca", "rla", "rra",
+                                                            "daa",  "cpl",  "scf", "ccf"};
                     set(kAcc[y]);
                     return;
                 }
@@ -416,7 +417,8 @@ private:
                 }
                 return;
             default: {
-                static constexpr const char* kMisc[6] = {"ld\ti,a", "ld\tr,a", "ld\ta,i", "ld\ta,r", "rrd", "rld"};
+                static constexpr const char* kMisc[6] = {"ld\ti,a", "ld\tr,a", "ld\ta,i",
+                                                         "ld\ta,r", "rrd",     "rld"};
                 if (y >= 6) {
                     data(2);
                     return;
@@ -438,7 +440,8 @@ private:
 
 }  // namespace
 
-Instruction disassemble(std::span<const std::uint8_t> bytes, std::uint16_t address, const SymbolResolver& symbols) {
+Instruction disassemble(std::span<const std::uint8_t> bytes, std::uint16_t address,
+                        const SymbolResolver& symbols) {
     if (bytes.empty()) {
         Instruction ins;
         ins.address = address;
