@@ -34,3 +34,5 @@ Sega Mega Drive / Genesis DAT (as mirrored by libretro-database). It contains ha
 |------|-----|---------|--------|
 | SingleStepTests 680x0 (68000 v1 vectors) | CPU test suite | none stated in the repository | <https://github.com/SingleStepTests/680x0> |
 | The Macro Assembler AS 1.42 build 315 (Windows binaries) | disassembler round-trip test | GPL-2.0 | <http://john.ccac.rwth-aachen.de:8000/as/> |
+| SingleStepTests z80 (v1 vectors) | Z80 CPU test suite | MIT | <https://github.com/SingleStepTests/z80> |
+| ZEXDOC / ZEXALL (Frank D. Cringle, YAZE-AG 2.51.3 build) | Z80 instruction exercisers | GPL-2.0 | <https://github.com/agn453/ZEXALL> |
