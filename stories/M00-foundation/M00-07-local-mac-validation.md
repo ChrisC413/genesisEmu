@@ -18,7 +18,7 @@ As a **developer**, I want a single script that builds and tests the macOS app l
 
 ## Acceptance criteria
 
-- [ ] Script runs from a clean clone on macOS 13+ with only Xcode CLT, CMake and vcpkg installed — *unverified: no Mac available* (syntax-checked with `bash -n`)
+- [ ] Script runs from a clean clone on macOS 15+ with only Xcode CLT, CMake and vcpkg installed — *unverified: no Mac available* (syntax-checked with `bash -n`)
 - [ ] Non-zero exit on any failure — implemented for every step; *unverified on macOS*
 - [x] Summary block pasted into the PR template matches the template's fields — same field list in `tools/validate-mac.sh` and `.github/pull_request_template.md`; the CTest-summary parser was tested against real CTest output
 

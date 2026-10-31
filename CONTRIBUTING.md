@@ -5,7 +5,7 @@
 | Platform | Needs |
 |----------|-------|
 | Windows 11 x64 | Visual Studio 2022 (Desktop C++ workload), CMake ≥ 3.25, vcpkg |
-| macOS 13+ | Xcode Command Line Tools, CMake ≥ 3.25, vcpkg |
+| macOS 15+ | Xcode 16+ Command Line Tools, CMake ≥ 3.25, vcpkg |
 
 vcpkg runs in manifest mode ([vcpkg.json](vcpkg.json)); dependencies build on the first configure.
 
