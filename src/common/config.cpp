@@ -119,6 +119,45 @@ void migrateConfig(json& doc) {
     doc["schemaVersion"] = version;
 }
 
+InputConfig defaultInputConfig() {
+    InputConfig c;
+    c.keys[0] = {{"UP", "Up"}, {"DOWN", "Down"}, {"LEFT", "Left"},    {"RIGHT", "Right"},
+                 {"A", "A"},   {"B", "S"},       {"C", "D"},          {"X", "Q"},
+                 {"Y", "W"},   {"Z", "E"},       {"START", "Return"}, {"MODE", "Right Shift"}};
+    c.gamepad = {{"UP", "dpup"},     {"DOWN", "dpdown"},
+                 {"LEFT", "dpleft"}, {"RIGHT", "dpright"},
+                 {"A", "x"},         {"B", "a"},
+                 {"C", "b"},         {"X", "leftshoulder"},
+                 {"Y", "y"},         {"Z", "rightshoulder"},
+                 {"START", "start"}, {"MODE", "back"}};
+    c.hotkeys = {{"pause", "F5"},
+                 {"step-instruction", "F11"},
+                 {"step-over", "F10"},
+                 {"step-frame", "F6"},
+                 {"fast-forward", "Tab"},
+                 {"save-state-1", "Shift+F1"},
+                 {"save-state-2", "Shift+F2"},
+                 {"save-state-3", "Shift+F3"},
+                 {"save-state-4", "Shift+F4"},
+                 {"load-state-1", "F1"},
+                 {"load-state-2", "F2"},
+                 {"load-state-3", "F3"},
+                 {"load-state-4", "F4"}};
+    return c;
+}
+
+namespace {
+
+void readStringMap(const json& obj, std::map<std::string, std::string>& out) {
+    for (const auto& [k, v] : obj.items()) {
+        if (v.is_string()) {
+            out[k] = v.get<std::string>();
+        }
+    }
+}
+
+}  // namespace
+
 Config configFromJson(const json& doc, std::vector<std::string>* warnings) {
     Config c;
     if (!doc.is_object()) {
@@ -163,6 +202,31 @@ Config configFromJson(const json& doc, std::vector<std::string>* warnings) {
             }
         }
     }
+    if (const json* view = r.object(doc, "view", "")) {
+        r.read(*view, "scale", c.view.scale, "view.");
+        r.read(*view, "aspectCorrect", c.view.aspectCorrect, "view.");
+        r.read(*view, "linearFilter", c.view.linearFilter, "view.");
+        r.read(*view, "showOverlay", c.view.showOverlay, "view.");
+    }
+    if (const json* input = r.object(doc, "input", "")) {
+        for (std::size_t p = 0; p < 2; ++p) {
+            const std::string port = "port" + std::to_string(p + 1);
+            if (const json* pj = r.object(*input, port.c_str(), "input.")) {
+                r.read(*pj, "padType", c.input.padType[p], "input." + port + ".");
+                if (const json* keys = r.object(*pj, "keys", "input." + port + ".")) {
+                    c.input.keys[p].clear();
+                    readStringMap(*keys, c.input.keys[p]);
+                }
+            }
+        }
+        if (const json* pad = r.object(*input, "gamepad", "input.")) {
+            c.input.gamepad.clear();
+            readStringMap(*pad, c.input.gamepad);
+        }
+        if (const json* hot = r.object(*input, "hotkeys", "input.")) {
+            readStringMap(*hot, c.input.hotkeys);  // over the defaults: new actions keep their default key
+        }
+    }
     return c;
 }
 
@@ -194,6 +258,30 @@ void configToJson(const Config& c, json& doc) {
     ui["dockLayout"] = c.ui.dockLayout;
     ui["recentRoms"] = c.ui.recentRoms;
     ui["maxRecentRoms"] = c.ui.maxRecentRoms;
+
+    json& view = doc["view"];
+    if (!view.is_object()) {
+        view = json::object();
+    }
+    view["scale"] = c.view.scale;
+    view["aspectCorrect"] = c.view.aspectCorrect;
+    view["linearFilter"] = c.view.linearFilter;
+    view["showOverlay"] = c.view.showOverlay;
+
+    json& input = doc["input"];
+    if (!input.is_object()) {
+        input = json::object();
+    }
+    for (std::size_t p = 0; p < 2; ++p) {
+        json& pj = input["port" + std::to_string(p + 1)];
+        if (!pj.is_object()) {
+            pj = json::object();
+        }
+        pj["padType"] = c.input.padType[p];
+        pj["keys"] = c.input.keys[p];
+    }
+    input["gamepad"] = c.input.gamepad;
+    input["hotkeys"] = c.input.hotkeys;
 }
 
 ConfigFile ConfigFile::loadOrCreate(const std::filesystem::path& path) {

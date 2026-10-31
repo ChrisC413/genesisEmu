@@ -129,3 +129,29 @@ TEST_CASE("Corrupt config is moved aside and replaced by defaults", "[config]") 
     CHECK(std::filesystem::exists(dir.path() / "config.json.bad"));
     CHECK(readJson(path)["log"]["level"] == "info");
 }
+
+TEST_CASE("View settings and input bindings round-trip (M04-02)", "[config][input]") {
+    gen::test::TempDir dir;
+    const auto path = dir.path() / "config.json";
+
+    ConfigFile file = ConfigFile::loadOrCreate(path);
+    CHECK(file.config.input.keys[0].at("START") == "Return");  // spec 07 default
+    CHECK(file.config.input.hotkeys.at("pause") == "F5");
+    file.config.view.scale = "integer";
+    file.config.view.linearFilter = true;
+    file.config.input.padType[1] = "6";
+    file.config.input.keys[0]["C"] = "Space";
+    file.config.input.keys[1]["START"] = "Keypad Enter";
+    file.config.input.gamepad["A"] = "y";
+    REQUIRE(file.save());
+
+    const ConfigFile reloaded = ConfigFile::loadOrCreate(path);
+    CHECK(reloaded.warnings.empty());
+    CHECK(reloaded.config.view.scale == "integer");
+    CHECK(reloaded.config.view.linearFilter);
+    CHECK(reloaded.config.input.padType[1] == "6");
+    CHECK(reloaded.config.input.keys[0].at("C") == "Space");
+    CHECK(reloaded.config.input.keys[1].at("START") == "Keypad Enter");
+    CHECK(reloaded.config.input.gamepad.at("A") == "y");
+    CHECK(reloaded.config.input.hotkeys.at("step-frame") == "F6");
+}

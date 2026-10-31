@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <map>
@@ -29,9 +30,32 @@ struct UiConfig {
     std::size_t maxRecentRoms = 10;
 };
 
+// Game view presentation (M03-10 settings, persisted since M04-02).
+struct ViewConfig {
+    std::string scale = "fit";  // "fit" | "integer"
+    bool aspectCorrect = true;
+    bool linearFilter = false;
+    bool showOverlay = true;
+};
+
+// Controller mapping (spec 07 "Input", M04-02). Bindings map a pad button name (UP DOWN LEFT RIGHT A B C
+// START X Y Z MODE) to an SDL key name (SDL_GetScancodeName) or an SDL gamepad button name
+// (SDL_GetGamepadStringForButton). Hotkeys map an action name to a key name ("Shift+F1" for modifiers).
+struct InputConfig {
+    std::array<std::string, 2> padType{"3", "3"};  // "3", "6" or "none" per port
+    std::array<std::map<std::string, std::string>, 2> keys;
+    std::map<std::string, std::string> gamepad;  // applied to the first gamepad on port 1, second on port 2
+    std::map<std::string, std::string> hotkeys;
+};
+
+// Spec 07 defaults: arrows = D-pad, A/S/D = A/B/C, Q/W/E = X/Y/Z, Enter = Start, Right Shift = Mode.
+InputConfig defaultInputConfig();
+
 struct Config {
     LogConfig log;
     UiConfig ui;
+    ViewConfig view;
+    InputConfig input = defaultInputConfig();
 };
 
 // Upgrades a config document in place to kConfigSchemaVersion. Documents without "schemaVersion" are
