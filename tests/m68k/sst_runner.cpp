@@ -105,26 +105,26 @@ std::vector<Exclusion> loadExclusions(const fs::path& path) {
     while (std::getline(in, line)) {
         if (!line.empty() && line.back() == '\r') {
             line.pop_back();
+        }
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+        if (line[0] == '@') {
+            sectionReason = (lastWasReason ? sectionReason + " " : std::string()) + line.substr(1);
+            lastWasReason = true;
+            continue;
+        }
+        lastWasReason = false;
+        const auto bar = line.find('|');
+        Exclusion e;
+        e.pattern = line.substr(0, bar);
+        e.reason = bar == std::string::npos ? sectionReason : line.substr(bar + 1);
+        while (!e.pattern.empty() && e.pattern.back() == ' ') {
+            e.pattern.pop_back();
+        }
+        out.push_back(e);
     }
-    if (line.empty() || line[0] == '#') {
-        continue;
-    }
-    if (line[0] == '@') {
-        sectionReason = (lastWasReason ? sectionReason + " " : std::string()) + line.substr(1);
-        lastWasReason = true;
-        continue;
-    }
-    lastWasReason = false;
-    const auto bar = line.find('|');
-    Exclusion e;
-    e.pattern = line.substr(0, bar);
-    e.reason = bar == std::string::npos ? sectionReason : line.substr(bar + 1);
-    while (!e.pattern.empty() && e.pattern.back() == ' ') {
-        e.pattern.pop_back();
-    }
-    out.push_back(e);
-}
-return out;
+    return out;
 }
 
 bool excluded(const std::vector<Exclusion>& list, const std::string& name) {
