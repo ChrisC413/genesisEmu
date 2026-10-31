@@ -17,7 +17,9 @@ add_library(gen_core STATIC
   vdp/vdp.cpp
   vdp/vdp_render.cpp
   version.cpp
+  z80/z80.cpp
   z80/z80_control.cpp
+  z80/z80_ops.cpp
 )
 find_package(xxHash CONFIG REQUIRED)
 target_link_libraries(gen_core PRIVATE xxHash::xxhash)

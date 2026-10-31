@@ -56,6 +56,27 @@ add_test(NAME m68k.sst COMMAND gen_m68k_sst --limit ${GENESIS_SST_LIMIT} --show 
 add_test(NAME m68k.sst_selftest COMMAND gen_m68k_sst --only NOP --limit 50 --show 0 --inject-fault --expect-fail)
 set_tests_properties(m68k.sst m68k.sst_selftest PROPERTIES LABELS m68k SKIP_RETURN_CODE 4)
 
+# SingleStepTests Z80 runner (M04-04). Per push the Debug job runs the first 100 vectors of every opcode file;
+# Release runs all 1.6M (a few seconds).
+add_executable(gen_z80_sst z80/ssz_runner.cpp)
+target_link_libraries(gen_z80_sst PRIVATE gen_core)
+target_compile_definitions(gen_z80_sst PRIVATE GENESIS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+genesis_set_warnings(gen_z80_sst)
+set(GENESIS_Z80_SST_LIMIT 100 CACHE STRING "Vectors per SingleStepTests Z80 file in the z80.sst test (0 = all)")
+add_test(NAME z80.sst COMMAND gen_z80_sst --limit ${GENESIS_Z80_SST_LIMIT} --show 3)
+add_test(NAME z80.sst_selftest COMMAND gen_z80_sst --only 00 --limit 20 --show 0 --inject-fault --expect-fail)
+set_tests_properties(z80.sst z80.sst_selftest PROPERTIES LABELS z80 SKIP_RETURN_CODE 4)
+
+# ZEXDOC / ZEXALL through a CP/M BDOS shim (M04-04). They take tens of seconds, so they run in the nightly
+# workflow (label z80-zex) rather than per push.
+add_executable(gen_z80_zex z80/zex_runner.cpp)
+target_link_libraries(gen_z80_zex PRIVATE gen_core)
+target_compile_definitions(gen_z80_zex PRIVATE GENESIS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+genesis_set_warnings(gen_z80_zex)
+add_test(NAME z80.zexdoc COMMAND gen_z80_zex zexdoc --quiet)
+add_test(NAME z80.zexall COMMAND gen_z80_zex zexall --quiet)
+set_tests_properties(z80.zexdoc z80.zexall PROPERTIES LABELS z80-zex SKIP_RETURN_CODE 4 TIMEOUT 900)
+
 # 68000 throughput microbenchmark (M01-11); run by hand: gen_m68k_bench [millions-of-instructions]
 add_executable(gen_m68k_bench bench/m68k_bench.cpp)
 target_link_libraries(gen_m68k_bench PRIVATE gen_core)
