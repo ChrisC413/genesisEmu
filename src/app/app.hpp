@@ -6,16 +6,20 @@
 #include <optional>
 #include <string>
 
+#include "app/audio_output.hpp"
 #include "app/input.hpp"
 #include "app/panels/panels.hpp"
 #include "app/platform/file_dialog.hpp"
 #include "app/platform/window.hpp"
 #include "common/config.hpp"
 #include "common/paths.hpp"
+#include "common/wav.hpp"
 #include "core/cart/rom.hpp"
 #include "core/sched/machine.hpp"
 
 namespace gen::app {
+
+inline constexpr const char* kSoundWindow = "Sound";
 
 enum AppExit : int {
     kAppOk = 0,
@@ -52,7 +56,10 @@ private:
     void stepEmulation(bool smoke);
     void handleHotkeys();
     void applyPadTypes();
-    void flushSram();  // writes dirty battery SRAM to <sha1>.srm
+    void flushSram();
+    void drawSoundPanel();
+    void toggleWavRecording();
+    unsigned channelMask() const;  // writes dirty battery SRAM to <sha1>.srm
     std::string overlayText() const;
 
     common::AppPaths paths_;
@@ -65,6 +72,14 @@ private:
     std::unique_ptr<Machine> machine_;
     GameView gameView_;
     InputManager input_;
+    AudioOutput audio_;
+    common::WavWriter wav_;
+    std::filesystem::path wavPath_;
+    std::array<bool, audio::kChannelCount> mute_{};
+    std::array<bool, audio::kChannelCount> solo_{};
+    float volume_ = 1.0f;
+    bool showSound_ = false;
+    std::string lastExport_;
     std::string machineSha1_;  // SHA-1 of the running image (lock-on: combined), keys the .srm file
     std::uint64_t lastSramCheck_ = 0;
     bool showInput_ = false;

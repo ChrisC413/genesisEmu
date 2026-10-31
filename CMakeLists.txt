@@ -24,6 +24,7 @@ if(GENESIS_SANITIZE)
   add_link_options(-fsanitize=address,undefined)
 endif()
 
+add_subdirectory(third_party/ymfm)
 add_subdirectory(src/core)
 add_subdirectory(src/instrument)
 add_subdirectory(src/analysis)

@@ -1,5 +1,9 @@
 add_library(gen_core STATIC
+  audio/fm_synth.cpp
+  audio/psg.cpp
   audio/register_log.cpp
+  audio/resampler.cpp
+  audio/sound.cpp
   bus/io.cpp
   bus/system_bus.cpp
   cart/known_roms.cpp
@@ -24,7 +28,7 @@ add_library(gen_core STATIC
   z80/z80_ops.cpp
 )
 find_package(xxHash CONFIG REQUIRED)
-target_link_libraries(gen_core PRIVATE xxHash::xxhash)
+target_link_libraries(gen_core PRIVATE xxHash::xxhash ymfm)
 target_include_directories(gen_core PUBLIC "${PROJECT_SOURCE_DIR}/src")
 target_compile_definitions(gen_core PRIVATE GENESIS_VERSION="${PROJECT_VERSION}")
 genesis_set_warnings(gen_core)

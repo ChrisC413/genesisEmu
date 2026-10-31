@@ -11,6 +11,7 @@ target_link_libraries(gen_test_support PUBLIC gen_core)
 genesis_set_warnings(gen_test_support)
 
 add_executable(gen_unit_tests
+  unit/audio_test.cpp
   unit/bus_test.cpp
   unit/cart_device_test.cpp
   unit/config_test.cpp

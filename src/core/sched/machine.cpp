@@ -43,6 +43,8 @@ Machine::Machine(std::vector<std::uint8_t> rom, std::uint8_t headerRegions, cons
     z80cpu_->setHooks(&hooks_);
     z80_.attach(z80cpu_.get(), bus_.get(), &hooks_);
     z80_.setWindowTiming(config_.z80Window);
+    z80_.setSound(&sound_);
+    sound_.setClockSource(&Machine::soundNow, this);
     bus_->setZ80Sync(&Machine::syncZ80, this);
     // SRAM from the header at $1B0; a lock-on image declares it in the locked-on cartridge's header.
     if (rom_.size() >= cart::kMinRomSize) {
@@ -80,6 +82,7 @@ void Machine::hardReset() {
     z80cpu_->state() = z80::Z80State{};
     z80cpu_->reset();
     z80Mclk_ = 0;
+    sound_.reset(pal_);
     vdp_.reset(pal_);
     cpu_->state() = m68k::State{};
     cpu_->setIrqLevel(0);
@@ -104,7 +107,13 @@ void Machine::setHooks(const Hooks& hooks) {
 }
 
 void Machine::catchUp(std::uint64_t mclk) {
-    runZ80(mclk);  // audio chips (M05) also run up to `mclk` here
+    runZ80(mclk);
+    sound_.advanceTo(mclk);
+}
+
+std::uint64_t Machine::soundNow(void* ctx) {
+    const auto& m = *static_cast<const Machine*>(ctx);
+    return m.inZ80_ ? m.z80Mclk_ : m.clock_.cpuMclk;
 }
 
 void Machine::syncZ80(void* ctx) {
@@ -348,6 +357,8 @@ std::uint64_t Machine::stateHash() const {
     for (const auto& d : devices_) {
         d->hashState(h);
     }
+
+    const_cast<audio::SoundSystem&>(sound_).hashState(h);  // serializing ymfm is not const
 
     h.tag("SCHD");
     h.u64(frame_);

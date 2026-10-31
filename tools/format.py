@@ -31,8 +31,9 @@ def main() -> int:
     if PINNED_VERSION not in version:
         print(f"warning: expected clang-format {PINNED_VERSION}, found: {version}", file=sys.stderr)
 
-    files = subprocess.run(["git", "ls-files", "--", *PATTERNS], cwd=ROOT, capture_output=True, text=True,
-                           check=True).stdout.split()
+    # Vendored third-party code keeps its upstream formatting.
+    files = subprocess.run(["git", "ls-files", "--", *PATTERNS, ":(exclude)third_party/**"], cwd=ROOT,
+                           capture_output=True, text=True, check=True).stdout.split()
     if not files:
         return 0
     cmd = [exe, "--dry-run", "--Werror"] if args.check else [exe, "-i"]

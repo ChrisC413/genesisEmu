@@ -56,14 +56,16 @@ TEST_CASE("Scripted input reaches the recorded checkpoints", "[rom][input]") {
             const std::uint64_t before = m.frame();
             player.beforeFrame(m);
             m.run(RunLimit::frames(1));
+            m.sound().clearSamples();
             for (const auto& c : script->checkpoints) {
-                if (c.frame <= before || c.frame > m.frame() || c.kind == common::CheckKind::AudioHash) {
+                if (c.frame <= before || c.frame > m.frame()) {
                     continue;
                 }
                 INFO("line " << c.line << ": checkpoint " << c.frame << " " << common::toString(c.kind));
                 REQUIRE(c.expected);
-                const std::uint64_t h =
-                    c.kind == common::CheckKind::FrameHash ? m.vdp().frameHash() : m.stateHash();
+                const std::uint64_t h = c.kind == common::CheckKind::FrameHash   ? m.vdp().frameHash()
+                                        : c.kind == common::CheckKind::StateHash ? m.stateHash()
+                                                                                 : m.sound().audioHash();
                 CHECK(state::hashToHex(h) == *c.expected);
             }
         }

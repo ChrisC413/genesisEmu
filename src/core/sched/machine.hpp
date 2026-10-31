@@ -8,6 +8,7 @@
 #include <optional>
 #include <vector>
 
+#include "core/audio/sound.hpp"
 #include "core/bus/io.hpp"
 #include "core/bus/system_bus.hpp"
 #include "core/cart/cart_device.hpp"
@@ -122,6 +123,9 @@ public:
     z80::Z80& z80Cpu() { return *z80cpu_; }
     const z80::Z80& z80Cpu() const { return *z80cpu_; }
     std::uint64_t z80Mclk() const { return z80Mclk_; }  // master clock the Z80 has run up to
+    // YM2612 + PSG (M05). Samples accumulate in sound().samples() until the frontend clears them.
+    audio::SoundSystem& sound() { return sound_; }
+    const audio::SoundSystem& sound() const { return sound_; }
     const std::vector<std::uint8_t>& rom() const { return rom_; }
 
     // Cartridge device chain (M04-08). The SRAM controller is created from the header's SRAM declaration
@@ -141,6 +145,7 @@ private:
     void catchUp(std::uint64_t mclk);
     void runZ80(std::uint64_t mclk);
     static void syncZ80(void* ctx);
+    static std::uint64_t soundNow(void* ctx);
 
     std::vector<std::uint8_t> rom_;
     MachineConfig config_;
@@ -149,6 +154,7 @@ private:
     vdp::Vdp vdp_;
     bus::Io io_;
     z80::Z80Control z80_;
+    audio::SoundSystem sound_;
     bus::BusClock clock_;
     std::unique_ptr<bus::SystemBus> bus_;
     std::unique_ptr<m68k::M68k> cpu_;

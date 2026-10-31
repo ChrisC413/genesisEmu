@@ -27,6 +27,7 @@
 #include "common/png.hpp"
 #include "common/rom_info.hpp"
 #include "common/sram_file.hpp"
+#include "common/wav.hpp"
 #include "core/cart/rom.hpp"
 #include "core/sched/machine.hpp"
 #include "core/state/state_hash.hpp"
@@ -76,6 +77,8 @@ Commands:
       --sram <file>     load battery SRAM from <file> before the run (if it
                         exists) and save it there afterwards
       --pad <3|6>       controller type of both ports (default 3)
+      --wav <file>      record the mixed audio (16-bit stereo at the native
+                        ~53,267 Hz rate) of the whole run
 
   trace --rom <file> [--lock-on <file>] [--frames <N>] [--start-frame <S>]
         [--pc <lo>-<hi>] [--first] [--max-records <N>] [--out <file>]
@@ -117,6 +120,7 @@ struct Args {
     std::optional<std::string_view> input;
     std::optional<std::string_view> sram;
     std::optional<std::string_view> pad;
+    std::optional<std::string_view> wav;
     bool checkScript = false;
     bool updateScript = false;
     bool help = false;
@@ -167,6 +171,8 @@ Args parseArgs(int argc, char** argv) {
             value(a.input);
         } else if (arg == "--sram") {
             value(a.sram);
+        } else if (arg == "--wav") {
+            value(a.wav);
         } else if (arg == "--pad") {
             value(a.pad);
         } else if (arg == "--update-script") {
@@ -379,6 +385,11 @@ int cmdRun(const Args& a) {
     if (script) {
         player.emplace(*script);
     }
+    gen::common::WavWriter wav;
+    if (a.wav && !wav.open(gen::common::fromUtf8(*a.wav), m.sound().sampleRate())) {
+        std::fprintf(stderr, "gen_cli: cannot write %s\n", std::string(*a.wav).c_str());
+        return kExitLoadError;
+    }
     std::map<std::size_t, std::string> scriptHashes;
     int scriptFailures = 0;
     DmaCounts dma;
@@ -412,13 +423,15 @@ int cmdRun(const Args& a) {
         }
     }
     int mismatches = 0;
-    if (a.frameLog || !dumps.empty() || !checks.empty() || script) {
+    if (a.frameLog || !dumps.empty() || !checks.empty() || script || a.wav) {
         while (m.frame() < frames) {
             const std::uint64_t f = m.frame();
             if (player) {
                 player->beforeFrame(m);
             }
             r.instructions += m.run(gen::RunLimit::frames(1)).instructions;
+            wav.write(m.sound().samples());
+            m.sound().clearSamples();
             if (script) {
                 for (const auto& c : script->checkpoints) {
                     if (c.frame <= f || c.frame > m.frame()) {
@@ -430,9 +443,7 @@ int cmdRun(const Args& a) {
                     } else if (c.kind == gen::common::CheckKind::StateHash) {
                         got = gen::state::hashToHex(m.stateHash());
                     } else {
-                        std::printf("checkpoint %llu %s: not supported yet\n",
-                                    static_cast<unsigned long long>(c.frame), gen::common::toString(c.kind));
-                        continue;
+                        got = gen::state::hashToHex(m.sound().audioHash());
                     }
                     scriptHashes[c.line] = got;
                     const char* verdict = !c.expected          ? "(no expected hash)"
@@ -561,6 +572,11 @@ int cmdRun(const Args& a) {
             std::printf("  %s %s.%c $%06X = $%X (PC $%06X)\n", gen::bus::toString(e.issue),
                         e.write ? "write" : "read", e.size == 1 ? 'b' : 'w', e.addr, e.value, e.pc);
         }
+    }
+    if (wav.isOpen()) {
+        std::printf("wav: %llu frames at %.0f Hz -> %s\n", static_cast<unsigned long long>(wav.frames()),
+                    m.sound().sampleRate(), std::string(*a.wav).c_str());
+        wav.close();
     }
     if (a.sram && m.sram() != nullptr) {
         if (!gen::common::saveSram(*m.sram(), gen::common::fromUtf8(*a.sram))) {

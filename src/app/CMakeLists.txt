@@ -4,7 +4,9 @@ find_package(OpenGL REQUIRED)
 
 set(app_sources
   app.cpp
+  audio_output.cpp
   input.cpp
+  sound_panel.cpp
   main.cpp
   panels/game_view.cpp
   panels/rom_info.cpp
