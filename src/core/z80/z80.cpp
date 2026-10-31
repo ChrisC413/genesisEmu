@@ -221,26 +221,26 @@ bool Z80::cond(int cc) const {
 void Z80::alu(int op, std::uint8_t v) {
     const std::uint8_t a = s_.a;
     switch (op) {
-        case 0:  // ADD
+        case 0:    // ADD
         case 1: {  // ADC
             const int carry = op == 1 ? (s_.f & kFlagC) : 0;
             const int res = a + v + carry;
             const auto r = static_cast<std::uint8_t>(res);
-            setF(static_cast<std::uint8_t>(kSz53[r] | ((a ^ v ^ r) & kFlagH) | (((a ^ ~v) & (a ^ r) & 0x80) >> 5) |
-                                           ((res >> 8) & kFlagC)));
+            setF(static_cast<std::uint8_t>(kSz53[r] | ((a ^ v ^ r) & kFlagH) |
+                                           (((a ^ ~v) & (a ^ r) & 0x80) >> 5) | ((res >> 8) & kFlagC)));
             s_.a = r;
             break;
         }
-        case 2:  // SUB
-        case 3:  // SBC
+        case 2:    // SUB
+        case 3:    // SBC
         case 7: {  // CP
             const int carry = op == 3 ? (s_.f & kFlagC) : 0;
             const int res = a - v - carry;
             const auto r = static_cast<std::uint8_t>(res);
             const std::uint8_t xy = op == 7 ? v : r;  // CP takes X/Y from the operand
             setF(static_cast<std::uint8_t>((kSz53[r] & (kFlagS | kFlagZ)) | (xy & (kFlagX | kFlagY)) |
-                                           ((a ^ v ^ r) & kFlagH) | (((a ^ v) & (a ^ r) & 0x80) >> 5) | kFlagN |
-                                           ((res >> 8) & kFlagC)));
+                                           ((a ^ v ^ r) & kFlagH) | (((a ^ v) & (a ^ r) & 0x80) >> 5) |
+                                           kFlagN | ((res >> 8) & kFlagC)));
             if (op != 7) {
                 s_.a = r;
             }
@@ -341,8 +341,8 @@ void Z80::adc16(std::uint16_t v) {
     const auto r = static_cast<std::uint16_t>(res);
     s_.wz = static_cast<std::uint16_t>(hl + 1);
     setF(static_cast<std::uint8_t>(((r >> 8) & (kFlagS | kFlagX | kFlagY)) | (r == 0 ? kFlagZ : 0) |
-                                   (((hl ^ v ^ res) >> 8) & kFlagH) | ((~(hl ^ v) & (hl ^ res) & 0x8000) >> 13) |
-                                   ((res >> 16) & kFlagC)));
+                                   (((hl ^ v ^ res) >> 8) & kFlagH) |
+                                   ((~(hl ^ v) & (hl ^ res) & 0x8000) >> 13) | ((res >> 16) & kFlagC)));
     setHlx(r);
 }
 
@@ -351,9 +351,9 @@ void Z80::sbc16(std::uint16_t v) {
     const int res = hl - v - (s_.f & kFlagC);
     const auto r = static_cast<std::uint16_t>(res);
     s_.wz = static_cast<std::uint16_t>(hl + 1);
-    setF(static_cast<std::uint8_t>(((r >> 8) & (kFlagS | kFlagX | kFlagY)) | (r == 0 ? kFlagZ : 0) |
-                                   (((hl ^ v ^ res) >> 8) & kFlagH) | (((hl ^ v) & (hl ^ res) & 0x8000) >> 13) |
-                                   kFlagN | ((res >> 16) & kFlagC)));
+    setF(static_cast<std::uint8_t>(
+        ((r >> 8) & (kFlagS | kFlagX | kFlagY)) | (r == 0 ? kFlagZ : 0) | (((hl ^ v ^ res) >> 8) & kFlagH) |
+        (((hl ^ v) & (hl ^ res) & 0x8000) >> 13) | kFlagN | ((res >> 16) & kFlagC)));
     setHlx(r);
 }
 

@@ -116,8 +116,9 @@ int main(int argc, char** argv) {
     }
     const int total = ok + errors;
     std::printf("%s: %d/%d tests OK, %d ERROR, %llu instructions, %llu T-states, %.1f s (%.0f MIPS)%s\n",
-                path.stem().string().c_str(), ok, total, errors, static_cast<unsigned long long>(instructions),
-                static_cast<unsigned long long>(tstates), secs,
-                secs > 0 ? static_cast<double>(instructions) / secs / 1e6 : 0.0, finished ? "" : " (did not finish)");
+                path.stem().string().c_str(), ok, total, errors,
+                static_cast<unsigned long long>(instructions), static_cast<unsigned long long>(tstates), secs,
+                secs > 0 ? static_cast<double>(instructions) / secs / 1e6 : 0.0,
+                finished ? "" : " (did not finish)");
     return finished && errors == 0 && ok > 0 ? 0 : 1;
 }

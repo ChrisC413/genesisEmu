@@ -49,14 +49,14 @@ int Z80::execMain(std::uint8_t op) {
         case 0x31:  // LD rp,nn
             setRp(p, fetchArg16());
             return 10;
-        case 0x02:  // LD (BC),A
+        case 0x02:    // LD (BC),A
         case 0x12: {  // LD (DE),A
             const std::uint16_t addr = op == 0x02 ? s_.bc() : s_.de();
             wr(addr, s_.a);
             s_.wz = static_cast<std::uint16_t>(((addr + 1) & 0xFF) | (s_.a << 8));
             return 7;
         }
-        case 0x0A:  // LD A,(BC)
+        case 0x0A:    // LD A,(BC)
         case 0x1A: {  // LD A,(DE)
             const std::uint16_t addr = op == 0x0A ? s_.bc() : s_.de();
             s_.a = rd(addr);
@@ -575,9 +575,9 @@ int Z80::blockOp(std::uint8_t op) {
             s_.setDe(static_cast<std::uint16_t>(s_.de() + delta));
             s_.setBc(static_cast<std::uint16_t>(s_.bc() - 1));
             const auto n = static_cast<std::uint8_t>(v + s_.a);
-            std::uint8_t f = static_cast<std::uint8_t>((s_.f & (kFlagS | kFlagZ | kFlagC)) |
-                                                       (s_.bc() != 0 ? kFlagP : 0) | (n & kFlagX) |
-                                                       ((n << 4) & kFlagY));
+            std::uint8_t f =
+                static_cast<std::uint8_t>((s_.f & (kFlagS | kFlagZ | kFlagC)) | (s_.bc() != 0 ? kFlagP : 0) |
+                                          (n & kFlagX) | ((n << 4) & kFlagY));
             if (repeat && s_.bc() != 0) {
                 s_.pc = static_cast<std::uint16_t>(s_.pc - 2);
                 s_.wz = static_cast<std::uint16_t>(s_.pc + 1);
@@ -596,9 +596,9 @@ int Z80::blockOp(std::uint8_t op) {
             s_.setBc(static_cast<std::uint16_t>(s_.bc() - 1));
             s_.wz = static_cast<std::uint16_t>(s_.wz + delta);
             const auto n = static_cast<std::uint8_t>(r - (half != 0 ? 1 : 0));
-            std::uint8_t f = static_cast<std::uint8_t>((s_.f & kFlagC) | kFlagN | (kSz53[r] & (kFlagS | kFlagZ)) |
-                                                       half | (s_.bc() != 0 ? kFlagP : 0) | (n & kFlagX) |
-                                                       ((n << 4) & kFlagY));
+            std::uint8_t f =
+                static_cast<std::uint8_t>((s_.f & kFlagC) | kFlagN | (kSz53[r] & (kFlagS | kFlagZ)) | half |
+                                          (s_.bc() != 0 ? kFlagP : 0) | (n & kFlagX) | ((n << 4) & kFlagY));
             if (repeat && s_.bc() != 0 && r != 0) {
                 s_.pc = static_cast<std::uint16_t>(s_.pc - 2);
                 s_.wz = static_cast<std::uint16_t>(s_.pc + 1);
@@ -630,13 +630,13 @@ int Z80::blockOp(std::uint8_t op) {
                 k = v + s_.l;
             }
             const std::uint8_t b = s_.b;
-            std::uint8_t f = static_cast<std::uint8_t>(kSz53[b] | ((v & 0x80) != 0 ? kFlagN : 0) |
-                                                       (k > 0xFF ? (kFlagH | kFlagC) : 0) |
-                                                       (kSzp[(k & 7) ^ b] & kFlagP));
+            std::uint8_t f =
+                static_cast<std::uint8_t>(kSz53[b] | ((v & 0x80) != 0 ? kFlagN : 0) |
+                                          (k > 0xFF ? (kFlagH | kFlagC) : 0) | (kSzp[(k & 7) ^ b] & kFlagP));
             if (repeat && b != 0) {
                 s_.pc = static_cast<std::uint16_t>(s_.pc - 2);
                 s_.wz = static_cast<std::uint16_t>(s_.pc + 1);
-                f =static_cast<std::uint8_t>((f & ~kXy) | ((s_.pc >> 8) & kXy));
+                f = static_cast<std::uint8_t>((f & ~kXy) | ((s_.pc >> 8) & kXy));
                 std::uint8_t parity = 0;
                 if ((f & kFlagC) != 0) {
                     if ((v & 0x80) != 0) {

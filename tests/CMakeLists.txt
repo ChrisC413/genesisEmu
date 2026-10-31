@@ -15,6 +15,7 @@ add_executable(gen_unit_tests
   unit/config_test.cpp
   unit/disasm68k_test.cpp
   unit/hash_test.cpp
+  unit/io_test.cpp
   unit/logging_test.cpp
   unit/machine_test.cpp
   unit/m68k_test.cpp

@@ -232,7 +232,7 @@ std::uint16_t SystemBus::readIo(std::uint32_t addr, std::uint8_t size) {
     };
     if (off < 0x20) {
         // Byte registers at odd addresses; the even byte mirrors them.
-        const std::uint8_t v = io_.read(off >> 1);
+        const std::uint8_t v = io_.read(off >> 1, clock_.cpuMclk);
         return size == 2 ? static_cast<std::uint16_t>((v << 8) | v) : v;
     }
     if (off >= 0x1100 && off < 0x1200) {
@@ -254,7 +254,7 @@ void SystemBus::writeIo(std::uint32_t addr, std::uint16_t value, std::uint8_t si
     // The control registers decode bit 8 of a word, i.e. bit 0 of a byte written to the even address.
     const bool bit8 = size == 2 ? (value & 0x0100) != 0 : (value & 0x01) != 0;
     if (off < 0x20) {
-        io_.write(off >> 1, static_cast<std::uint8_t>(value));
+        io_.write(off >> 1, static_cast<std::uint8_t>(value), clock_.cpuMclk);
         return;
     }
     if (off >= 0x1000 && off < 0x1100) {

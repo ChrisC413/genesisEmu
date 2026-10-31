@@ -53,6 +53,7 @@ void Machine::hardReset() {
     bus_->reset();
     bus_->clearIssues();
     io_.reset(region_, pal_, config_.tmss);
+    io_.state().buttons = pendingInput_;
     z80_.reset();
     vdp_.reset(pal_);
     cpu_->state() = m68k::State{};
@@ -82,6 +83,7 @@ void Machine::endLine() {
         ++frame_;
         stats_.vintsLastFrame = stats_.vintsThisFrame;
         stats_.vintsThisFrame = 0;
+        io_.state().buttons = pendingInput_;
         if (hooks_.onFrameEnd != nullptr) {
             hooks_.onFrameEnd(hooks_.ctx, frame_ - 1);
         }
@@ -240,6 +242,12 @@ std::uint64_t Machine::stateHash() const {
     h.bytes(io.serial);
     h.u16(io.buttons[0]);
     h.u16(io.buttons[1]);
+    for (std::size_t p = 0; p < 2; ++p) {
+        h.u8(static_cast<std::uint8_t>(io.padType[p]));
+        h.boolean(io.th[p]);
+        h.u8(io.thCount[p]);
+        h.u64(io.thChangedAt[p]);
+    }
 
     const z80::Z80ControlState& z = z80_.state();
     h.tag("Z80 ");

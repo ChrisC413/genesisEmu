@@ -86,6 +86,14 @@ public:
     // Exactly one instruction on `cpu`; line / frame boundaries it crosses are processed.
     RunResult step(CpuId cpu);
 
+    // Controller input (M04-01): the buttons (bus::PadButton mask) of pad `port` (0 or 1). Latched into the
+    // I/O chip once per frame, at the start of the next frame, so a run is deterministic (spec 07).
+    void setInput(int port, std::uint16_t buttons) {
+        pendingInput_[static_cast<std::size_t>(port & 1)] = buttons;
+    }
+    std::uint16_t input(int port) const { return pendingInput_[static_cast<std::size_t>(port & 1)]; }
+    void setPadType(int port, bus::PadType type) { io_.setPadType(port, type); }
+
     void setHooks(const Hooks& hooks);
     const Hooks& hooks() const { return hooks_; }
 
@@ -132,6 +140,7 @@ private:
     std::uint64_t frame_ = 0;
     int line_ = 0;
     MachineStats stats_;
+    std::array<std::uint16_t, 2> pendingInput_{};
 };
 
 }  // namespace gen

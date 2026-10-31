@@ -132,7 +132,8 @@ std::string compare(const gen::z80::Z80State& s, const Vector& v, const FlatBus&
     }
     bool portsOk = expectedOut.size() == bus.portsOut.size();
     for (std::size_t i = 0; portsOk && i < expectedOut.size(); ++i) {
-        portsOk = expectedOut[i].addr == bus.portsOut[i].addr && expectedOut[i].value == bus.portsOut[i].value;
+        portsOk =
+            expectedOut[i].addr == bus.portsOut[i].addr && expectedOut[i].value == bus.portsOut[i].value;
     }
     if (!portsOk) {
         diff += " port-writes";
@@ -254,8 +255,8 @@ int main(int argc, char** argv) {
             std::printf("%-14s %6zu / %6zu\n", f.stem().string().c_str(), r.passed, r.total);
         }
     }
-    std::printf("z80 SingleStepTests: %zu / %zu passed (%.4f%%) in %zu files, %zu with failures\n", passed, total,
-                total != 0 ? 100.0 * static_cast<double>(passed) / static_cast<double>(total) : 0.0,
+    std::printf("z80 SingleStepTests: %zu / %zu passed (%.4f%%) in %zu files, %zu with failures\n", passed,
+                total, total != 0 ? 100.0 * static_cast<double>(passed) / static_cast<double>(total) : 0.0,
                 files.size(), badFiles);
     const bool allPass = passed == total;
     if (opt.expectFail) {
