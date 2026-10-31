@@ -25,7 +25,7 @@
       "hidden": true,
       "inherits": "base",
       "generator": "Unix Makefiles",
-      "cacheVariables": { "CMAKE_OSX_DEPLOYMENT_TARGET": "13.0" },
+      "cacheVariables": { "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0" },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
     },
     {

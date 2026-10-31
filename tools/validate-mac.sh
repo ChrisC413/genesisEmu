@@ -7,7 +7,7 @@
 # build and tests with AddressSanitizer + UndefinedBehaviorSanitizer (mac-asan), ad-hoc signs and verifies
 # the .app bundle, then prints a summary block to paste into the pull request.
 #
-# Requirements: macOS 13+, Xcode Command Line Tools, CMake >= 3.25, and VCPKG_ROOT pointing at a
+# Requirements: macOS 15+, Xcode 16+ Command Line Tools, CMake >= 3.25, and VCPKG_ROOT pointing at a
 # bootstrapped vcpkg checkout. Exits non-zero if any step fails.
 
 set -uo pipefail
