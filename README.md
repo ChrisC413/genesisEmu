@@ -8,7 +8,7 @@ document their code well enough to produce **reassemblable, modifiable source**,
 - **splice in special stages** from Sonic 1 and Sonic 3 & Knuckles,
 - support a **cartridge hardware mod** that lights one LED per emerald collected.
 
-All mods must run on real hardware. Targets: Windows 11 and macOS 13+.
+All mods must run on real hardware. Targets: Windows 11 and macOS 15+.
 
 This repository is **spec-driven**: specs describe *what* the system must do, stories describe
 *incremental, testable slices* of work. Code follows the stories.

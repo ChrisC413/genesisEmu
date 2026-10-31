@@ -23,7 +23,7 @@ When a question is answered, it moves to the resolved table and into [DECISIONS.
 | Q5 | Canonical set (from the user's ROM folder, 2026-10-24): **Sonic 1 REV01** (`69e10285…`), **Sonic 2 REV01** (`8bca5dce…`), **S3K = Sonic & Knuckles + Sonic 3 USA combined** (`cfbf98c3…`, NTSC; standalone S&K `88d6499d…` + S3 USA `75e9c470…`). Secondary (PAL): S3 Europe (`2ff45bb0…`), giving S3K Europe (`45ca7973…`). The folder also holds modified or unknown dumps that stay unidentified (a patched Sonic 2 REV01 SMD `9e1834a8…`, an S&K with 3 changed bytes `e86b85ee…`, an unknown Sonic 1 with a REV00 header `f83bdaab…`, and Universal Soldier) and three Master System `.sms` files, which the loader rejects. | D-023 |
 | Q1 | Use ymfm | D-013 |
 | Q2 | MIT | D-014 |
-| Q3 | Windows 11, macOS 13+ | D-015 |
+| Q3 | Windows 11, macOS 13+ (raised to 15+ on 2026-10-31) | D-015, D-025 |
 | Q4 | GitHub + GitHub Actions; validate macOS builds locally; no paid GHA features | D-016 |
 | Q6 | No widescreen. Modify special stages, splice in special stages from other Sonic games, add retry after failure, and a future Sonic 2 cartridge hardware mod: the game writes to the cart on each emerald collected, and LEDs light | D-017, D-022 |
 | Q7 | Yes | D-018 |
