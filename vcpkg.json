@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "genesis-emu",
+  "version-string": "0.0.1",
+  "description": "Sega Genesis emulator and reverse-engineering workbench for the Sonic games",
+  "license": "MIT",
+  "builtin-baseline": "0c2a9ace1964b818b15f7ae50ba1c42404918a7b",
+  "dependencies": [
+    "catch2",
+    {
+      "name": "imgui",
+      "features": ["docking-experimental", "opengl3-binding", "sdl3-binding"]
+    },
+    "nlohmann-json",
+    "sdl3",
+    "spdlog",
+    "xxhash"
+  ]
+}

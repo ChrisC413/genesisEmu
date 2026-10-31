@@ -4,7 +4,7 @@ genesisEmu is built by several Claude Code agents working in parallel. They repo
 supervised with, **agent-monitor**, a separate development tool in its own private repository:
 **[ChrisC413/agent-monitor](https://github.com/ChrisC413/agent-monitor)**. That repository has its own
 specs, decisions, stories (milestones AM0–AM6) and CI. It moved out of `tools/agent-monitor/` on
-2026-10-24 (D-024).
+2026-10-24 (D-027).
 
 This spec only covers the **contract genesisEmu keeps**.
 

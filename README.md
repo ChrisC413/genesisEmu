@@ -8,10 +8,23 @@ document their code well enough to produce **reassemblable, modifiable source**,
 - **splice in special stages** from Sonic 1 and Sonic 3 & Knuckles,
 - support a **cartridge hardware mod** that lights one LED per emerald collected.
 
-All mods must run on real hardware. Targets: Windows 11 and macOS 13+.
+All mods must run on real hardware. Targets: Windows 11 and macOS 15+.
 
 This repository is **spec-driven**: specs describe *what* the system must do, stories describe
 *incremental, testable slices* of work. Code follows the stories.
+
+## Building
+
+Needs CMake ≥ 3.25, vcpkg (`VCPKG_ROOT`) and MSVC 2022 or Apple clang:
+
+```sh
+cmake --preset win-debug && cmake --build --preset win-debug && ctest --preset win-debug   # Windows
+cmake --preset mac-debug && cmake --build --preset mac-debug && ctest --preset mac-debug   # macOS
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for formatting, CI and the macOS validation script.
+Licensed under the [MIT License](LICENSE); third-party components are listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Layout
 

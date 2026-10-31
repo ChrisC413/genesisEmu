@@ -1,0 +1,143 @@
+# Windows CI on the GitHub Actions free tier (D-016): standard windows-latest runners, the standard
+# Actions cache and default artifact retention only. macOS is validated locally (tools/validate-mac.sh).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Keep in sync with "builtin-baseline" in vcpkg.json.
+  VCPKG_COMMIT: 0c2a9ace1964b818b15f7ae50ba1c42404918a7b
+  CLANG_FORMAT_VERSION: 22.1.8
+
+jobs:
+  format:
+    name: clang-format
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install clang-format
+        run: python -m pip install --disable-pip-version-check clang-format==${{ env.CLANG_FORMAT_VERSION }}
+      - name: Check formatting
+        run: python tools/format.py --check
+      - name: Check for carriage returns
+        run: python tools/check_line_endings.py
+
+  build:
+    name: build (${{ matrix.config }})
+    needs: format
+    runs-on: windows-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [debug, release]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fetch and bootstrap vcpkg
+        shell: pwsh
+        run: |
+          # Outside the checkout, and without '..' segments (actions/cache rejects them).
+          $env:VCPKG_ROOT = "$env:RUNNER_TEMP\vcpkg"
+          $env:VCPKG_BINARY_CACHE = "$env:RUNNER_TEMP\vcpkg-binary-cache"
+          "VCPKG_ROOT=$env:VCPKG_ROOT" >> $env:GITHUB_ENV
+          "VCPKG_BINARY_CACHE=$env:VCPKG_BINARY_CACHE" >> $env:GITHUB_ENV
+          git init -q "$env:VCPKG_ROOT"
+          git -C "$env:VCPKG_ROOT" fetch -q --depth 1 https://github.com/microsoft/vcpkg $env:VCPKG_COMMIT
+          git -C "$env:VCPKG_ROOT" checkout -q FETCH_HEAD
+          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
+          New-Item -ItemType Directory -Force "$env:VCPKG_BINARY_CACHE" | Out-Null
+          "VCPKG_BINARY_SOURCES=clear;files,$env:VCPKG_BINARY_CACHE,readwrite" >> $env:GITHUB_ENV
+
+      - name: Restore vcpkg binary cache
+        id: vcpkg-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ env.VCPKG_BINARY_CACHE }}
+          key: vcpkg-x64-windows-static-md-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-x64-windows-static-md-${{ env.VCPKG_COMMIT }}-
+
+      - name: Configure
+        # Release runs all ~1M SingleStepTests vectors (a few seconds); Debug the first 250 per file.
+        run: >-
+          cmake --preset win-${{ matrix.config }} -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+          -DGENESIS_SST_LIMIT=${{ matrix.config == 'release' && '0' || '250' }}
+
+      - name: Save vcpkg binary cache
+        # Also after a failed configure: vcpkg has usually finished building by then.
+        if: ${{ !cancelled() && steps.vcpkg-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true  # the other matrix job may have saved the same key first
+        with:
+          path: ${{ env.VCPKG_BINARY_CACHE }}
+          key: vcpkg-x64-windows-static-md-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
+
+      # Test data (spec 13): pinned downloads, cached by the hash of the lock file. Converted SingleStepTests
+      # vectors (~250 MB) and the AS assembler (~6 MB) are cached separately so one failing download does not
+      # poison the other.
+      - name: Restore SingleStepTests vectors
+        id: sst-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: test-data/m68k
+          key: sst-${{ hashFiles('tools/test-data.lock.json', 'tools/fetch-test-data.py') }}
+      - name: Fetch SingleStepTests vectors
+        if: steps.sst-cache.outputs.cache-hit != 'true'
+        run: python tools/fetch-test-data.py --only m68k
+      - name: Save SingleStepTests vectors
+        if: steps.sst-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: test-data/m68k
+          key: sst-${{ hashFiles('tools/test-data.lock.json', 'tools/fetch-test-data.py') }}
+      - name: Restore AS assembler
+        id: as-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: test-data/as
+          key: as-${{ hashFiles('tools/test-data.lock.json') }}
+      - name: Fetch AS assembler
+        id: as-fetch
+        if: steps.as-cache.outputs.cache-hit != 'true'
+        continue-on-error: true  # without AS the round-trip test reports "skipped"
+        run: python tools/fetch-test-data.py --only as
+      - name: Save AS assembler
+        if: steps.as-cache.outputs.cache-hit != 'true' && steps.as-fetch.outcome == 'success'
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: test-data/as
+          key: as-${{ hashFiles('tools/test-data.lock.json') }}
+
+      - name: Build
+        run: cmake --build --preset win-${{ matrix.config }} -- /m /v:minimal
+
+      - name: Test
+        run: ctest --preset win-${{ matrix.config }}
+
+      - name: Package
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.config == 'release'
+        run: cmake --install build/win-release --config Release --prefix dist/genesisEmu
+
+      - name: Upload Windows build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.config == 'release'
+        uses: actions/upload-artifact@v5
+        with:
+          name: genesisEmu-windows-x64-${{ github.sha }}
+          path: dist/genesisEmu

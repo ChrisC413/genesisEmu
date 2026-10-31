@@ -6,7 +6,7 @@
 
 ## Testable stage (exit criteria)
 
-From a clean clone on Windows 11 and macOS 13+: build with one CMake preset, launch the app, open a ROM, see its parsed header and SHA-1. `gen_cli info --rom x` prints the same. GitHub Actions (Windows) is green and `tools/validate-mac.sh` passes locally.
+From a clean clone on Windows 11 and macOS 15+: build with one CMake preset, launch the app, open a ROM, see its parsed header and SHA-1. `gen_cli info --rom x` prints the same. GitHub Actions (Windows) is green and `tools/validate-mac.sh` passes locally.
 
 ## Stories
 

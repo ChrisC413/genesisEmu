@@ -1,4 +1,4 @@
-"""Temporary shim: agent-monitor moved to https://github.com/ChrisC413/agent-monitor (genesisEmu D-024).
+"""Temporary shim: agent-monitor moved to https://github.com/ChrisC413/agent-monitor (genesisEmu D-027).
 
 Finds the real tool via $AGENT_MONITOR, or a clone named ``agent-monitor`` next to this checkout
 (e.g. C:/Users/chris/Desktop/projects/agent-monitor), and runs the requested script there with the

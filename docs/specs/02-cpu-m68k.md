@@ -46,3 +46,14 @@
 - Input: bytes + address. Output: mnemonic, operands, length, branch/jump targets, flow type (fallthrough / branch / call / return / jump-indirect / trap).
 - Must decode **every** opcode the CPU core decodes, and mark the rest `dc.w $XXXX` (illegal).
 - Verified by round-trip: disassemble → assemble with AS → identical bytes, over all 65,536 first words with representative extension words.
+
+## Implementation notes (M01)
+
+- Timing is accumulated per bus access (4 cycles per word, when it happens) plus explicit internal delays rather
+  than looked up per instruction. The order of accesses inside each instruction follows what the SingleStepTests
+  address-error frames reveal, so faults stack the right PC and cost the right time.
+- `Bus68k` reports wait states through a `waitCycles` counter (cleared after each step) instead of a virtual call.
+- SingleStepTests exclusions (C68-6) are listed with reasons in `tests/m68k/sst_exclusions.txt` and summarized in
+  story M01-11: 3,736 ASR vectors where the suite contradicts the PRM's carry rule, and 2 corrupt ASL.b vectors.
+- The disassembler prints PC-relative operands and branches as target addresses (AS computes the displacement)
+  and emits `dc.w` for encodings AS cannot reproduce byte for byte; see `analysis/disasm68k/disasm68k.hpp`.

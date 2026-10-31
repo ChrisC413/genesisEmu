@@ -1,7 +1,7 @@
 # M00-07 · Local macOS validation script
 
 **Milestone:** [M00 – Foundation](README.md)  
-**Status:** Draft  
+**Status:** In progress  
 **Depends on:** M00-01, M00-02  
 **Spec refs:** [13-testing-strategy](../../docs/specs/13-testing-strategy.md#ci), [07-frontend-platform](../../docs/specs/07-frontend-platform.md#platforms)
 
@@ -18,9 +18,9 @@ As a **developer**, I want a single script that builds and tests the macOS app l
 
 ## Acceptance criteria
 
-- [ ] Script runs from a clean clone on macOS 13+ with only Xcode CLT, CMake and vcpkg installed
-- [ ] Non-zero exit on any failure
-- [ ] Summary block pasted into the PR template matches the template's fields
+- [ ] Script runs from a clean clone on macOS 15+ with only Xcode CLT, CMake and vcpkg installed — *unverified: no Mac available* (syntax-checked with `bash -n`)
+- [ ] Non-zero exit on any failure — implemented for every step; *unverified on macOS*
+- [x] Summary block pasted into the PR template matches the template's fields — same field list in `tools/validate-mac.sh` and `.github/pull_request_template.md`; the CTest-summary parser was tested against real CTest output
 
 ## Test plan
 

@@ -13,7 +13,7 @@ CMakeUserPresets.json
 *.smd
 *.srm
 *.state
-roms/
+/roms/
 
 # Downloaded test data
 test-data/
