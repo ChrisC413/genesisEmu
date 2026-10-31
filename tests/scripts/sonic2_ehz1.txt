@@ -15,4 +15,6 @@ checkpoint 970 frame_hash 042a2b90cefdfa35
 checkpoint 1100 frame_hash 090d2fd6e59ff11d
 checkpoint 1300 frame_hash c2f554462b66e2f8
 checkpoint 1500 frame_hash 079aed91a575ebea
-checkpoint 1500 state_hash 6f482a461c97330a
+checkpoint 1500 state_hash 97015c2dfae7a404
+checkpoint 940 audio_hash fb7ef384ea22373e  # SEGA chant + title music (M05-06)
+checkpoint 1500 audio_hash 5315c6743af3d8c8

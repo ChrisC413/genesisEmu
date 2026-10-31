@@ -18,22 +18,22 @@
         },
         {
           "frame": 1000,
-          "frameHash": "31288ba914c647f2",
+          "frameHash": "9b5a91978a720af5",
           "what": "GHZ title card (attract demo)"
         },
         {
           "frame": 1300,
-          "frameHash": "74a5863d8cdf43d2",
+          "frameHash": "5b7d96070d8890f1",
           "what": "GHZ attract demo"
         },
         {
           "frame": 2000,
-          "frameHash": "25d1776e780ff376",
+          "frameHash": "74270be508d54371",
           "what": "GHZ attract demo (parallax, water)"
         },
         {
           "frame": 2800,
-          "frameHash": "a8d882345fdd6db6",
+          "frameHash": "2421ea1d11fedaa9",
           "what": "GHZ attract demo (loop)"
         }
       ]
@@ -59,7 +59,7 @@
         },
         {
           "frame": 1400,
-          "frameHash": "0d3c87175f7083e1",
+          "frameHash": "fdb876d813a8355d",
           "what": "EHZ 2P attract demo, interlace mode 2 (title card)"
         },
         {
