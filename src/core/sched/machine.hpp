@@ -13,6 +13,7 @@
 #include "core/hooks.hpp"
 #include "core/m68k/m68k.hpp"
 #include "core/vdp/vdp.hpp"
+#include "core/z80/z80.hpp"
 #include "core/z80/z80_control.hpp"
 
 namespace gen {
@@ -28,6 +29,7 @@ struct MachineConfig {
     std::optional<bus::Region> region;  // default: from the cartridge header
     bool tmss = false;                  // model a TMSS console (VDP locked until 'SEGA' is written)
     bool stopOnFault = false;           // run() stops with StopReason::Exception on a fault vector
+    z80::WindowTiming z80Window;        // cost of Z80 accesses to the 68k bank window
 };
 
 struct RunLimit {
@@ -46,7 +48,7 @@ enum class StopReason : std::uint8_t {
     Breakpoint,   // onInstr returned Break; the instruction has not executed
     Watchpoint,   // reserved (M06-04)
     Exception,    // a fault exception was taken and MachineConfig::stopOnFault is set
-    Unsupported,  // step() on a CPU that does not execute yet (Z80 until M04)
+    Unsupported,  // reserved
 };
 const char* toString(StopReason reason);
 
@@ -83,7 +85,8 @@ public:
     void hardReset();
 
     RunResult run(RunLimit limit);
-    // Exactly one instruction on `cpu`; line / frame boundaries it crosses are processed.
+    // Exactly one instruction on `cpu`; line / frame boundaries it crosses are processed. A Z80 step while the
+    // Z80 is held (BUSREQ / RESET) executes nothing and reports 0 instructions.
     RunResult step(CpuId cpu);
 
     // Controller input (M04-01): the buttons (bus::PadButton mask) of pad `port` (0 or 1). Latched into the
@@ -114,6 +117,9 @@ public:
     bus::Io& io() { return io_; }
     z80::Z80Control& z80() { return z80_; }
     const z80::Z80Control& z80() const { return z80_; }
+    z80::Z80& z80Cpu() { return *z80cpu_; }
+    const z80::Z80& z80Cpu() const { return *z80cpu_; }
+    std::uint64_t z80Mclk() const { return z80Mclk_; }  // master clock the Z80 has run up to
     const std::vector<std::uint8_t>& rom() const { return rom_; }
 
     const MachineStats& stats() const { return stats_; }
@@ -125,6 +131,8 @@ private:
     bool stepCpu(RunResult& result);  // false when a breakpoint stopped it
     void endLine();
     void catchUp(std::uint64_t mclk);
+    void runZ80(std::uint64_t mclk);
+    static void syncZ80(void* ctx);
 
     std::vector<std::uint8_t> rom_;
     MachineConfig config_;
@@ -136,6 +144,9 @@ private:
     bus::BusClock clock_;
     std::unique_ptr<bus::SystemBus> bus_;
     std::unique_ptr<m68k::M68k> cpu_;
+    std::unique_ptr<z80::Z80> z80cpu_;
+    std::uint64_t z80Mclk_ = 0;
+    bool inZ80_ = false;
     Hooks hooks_;
     std::uint64_t frame_ = 0;
     int line_ = 0;

@@ -27,6 +27,10 @@ struct Hooks {
     void (*onAccess)(void* ctx, CpuId cpu, AccessKind kind, std::uint32_t addr, std::uint8_t size,
                      std::uint32_t value, std::uint32_t pc) = nullptr;
     void (*onDma)(void* ctx, const DmaEvent& event) = nullptr;
+    // A Z80 access through the 68k bank window ($8000-$FFFF), with the translated 68k address (CZ-6). The
+    // Z80-local access is also reported through onAccess.
+    void (*onZ80Window)(void* ctx, AccessKind kind, std::uint16_t z80Addr, std::uint32_t m68kAddr,
+                        std::uint8_t value, std::uint16_t pc) = nullptr;
     // An interrupt was accepted at `level` (1-7).
     void (*onIrq)(void* ctx, CpuId cpu, int level) = nullptr;
     void (*onFrameEnd)(void* ctx, std::uint64_t frame) = nullptr;

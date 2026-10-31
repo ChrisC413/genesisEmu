@@ -1,4 +1,5 @@
 add_library(gen_core STATIC
+  audio/register_log.cpp
   bus/io.cpp
   bus/system_bus.cpp
   cart/known_roms.cpp

@@ -39,6 +39,11 @@ Machine::Machine(std::vector<std::uint8_t> rom, std::uint8_t headerRegions, cons
     bus_ = std::make_unique<bus::SystemBus>(vdp_, io_, z80_, clock_);
     cpu_ = std::make_unique<m68k::M68k>(*bus_);
     bus_->attach(rom_, *cpu_, config_.tmss);
+    z80cpu_ = std::make_unique<z80::Z80>(z80_);
+    z80cpu_->setHooks(&hooks_);
+    z80_.attach(z80cpu_.get(), bus_.get(), &hooks_);
+    z80_.setWindowTiming(config_.z80Window);
+    bus_->setZ80Sync(&Machine::syncZ80, this);
     vdp_.setHooks(&hooks_);
     hardReset();
 }
@@ -55,6 +60,10 @@ void Machine::hardReset() {
     io_.reset(region_, pal_, config_.tmss);
     io_.state().buttons = pendingInput_;
     z80_.reset();
+    z80_.log().clear();
+    z80cpu_->state() = z80::Z80State{};
+    z80cpu_->reset();
+    z80Mclk_ = 0;
     vdp_.reset(pal_);
     cpu_->state() = m68k::State{};
     cpu_->setIrqLevel(0);
@@ -69,8 +78,35 @@ void Machine::setHooks(const Hooks& hooks) {
     cpu_->setHooks(hooks_);
 }
 
-void Machine::catchUp(std::uint64_t /*mclk*/) {
-    // Z80 (M04) and audio chips (M05) run up to `mclk` here.
+void Machine::catchUp(std::uint64_t mclk) {
+    runZ80(mclk);  // audio chips (M05) also run up to `mclk` here
+}
+
+void Machine::syncZ80(void* ctx) {
+    auto& m = *static_cast<Machine*>(ctx);
+    m.runZ80(m.clock_.cpuMclk);
+}
+
+void Machine::runZ80(std::uint64_t mclk) {
+    if (inZ80_) {
+        return;  // a Z80 access through the bank window reached the 68k bus
+    }
+    inZ80_ = true;
+    z80cpu_->setIrq(vdp_.state().z80Int);
+    while (z80Mclk_ < mclk) {
+        if (!z80_.running()) {
+            z80Mclk_ = mclk;  // held by BUSREQ or RESET: time passes without execution
+            break;
+        }
+        const int t = z80cpu_->step();
+        if (t == 0) {
+            break;  // breakpoint (M06 surfaces Z80 breaks in run())
+        }
+        z80Mclk_ += static_cast<std::uint64_t>(t) * kZ80Divider;
+    }
+    // The 68k loses the cycles the Z80's window accesses held its bus.
+    clock_.cpuMclk += static_cast<std::uint64_t>(z80_.takeM68kStall()) * kM68kDivider;
+    inZ80_ = false;
 }
 
 void Machine::endLine() {
@@ -89,6 +125,7 @@ void Machine::endLine() {
         }
     }
     vdp_.beginLine(line_);
+    z80_.log().setPosition(frame_, line_);
     bus_->updateIrq();
 }
 
@@ -166,8 +203,18 @@ RunResult Machine::run(RunLimit limit) {
 
 RunResult Machine::step(CpuId cpu) {
     RunResult result;
-    if (cpu != CpuId::M68k) {
-        result.reason = StopReason::Unsupported;  // the Z80 executes from M04
+    if (cpu == CpuId::Z80) {
+        if (!z80_.running()) {
+            return result;
+        }
+        z80cpu_->setIrq(vdp_.state().z80Int);
+        const int t = z80cpu_->step();
+        if (z80cpu_->breakHit()) {
+            result.reason = StopReason::Breakpoint;
+            return result;
+        }
+        result.instructions = 1;
+        z80Mclk_ += static_cast<std::uint64_t>(t) * kZ80Divider;
         return result;
     }
     stepCpu(result);
@@ -260,6 +307,19 @@ std::uint64_t Machine::stateHash() const {
     h.bytes(z.ymRegs[0]);
     h.bytes(z.ymRegs[1]);
     h.u8(z.psgLast);
+    h.u8(z.psgLatch);
+    const z80::Z80State& zc = z80cpu_->state();
+    h.tag("Z80C");
+    for (const std::uint8_t r : {zc.a, zc.f, zc.b, zc.c, zc.d, zc.e, zc.h, zc.l, zc.i, zc.r, zc.im, zc.q}) {
+        h.u8(r);
+    }
+    for (const std::uint16_t r : {zc.af2, zc.bc2, zc.de2, zc.hl2, zc.ix, zc.iy, zc.sp, zc.pc, zc.wz}) {
+        h.u16(r);
+    }
+    for (const bool flag : {zc.iff1, zc.iff2, zc.halted, zc.eiDelay, zc.ldAir, zc.irqLine, zc.nmiPending}) {
+        h.boolean(flag);
+    }
+    h.u64(z80Mclk_);
 
     h.tag("SCHD");
     h.u64(frame_);

@@ -66,6 +66,12 @@ public:
     // Recomputes the 68k IPL from the VDP (after line events and VDP register writes).
     void updateIrq();
 
+    // Called before the 68k changes BUSREQ / RESET so the Z80 can first run up to the current time.
+    void setZ80Sync(void (*fn)(void*), void* ctx) {
+        z80Sync_ = fn;
+        z80SyncCtx_ = ctx;
+    }
+
     PageKind pageKind(std::uint32_t addr) const { return pages_[(addr >> 16) & 0xFF]; }
     bool vdpLocked() const { return tmss_ && state_.tmssRegister != 0x53454741; }  // 'SEGA'
 
@@ -102,6 +108,8 @@ private:
     BusState state_;
     std::vector<BusIssueRecord> issues_;
     std::array<std::uint64_t, kBusIssueCount> issueCounts_{};
+    void (*z80Sync_)(void*) = nullptr;
+    void* z80SyncCtx_ = nullptr;
 };
 
 }  // namespace gen::bus

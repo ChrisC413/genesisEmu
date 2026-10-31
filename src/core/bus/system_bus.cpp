@@ -201,7 +201,7 @@ std::uint16_t SystemBus::readZ80(std::uint32_t addr, std::uint8_t size) {
         return size == 2 ? ob : static_cast<std::uint8_t>((addr & 1) != 0 ? ob : ob >> 8);
     }
     std::uint8_t b = 0;
-    if ((addr & 0xFFFF) >= 0x8000 || !z80_.read(static_cast<std::uint16_t>(addr & 0x7FFF), b)) {
+    if ((addr & 0xFFFF) >= 0x8000 || !z80_.read68k(static_cast<std::uint16_t>(addr & 0x7FFF), b)) {
         report(BusIssue::Unmapped, addr, size, 0, false);
         return size == 2 ? ob : static_cast<std::uint8_t>((addr & 1) != 0 ? ob : ob >> 8);
     }
@@ -218,7 +218,7 @@ void SystemBus::writeZ80(std::uint32_t addr, std::uint8_t value, std::uint8_t si
         report(BusIssue::Unmapped, addr, size, value, true);
         return;
     }
-    z80_.write(static_cast<std::uint16_t>(addr & 0x7FFF), value);
+    z80_.write68k(static_cast<std::uint16_t>(addr & 0x7FFF), value, cpu_ != nullptr ? cpu_->currentPc() : 0);
 }
 
 // ---- I/O and control ($A10000-$A1FFFF)
@@ -262,12 +262,18 @@ void SystemBus::writeIo(std::uint32_t addr, std::uint16_t value, std::uint8_t si
     }
     if (off >= 0x1100 && off < 0x1200) {
         if (size == 2 || !odd) {
+            if (z80Sync_ != nullptr) {
+                z80Sync_(z80SyncCtx_);
+            }
             z80_.writeBusRequest(bit8);
         }
         return;
     }
     if (off >= 0x1200 && off < 0x1300) {
         if (size == 2 || !odd) {
+            if (z80Sync_ != nullptr) {
+                z80Sync_(z80SyncCtx_);
+            }
             z80_.writeReset(bit8);
         }
         return;
@@ -330,7 +336,7 @@ void SystemBus::writeVdp(std::uint32_t addr, std::uint16_t value, std::uint8_t s
     }
     if (port >= 0x10 && port < 0x18) {
         if (size == 2 || (addr & 1) != 0) {
-            z80_.state().psgLast = static_cast<std::uint8_t>(value);  // PSG stub until M05-02
+            z80_.psgWrite(static_cast<std::uint8_t>(value), CpuId::M68k, cpu_ != nullptr ? cpu_->currentPc() : 0);
         }
         return;
     }

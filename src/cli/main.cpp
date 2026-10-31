@@ -61,6 +61,8 @@ Commands:
                         mismatches print, write PNGs to --out and exit 3
       --dump-vdp        with --dump-frames, also write vdp_<N>.bin (registers,
                         VRAM, CRAM, VSRAM) for offline inspection
+      --reg-log <file>  write the sound-chip register write log (YM2612 / PSG,
+                        last 65536 writes) as CSV
 
   trace --rom <file> [--lock-on <file>] [--frames <N>] [--start-frame <S>]
         [--pc <lo>-<hi>] [--first] [--max-records <N>] [--out <file>]
@@ -98,6 +100,7 @@ struct Args {
     std::optional<std::string_view> maxRecords;
     std::optional<std::string_view> dumpFrames;
     std::optional<std::string_view> check;
+    std::optional<std::string_view> regLog;
     bool help = false;
     bool version = false;
     std::string error;
@@ -140,6 +143,8 @@ Args parseArgs(int argc, char** argv) {
             value(a.check);
         } else if (arg == "--dump-frames") {
             value(a.dumpFrames);
+        } else if (arg == "--reg-log") {
+            value(a.regLog);
         } else if (arg == "--dump-vdp") {
             a.dumpVdp = true;
         } else if (arg == "--frame-log") {
@@ -417,6 +422,8 @@ int cmdRun(const Args& a) {
             issues[gen::bus::toString(kind)] = m.bus().issueCount(kind);
         }
         j["busIssues"] = issues;
+        j["soundWrites"] = m.z80().log().total();
+        j["z80Pc"] = m.z80Cpu().state().pc;
         std::printf("%s\n", j.dump(2).c_str());
     } else {
         std::printf("run: %s\n", lm.title.c_str());
@@ -431,6 +438,8 @@ int cmdRun(const Args& a) {
                     static_cast<unsigned long long>(dma.count[0]), static_cast<unsigned long long>(dma.words),
                     static_cast<unsigned long long>(dma.count[1]),
                     static_cast<unsigned long long>(dma.count[2]));
+        std::printf("Z80 PC $%04X, sound-chip writes %llu\n", m.z80Cpu().state().pc,
+                    static_cast<unsigned long long>(m.z80().log().total()));
         if (st.faults != 0) {
             std::printf("faults %llu: first vector %d at PC $%06X\n",
                         static_cast<unsigned long long>(st.faults), st.firstFaultVector, st.firstFaultPc);
@@ -448,6 +457,14 @@ int cmdRun(const Args& a) {
             const auto& e = issues[i];
             std::printf("  %s %s.%c $%06X = $%X (PC $%06X)\n", gen::bus::toString(e.issue),
                         e.write ? "write" : "read", e.size == 1 ? 'b' : 'w', e.addr, e.value, e.pc);
+        }
+    }
+    if (a.regLog) {
+        std::ofstream csv(gen::common::fromUtf8(*a.regLog), std::ios::binary);
+        csv << m.z80().log().toCsv();
+        if (!csv) {
+            std::fprintf(stderr, "gen_cli: cannot write %.*s\n", static_cast<int>(a.regLog->size()), a.regLog->data());
+            return kExitLoadError;
         }
     }
     if (mismatches != 0) {

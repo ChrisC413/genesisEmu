@@ -25,6 +25,7 @@ add_executable(gen_unit_tests
   unit/png_test.cpp
   unit/vdp_render_test.cpp
   unit/vdp_test.cpp
+  unit/z80_system_test.cpp
 )
 target_include_directories(gen_unit_tests PRIVATE unit)
 target_link_libraries(gen_unit_tests PRIVATE gen_analysis gen_common gen_test_support Catch2::Catch2WithMain)
