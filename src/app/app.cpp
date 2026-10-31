@@ -1,6 +1,8 @@
 #include "app/app.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <format>
 
 #include <SDL3/SDL.h>
 #include <imgui.h>
@@ -9,6 +11,7 @@
 
 #include "app/panels/panels.hpp"
 #include "common/logging.hpp"
+#include "core/state/state_hash.hpp"
 #include "core/version.hpp"
 
 namespace gen::app {
@@ -52,6 +55,8 @@ int App::run(const AppOptions& options) {
         layoutLoaded_ = true;
         layoutRestored_ = true;
     }
+    lockOnPath_ = options.lockOn;
+    fastForwardLatched_ = options.fastForward;
     if (options.rom && !openRom(*options.rom) && options.smokeFrames > 0) {
         log::shutdown();
         return kAppRomLoadFailed;
@@ -88,14 +93,19 @@ int App::run(const AppOptions& options) {
             continue;
         }
 
+        stepEmulation(options.smokeFrames > 0);
         window_.beginFrame();
+        if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
+            running_ = !running_;
+        }
+        fastForwardActive_ = !ImGui::GetIO().WantTextInput && ImGui::IsKeyDown(ImGuiKey_Tab);
         if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_O, ImGuiInputFlags_RouteGlobal)) {
             romDialog_.open(window_.handle(),
                             romPath_.empty() ? std::nullopt : std::optional(romPath_.parent_path()));
         }
         drawDockSpace();
         drawMenuBar();
-        drawGameView(&showGameView_, rom_);
+        gameView_.draw(&showGameView_, rom_, overlayText());
         drawRomInfo(&showRomInfo_, rom_);
         drawPopups();
         const bool lastSmokeFrame = options.smokeFrames > 0 && frame + 1 >= options.smokeFrames;
@@ -112,6 +122,10 @@ int App::run(const AppOptions& options) {
         }
     }
 
+    if (emulatedFrames_ != 0) {
+        logger().info("emulated {} frames, core {:.3f} ms/frame on average, peak {:.0f} frames/s",
+                      emulatedFrames_, coreMsTotal_ / static_cast<double>(emulatedFrames_), peakFps_);
+    }
     const int result = options.smokeFrames > 0 ? smokeCheck(options) : kAppOk;
     persistLayout();
     window_.logicalSize(config_.config.ui.windowWidth, config_.config.ui.windowHeight,
@@ -139,6 +153,7 @@ bool App::openRom(const std::filesystem::path& path) {
                               : std::string("unknown ROM"));
     showRomInfo_ = true;
     addRecentRom(path);
+    startMachine();
     saveConfig();
     return true;
 }
@@ -215,8 +230,14 @@ void App::drawMenuBar() {
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Emulation")) {
-        ImGui::MenuItem("Run / Pause", "F5", false, false);
-        ImGui::MenuItem("Reset", nullptr, false, false);
+        if (ImGui::MenuItem(running_ ? "Pause" : "Run", "F5", false, machine_ != nullptr)) {
+            running_ = !running_;
+        }
+        if (ImGui::MenuItem("Reset", nullptr, false, machine_ != nullptr)) {
+            machine_->hardReset();
+            accumulator_ = 0;
+        }
+        ImGui::MenuItem("Fast-forward", "hold Tab", &fastForwardLatched_, machine_ != nullptr);
         if (ImGui::BeginMenu("Region", false)) {
             ImGui::EndMenu();
         }
@@ -314,8 +335,108 @@ int App::smokeCheck(const AppOptions& options) const {
     }
     if (rom_) {
         logger().info("smoke test: ROM info shows '{}' sha1={}", rom_->header.overseasTitle, rom_->sha1Hex);
+        if (!machine_ || machine_->frame() == 0) {
+            fail("emulation did not run");
+        } else if (!gameView_.hasFrame()) {
+            fail("no frame reached the game view");
+        } else {
+            logger().info("smoke test: {} frames emulated, {} uploaded, frame hash {}", machine_->frame(),
+                          gameView_.uploads(), state::hashToHex(machine_->vdp().frameHash()));
+        }
     }
     return ok ? kAppOk : kAppSmokeCheckFailed;
+}
+
+void App::startMachine() {
+    std::vector<std::uint8_t> image = rom_->data;
+    std::uint8_t regions = rom_->header.regions;
+    if (lockOnPath_) {
+        if (auto locked = cart::loadRomFile(*lockOnPath_)) {
+            image = cart::lockOnImage(rom_->data, locked.rom->data);
+            regions = locked.rom->header.regions;
+            logger().info("locked on '{}'", common::toUtf8(*lockOnPath_));
+        } else {
+            logger().error("lock-on: {}", locked.error);
+        }
+    }
+    machine_ = std::make_unique<Machine>(std::move(image), regions);
+    gameView_.clear();
+    running_ = true;
+    accumulator_ = 0;
+}
+
+void App::stepEmulation(bool smoke) {
+    const std::uint64_t now = SDL_GetPerformanceCounter();
+    const auto freq = static_cast<double>(SDL_GetPerformanceFrequency());
+    const double dt = lastTick_ != 0 ? static_cast<double>(now - lastTick_) / freq : 0.0;
+    lastTick_ = now;
+    if (fpsStart_ == 0) {
+        fpsStart_ = now;
+    } else if (static_cast<double>(now - fpsStart_) / freq >= 0.5) {
+        framesPerSecond_ = static_cast<double>(fpsFrames_) / (static_cast<double>(now - fpsStart_) / freq);
+        peakFps_ = std::max(peakFps_, framesPerSecond_);
+        fpsFrames_ = 0;
+        fpsStart_ = now;
+    }
+    if (!machine_ || !running_) {
+        accumulator_ = 0;
+        return;
+    }
+    const double period = machine_->pal() ? 1.0 / 49.70 : 1.0 / 59.92;
+    const auto elapsed = [&] { return static_cast<double>(SDL_GetPerformanceCounter() - now) / freq; };
+    int frames = 0;
+    const auto runFrame = [&] {
+        machine_->run(RunLimit::frames(1));
+        ++frames;
+    };
+    if (fastForwardActive_ || fastForwardLatched_) {
+        do {  // unthrottled: as many frames as fit in most of a 60 Hz tick
+            runFrame();
+        } while (elapsed() < 0.012 && frames < 1000);
+        accumulator_ = 0;
+    } else if (smoke) {
+        runFrame();
+    } else {
+        // Host vsync drives the video when the display refresh is within 1 Hz of the console's; the small
+        // rate difference is left to audio rate control (M05). Otherwise pace against the real clock.
+        float refresh = 0;
+        if (const SDL_DisplayMode* mode =
+                SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window_.handle()))) {
+            refresh = mode->refresh_rate;
+        }
+        if (std::abs(static_cast<double>(refresh) - 1.0 / period) < 1.0) {
+            runFrame();
+            accumulator_ = 0;
+        } else {
+            accumulator_ = std::min(accumulator_ + dt, 0.25);
+            while (accumulator_ >= period && frames < 4) {
+                runFrame();
+                accumulator_ -= period;
+            }
+        }
+    }
+    if (frames == 0) {
+        return;
+    }
+    const double ms = elapsed() * 1000.0 / frames;
+    coreMsAvg_ = coreMsAvg_ == 0 ? ms : coreMsAvg_ * 0.95 + ms * 0.05;
+    coreMsTotal_ += ms * frames;
+    emulatedFrames_ += static_cast<std::uint64_t>(frames);
+    fpsFrames_ += static_cast<std::uint64_t>(frames);
+    gameView_.upload(machine_->vdp());
+}
+
+std::string App::overlayText() const {
+    if (!machine_) {
+        return {};
+    }
+    std::string text = std::format("{:.1f} fps | core {:.2f} ms/frame", framesPerSecond_, coreMsAvg_);
+    if (!running_) {
+        text += " | paused";
+    } else if (fastForwardActive_ || fastForwardLatched_) {
+        text += std::format(" | fast-forward {:.1f}x", framesPerSecond_ / 59.92);
+    }
+    return text;
 }
 
 }  // namespace gen::app

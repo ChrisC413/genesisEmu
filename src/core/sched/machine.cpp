@@ -75,6 +75,7 @@ void Machine::catchUp(std::uint64_t /*mclk*/) {
 void Machine::endLine() {
     const std::uint64_t lineEnd = clock_.lineStart + kMclkPerLine;
     catchUp(lineEnd);
+    vdp_.endLine(line_);
     clock_.lineStart = lineEnd;
     if (++line_ >= linesPerFrame()) {
         line_ = 0;
@@ -118,6 +119,15 @@ bool Machine::stepCpu(RunResult& result) {
     }
     while (clock_.cpuMclk >= clock_.lineStart + kMclkPerLine) {
         endLine();
+    }
+    // A 68k -> VDP DMA started by this instruction freezes the 68k until the transfer is done; the VDP
+    // gets the time line by line at the DMA bandwidth of each line (M03-02).
+    while (vdp_.dmaFreezesCpu()) {
+        const auto avail = static_cast<int>(clock_.lineStart + kMclkPerLine - clock_.cpuMclk);
+        clock_.cpuMclk += static_cast<std::uint64_t>(vdp_.runDma(avail));
+        while (clock_.cpuMclk >= clock_.lineStart + kMclkPerLine) {
+            endLine();
+        }
     }
     return result.reason != StopReason::Exception;
 }
@@ -192,6 +202,7 @@ std::uint64_t Machine::stateHash() const {
     h.tag("VDP ");
     h.bytes(v.regs);
     h.bytes(v.vram);
+    h.bytes(v.satCache);
     for (const std::uint16_t w : v.cram) {
         h.u16(w);
     }
@@ -210,6 +221,16 @@ std::uint64_t Machine::stateHash() const {
     h.boolean(v.pal);
     h.i32(v.hintCounter);
     h.i32(v.line);
+    h.u16(v.addressHigh);
+    h.boolean(v.z80Int);
+    h.u16(v.readBuffer);
+    h.i32(v.fifoUsed);
+    h.boolean(v.dmaActive);
+    h.u32(v.dmaRemaining);
+    h.u32(v.dmaSource);
+    h.u64(v.dmaCredit);
+    h.u32(v.dmaBusyBytes);
+    h.boolean(v.prevLineDotOverflow);
 
     const bus::IoState& io = io_.state();
     h.tag("IO  ");

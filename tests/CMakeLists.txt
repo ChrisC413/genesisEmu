@@ -21,6 +21,8 @@ add_executable(gen_unit_tests
   unit/paths_test.cpp
   unit/rom_test.cpp
   unit/skeleton_test.cpp
+  unit/png_test.cpp
+  unit/vdp_render_test.cpp
   unit/vdp_test.cpp
 )
 target_include_directories(gen_unit_tests PRIVATE unit)
@@ -31,6 +33,8 @@ catch_discover_tests(gen_unit_tests DISCOVERY_MODE PRE_TEST PROPERTIES LABELS un
 # Tests against the user's commercial ROMs (GENESIS_ROM_DIR); they report "skipped" when it is unset.
 add_executable(gen_rom_tests
   roms/boot_test.cpp
+  roms/frame_test.cpp
+  roms/rom_scan.cpp
   roms/rom_identify_test.cpp
 )
 target_link_libraries(gen_rom_tests PRIVATE gen_common Catch2::Catch2WithMain)

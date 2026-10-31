@@ -59,3 +59,11 @@ add_test(NAME cli.trace_golden COMMAND "${CMAKE_COMMAND}" ${trace_defs} -P "${CM
 set_tests_properties(cli.trace_golden PROPERTIES FIXTURES_REQUIRED cli_roms LABELS cli)
 genesis_cli_test(trace_requires_rom 1 "trace" EXPECT "requires --rom")
 genesis_cli_test(trace_bad_pc 1 "trace|--rom|${rom_dir}/boot.bin|--pc|zz" EXPECT "--pc expects")
+
+# M03: frame dumps and golden frame checks (the [rom] golden frames are in tests/roms/frame_test.cpp).
+genesis_cli_test(run_dump_frames 0
+  "run|--rom|${rom_dir}/boot.bin|--dump-frames|2,5|--dump-vdp|--out|${CMAKE_CURRENT_BINARY_DIR}"
+  EXPECT "frames 5,.*frame hash [0-9a-f]+ \\(256x224\\).*DMA: [0-9]+ 68k->VDP")
+genesis_cli_test(run_check_unknown_rom 3
+  "run|--rom|${rom_dir}/boot.bin|--check|${PROJECT_SOURCE_DIR}/tests/golden/m03_frames.json" EXPECT "no checkpoints")
+genesis_cli_test(run_bad_dump_frames 1 "run|--rom|${rom_dir}/boot.bin|--dump-frames|x" EXPECT "--dump-frames expects")
