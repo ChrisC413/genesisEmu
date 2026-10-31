@@ -21,7 +21,7 @@ Every mod has to run on real hardware, not only in this emulator.
 
 | ID | Goal |
 |----|------|
-| G1 | Cross-platform desktop app for **Windows 11 (x64)** and **macOS 13+ (Apple Silicon; x64 best effort)** (D-015). |
+| G1 | Cross-platform desktop app for **Windows 11 (x64)** and **macOS 15+ (Apple Silicon; x64 best effort)** (D-015, raised by D-025). |
 | G2 | Full **video** (VDP) and **sound** (YM2612 + SN76489) output at full speed. |
 | G3 | **Freeze execution** at any instruction boundary: pause, step, breakpoints, save states, and start tracing from a paused state. |
 | G4 | **Hand-written, instruction-by-instruction** implementations of the **Motorola 68000** and **Zilog Z80** CPUs. |

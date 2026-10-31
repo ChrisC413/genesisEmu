@@ -5,9 +5,9 @@
 | Platform | Toolchain | Package |
 |----------|-----------|---------|
 | Windows 11 x64 | MSVC 2022 (C++20) | Portable folder: `genesisEmu.exe` + DLLs; later an installer |
-| macOS 13+ | Apple clang (Xcode 15+) | `.app` bundle; arm64 primary, x86_64 best effort; ad-hoc signed for local use |
+| macOS 15+ | Apple clang (Xcode 16+) | `.app` bundle; arm64 primary, x86_64 best effort; ad-hoc signed for local use |
 
-(D-015.) Windows is built and tested in GitHub Actions; macOS is built and tested locally with
+(D-015, D-025: deployment target 15.0.) Windows is built and tested in GitHub Actions; macOS is built and tested locally with
 `tools/validate-mac.sh` (D-016, spec 13).
 
 CMake presets: `win-debug`, `win-release`, `mac-debug`, `mac-release`. Builds must work from a clean clone
