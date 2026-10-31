@@ -29,7 +29,7 @@ SoundSystem::~SoundSystem() = default;
 
 void SoundSystem::reset(bool pal) {
     pal_ = pal;
-    fm_->reset();
+    fm_ = makeYmfmSynth();  // a fresh chip: ymfm's reset() keeps some internal counters
     psg_.reset();
     mclk_ = 0;
     psgNext_ = 0;
@@ -95,7 +95,8 @@ void SoundSystem::render(int n) {
         }
         mclk_ = end;
         // Box-filtered PSG (4-5 ticks per sample) mixed into both sides.
-        const float psg = ticks != 0 ? static_cast<float>(psgSum) / static_cast<float>(ticks) * mix_.psgGain : 0.0f;
+        const float psg =
+            ticks != 0 ? static_cast<float>(psgSum) / static_cast<float>(ticks) * mix_.psgGain : 0.0f;
         float l = static_cast<float>(fmBuf_[static_cast<std::size_t>(2 * i)]) * mix_.fmGain + psg;
         float r = static_cast<float>(fmBuf_[static_cast<std::size_t>(2 * i + 1)]) * mix_.fmGain + psg;
         // DC blocker (first-order high-pass): removes the DAC's idle offset so silence is silent.

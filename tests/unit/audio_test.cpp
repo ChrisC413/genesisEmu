@@ -1,5 +1,5 @@
-// Audio (M05): PSG tone / noise / attenuation, YM2612 through ymfm (pitch, DAC, timers), the resampler and the
-// mixed output of the SoundSystem.
+// Audio (M05): PSG tone / noise / attenuation, YM2612 through ymfm (pitch, DAC, timers), the resampler and
+// the mixed output of the SoundSystem.
 
 #include <cmath>
 #include <cstdint>
@@ -55,7 +55,8 @@ TEST_CASE("PSG tone period counts ticks", "[audio][psg]") {
 
 TEST_CASE("PSG attenuation is 2 dB per step, 15 is silent", "[audio][psg]") {
     for (int i = 0; i < 14; ++i) {
-        CHECK(static_cast<double>(Psg::volume(i + 1)) / Psg::volume(i) == Catch::Approx(0.7943).epsilon(0.01));
+        CHECK(static_cast<double>(Psg::volume(i + 1)) / Psg::volume(i) ==
+              Catch::Approx(0.7943).epsilon(0.01));
     }
     CHECK(Psg::volume(15) == 0);
 }
@@ -148,7 +149,8 @@ TEST_CASE("Resampler keeps pitch and level", "[audio][resampler]") {
     Resampler rs(inRate, 48000);
     std::vector<std::int16_t> in;
     for (int i = 0; i < 53267; ++i) {
-        const auto v = static_cast<std::int16_t>(std::lround(10000 * std::sin(2 * std::numbers::pi * 1000 * i / inRate)));
+        const auto v = static_cast<std::int16_t>(
+            std::lround(10000 * std::sin(2 * std::numbers::pi * 1000 * i / inRate)));
         in.push_back(v);
         in.push_back(v);
     }

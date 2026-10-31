@@ -4,12 +4,12 @@
 // about two frames of audio queued. Paused: the queue is flushed and the device paused (silence, no buzz).
 // Fast-forward: muted.
 
-#include <SDL3/SDL.h>
-
 #include <cstdint>
 #include <span>
 #include <string>
 #include <vector>
+
+#include <SDL3/SDL.h>
 
 #include "core/audio/resampler.hpp"
 

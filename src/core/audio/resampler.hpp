@@ -31,8 +31,8 @@ private:
     double inRate_ = 1;
     double outRate_ = 1;
     double adjust_ = 1;
-    double step_ = 1;    // input samples per output sample
-    double pos_ = 0;     // position of the next output sample, relative to hist_[0]
+    double step_ = 1;           // input samples per output sample
+    double pos_ = 0;            // position of the next output sample, relative to hist_[0]
     std::vector<float> table_;  // (kPhases + 1) x (2 * kHalfTaps)
     std::vector<float> hist_;   // interleaved stereo input not yet fully consumed
 };

@@ -23,7 +23,9 @@ public:
     void close();
 
     bool isOpen() const { return out_.is_open(); }
-    std::uint64_t frames() const { return channels_ != 0 ? bytes_ / (2u * static_cast<unsigned>(channels_)) : 0; }
+    std::uint64_t frames() const {
+        return channels_ != 0 ? bytes_ / (2u * static_cast<unsigned>(channels_)) : 0;
+    }
 
 private:
     std::ofstream out_;

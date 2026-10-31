@@ -1,12 +1,12 @@
 // "Sound" panel (spec 06 A-1, A-2, A-4; M05-05): output volume and mix, per-channel mute / solo, the
 // sound-chip register write log with CSV export, and WAV recording.
 
-#include <imgui.h>
-
 #include <chrono>
 #include <cstdio>
 #include <format>
 #include <fstream>
+
+#include <imgui.h>
 
 #include "app/app.hpp"
 #include "common/logging.hpp"
@@ -67,7 +67,8 @@ void App::drawSoundPanel() {
     if (!audio_.isOpen()) {
         ImGui::TextColored(ImVec4(1, 0.6f, 0.3f, 1), "No audio device (emulation continues silently)");
     } else {
-        ImGui::Text("Queue %d ms, rate adjust %+.3f%%", audio_.queuedMs(), (audio_.ratioAdjust() - 1.0) * 100.0);
+        ImGui::Text("Queue %d ms, rate adjust %+.3f%%", audio_.queuedMs(),
+                    (audio_.ratioAdjust() - 1.0) * 100.0);
     }
     if (ImGui::SliderFloat("Volume", &volume_, 0.0f, 2.0f, "%.2f")) {
         audio_.setVolume(volume_);
@@ -157,7 +158,8 @@ void App::drawSoundPanel() {
                     ImGui::TableNextColumn();
                     ImGui::Text("%06X", w.pc);
                     ImGui::TableNextColumn();
-                    ImGui::TextUnformatted(w.chip == audio::Chip::Psg ? "PSG" : (w.port != 0 ? "YM II" : "YM I"));
+                    ImGui::TextUnformatted(w.chip == audio::Chip::Psg ? "PSG"
+                                                                      : (w.port != 0 ? "YM II" : "YM I"));
                     ImGui::TableNextColumn();
                     ImGui::Text("%02X", w.reg);
                     ImGui::TableNextColumn();

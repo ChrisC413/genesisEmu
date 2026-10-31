@@ -1,6 +1,6 @@
 #pragma once
-// YM2612 FM synthesis behind IFmSynth (spec 06, D-013). The interface keeps ymfm out of the bus and save-state
-// code; YmfmSynth is the implementation (third_party/ymfm, BSD-3-Clause).
+// YM2612 FM synthesis behind IFmSynth (spec 06, D-013). The interface keeps ymfm out of the bus and
+// save-state code; YmfmSynth is the implementation (third_party/ymfm, BSD-3-Clause).
 
 #include <cstdint>
 #include <memory>
@@ -8,9 +8,9 @@
 
 namespace gen::audio {
 
-inline constexpr int kFmClockDivider = 7;     // YM2612 input clock = MCLK / 7
-inline constexpr int kFmSampleClocks = 144;   // one output sample per 144 input clocks (~53,267 Hz NTSC)
-inline constexpr int kFmChannelDac = 6;       // channel-mask bit of the DAC (channels 0-5 are FM 1-6)
+inline constexpr int kFmClockDivider = 7;    // YM2612 input clock = MCLK / 7
+inline constexpr int kFmSampleClocks = 144;  // one output sample per 144 input clocks (~53,267 Hz NTSC)
+inline constexpr int kFmChannelDac = 6;      // channel-mask bit of the DAC (channels 0-5 are FM 1-6)
 
 class IFmSynth {
 public:

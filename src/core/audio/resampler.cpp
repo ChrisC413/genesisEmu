@@ -19,7 +19,8 @@ void Resampler::setRates(double inRate, double outRate) {
         for (int k = 0; k < taps; ++k) {
             const double t = (k - kHalfTaps + 1) - frac;  // distance from the output point, in input samples
             const double x = 2.0 * fc * t;
-            const double sinc = std::abs(x) < 1e-9 ? 1.0 : std::sin(std::numbers::pi * x) / (std::numbers::pi * x);
+            const double sinc =
+                std::abs(x) < 1e-9 ? 1.0 : std::sin(std::numbers::pi * x) / (std::numbers::pi * x);
             // Blackman window over [-kHalfTaps, kHalfTaps].
             const double w = (t + kHalfTaps) / (2.0 * kHalfTaps);
             const double win =

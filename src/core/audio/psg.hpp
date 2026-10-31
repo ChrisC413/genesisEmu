@@ -11,10 +11,10 @@ namespace gen::audio {
 inline constexpr int kPsgMaxLevel = 2000;  // output amplitude of one channel at attenuation 0
 
 struct PsgState {
-    std::array<std::uint16_t, 3> period{};       // 10-bit tone periods
+    std::array<std::uint16_t, 3> period{};  // 10-bit tone periods
     std::array<std::uint8_t, 4> attenuation{15, 15, 15, 15};
-    std::uint8_t noiseControl = 0;                // bit 2 = white noise, bits 0-1 = rate
-    std::uint8_t latch = 0;                       // register selected by the last latch byte (0-7)
+    std::uint8_t noiseControl = 0;  // bit 2 = white noise, bits 0-1 = rate
+    std::uint8_t latch = 0;         // register selected by the last latch byte (0-7)
     std::array<std::uint16_t, 4> counter{};
     std::array<std::int8_t, 4> output{1, 1, 1, 1};  // +1 / -1 square output of each channel
     std::uint16_t lfsr = 0x8000;

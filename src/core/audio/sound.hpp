@@ -16,7 +16,7 @@
 namespace gen::audio {
 
 inline constexpr int kMclkPerSample = kFmClockDivider * kFmSampleClocks;  // 1008
-inline constexpr int kMclkPerPsgTick = 15 * 16;                            // 240
+inline constexpr int kMclkPerPsgTick = 15 * 16;                           // 240
 inline constexpr double kMclkNtsc = 53'693'175.0;
 inline constexpr double kMclkPal = 53'203'424.0;
 
@@ -84,11 +84,11 @@ private:
     std::uint64_t (*now_)(void*) = nullptr;
     void* nowCtx_ = nullptr;
     bool pal_ = false;
-    std::uint64_t mclk_ = 0;        // rendered up to here
-    std::uint64_t psgNext_ = 0;     // master clock of the next PSG tick
+    std::uint64_t mclk_ = 0;     // rendered up to here
+    std::uint64_t psgNext_ = 0;  // master clock of the next PSG tick
     float lpL_ = 0;
     float lpR_ = 0;
-    std::array<float, 2> dcIn_{};   // DC blocker state (the YM2612 DAC idles at a positive offset)
+    std::array<float, 2> dcIn_{};  // DC blocker state (the YM2612 DAC idles at a positive offset)
     std::array<float, 2> dcOut_{};
     unsigned channelMask_ = kChAll;
     MixSettings mix_;

@@ -37,7 +37,8 @@ public:
     }
     void reset() {
         timers_ = {-1, -1};
-        busyEnd_ = now_;
+        now_ = 0;
+        busyEnd_ = 0;
     }
     // ymfm's saved-state helper has no 64-bit overloads: split into 32-bit halves.
     void saveRestore(ymfm::ymfm_saved_state& st) {
@@ -88,7 +89,8 @@ public:
             }
             if (m_dac_enable != 0) {
                 const bool on = (mask & (1u << kFmChannelDac)) != 0;
-                const std::int32_t dac = dac_discontinuity(on ? (static_cast<std::int16_t>(m_dac_data << 7) >> 7) : 0);
+                const std::int32_t dac =
+                    dac_discontinuity(on ? (static_cast<std::int16_t>(m_dac_data << 7) >> 7) : 0);
                 left += m_fm.regs().ch_output_0(0x102) != 0 ? dac : dac_discontinuity(0);
                 right += m_fm.regs().ch_output_1(0x102) != 0 ? dac : dac_discontinuity(0);
             }
@@ -106,7 +108,9 @@ public:
         intf_.reset();
         chip_.reset();
     }
-    void write(int port, std::uint8_t value) override { chip_.write(static_cast<std::uint32_t>(port & 3), value); }
+    void write(int port, std::uint8_t value) override {
+        chip_.write(static_cast<std::uint32_t>(port & 3), value);
+    }
     std::uint8_t readStatus() override { return chip_.read_status(); }
     void generate(std::int32_t* stereo, int frames, unsigned channelMask) override {
         chip_.render(stereo, frames, channelMask, intf_);
