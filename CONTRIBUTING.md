@@ -30,6 +30,24 @@ where no OpenGL 3.3 context is available), `rom` (needs your own ROM dumps, see 
 
 Tests that write user data set `GENESISEMU_HOME` so they never touch your real configuration.
 
+## Test data
+
+Test suites are downloaded, never committed (spec 13):
+
+```sh
+python tools/fetch-test-data.py              # SingleStepTests 68000 vectors (~200 MB download) + AS (Windows)
+python tools/fetch-test-data.py --only m68k  # just the CPU vectors
+```
+
+Everything is pinned in `tools/test-data.lock.json` and lands in the ignored `test-data/` folder. Without it the
+`m68k` (SingleStepTests) and `analysis` (disassembler round trip through AS) CTest labels report "skipped". On
+macOS, build AS from source and point `GENESIS_ASL` at the `asl` binary. Useful runs:
+
+```sh
+build/win-release/tests/Release/gen_m68k_sst --only MOVE.w --show 3   # one file, print 3 failure diffs
+build/win-release/tests/Release/gen_m68k_bench 100                    # 68000 throughput (MIPS)
+```
+
 ## Formatting
 
 clang-format is pinned to the version CI uses:

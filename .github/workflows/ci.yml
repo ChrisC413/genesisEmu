@@ -73,7 +73,10 @@ jobs:
           restore-keys: vcpkg-x64-windows-static-md-${{ env.VCPKG_COMMIT }}-
 
       - name: Configure
-        run: cmake --preset win-${{ matrix.config }} -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+        # Release runs all ~1M SingleStepTests vectors (a few seconds); Debug the first 250 per file.
+        run: >-
+          cmake --preset win-${{ matrix.config }} -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+          -DGENESIS_SST_LIMIT=${{ matrix.config == 'release' && '0' || '250' }}
 
       - name: Save vcpkg binary cache
         # Also after a failed configure: vcpkg has usually finished building by then.
@@ -83,6 +86,44 @@ jobs:
         with:
           path: ${{ env.VCPKG_BINARY_CACHE }}
           key: vcpkg-x64-windows-static-md-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
+
+      # Test data (spec 13): pinned downloads, cached by the hash of the lock file. Converted SingleStepTests
+      # vectors (~250 MB) and the AS assembler (~6 MB) are cached separately so one failing download does not
+      # poison the other.
+      - name: Restore SingleStepTests vectors
+        id: sst-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: test-data/m68k
+          key: sst-${{ hashFiles('tools/test-data.lock.json', 'tools/fetch-test-data.py') }}
+      - name: Fetch SingleStepTests vectors
+        if: steps.sst-cache.outputs.cache-hit != 'true'
+        run: python tools/fetch-test-data.py --only m68k
+      - name: Save SingleStepTests vectors
+        if: steps.sst-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: test-data/m68k
+          key: sst-${{ hashFiles('tools/test-data.lock.json', 'tools/fetch-test-data.py') }}
+      - name: Restore AS assembler
+        id: as-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: test-data/as
+          key: as-${{ hashFiles('tools/test-data.lock.json') }}
+      - name: Fetch AS assembler
+        id: as-fetch
+        if: steps.as-cache.outputs.cache-hit != 'true'
+        continue-on-error: true  # without AS the round-trip test reports "skipped"
+        run: python tools/fetch-test-data.py --only as
+      - name: Save AS assembler
+        if: steps.as-cache.outputs.cache-hit != 'true' && steps.as-fetch.outcome == 'success'
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: test-data/as
+          key: as-${{ hashFiles('tools/test-data.lock.json') }}
 
       - name: Build
         run: cmake --build --preset win-${{ matrix.config }} -- /m /v:minimal

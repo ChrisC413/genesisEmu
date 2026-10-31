@@ -11,8 +11,10 @@ genesis_set_warnings(gen_test_support)
 
 add_executable(gen_unit_tests
   unit/config_test.cpp
+  unit/disasm68k_test.cpp
   unit/hash_test.cpp
   unit/logging_test.cpp
+  unit/m68k_test.cpp
   unit/paths_test.cpp
   unit/rom_test.cpp
   unit/skeleton_test.cpp
@@ -29,6 +31,33 @@ add_executable(gen_rom_tests
 target_link_libraries(gen_rom_tests PRIVATE gen_common Catch2::Catch2WithMain)
 genesis_set_warnings(gen_rom_tests)
 catch_discover_tests(gen_rom_tests DISCOVERY_MODE PRE_TEST PROPERTIES LABELS rom SKIP_RETURN_CODE 4)
+
+# SingleStepTests 68000 runner (M01-02). The vectors are fetched by tools/fetch-test-data.py into test-data/;
+# without them the tests report "skipped".
+add_executable(gen_m68k_sst m68k/sst_runner.cpp)
+target_link_libraries(gen_m68k_sst PRIVATE gen_common gen_core)
+target_compile_definitions(gen_m68k_sst PRIVATE GENESIS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+genesis_set_warnings(gen_m68k_sst)
+set(GENESIS_SST_EXCLUSIONS "${CMAKE_CURRENT_SOURCE_DIR}/m68k/sst_exclusions.txt")
+# Per push: the first 250 vectors of every file. Nightly: GENESIS_SST_LIMIT=0 runs all ~1M.
+set(GENESIS_SST_LIMIT 250 CACHE STRING "Vectors per SingleStepTests file in the m68k.sst test (0 = all)")
+add_test(NAME m68k.sst COMMAND gen_m68k_sst --limit ${GENESIS_SST_LIMIT} --show 0
+  --exclusions "${GENESIS_SST_EXCLUSIONS}")
+add_test(NAME m68k.sst_selftest COMMAND gen_m68k_sst --only NOP --limit 50 --show 0 --inject-fault --expect-fail)
+set_tests_properties(m68k.sst m68k.sst_selftest PROPERTIES LABELS m68k SKIP_RETURN_CODE 4)
+
+# 68000 throughput microbenchmark (M01-11); run by hand: gen_m68k_bench [millions-of-instructions]
+add_executable(gen_m68k_bench bench/m68k_bench.cpp)
+target_link_libraries(gen_m68k_bench PRIVATE gen_core)
+genesis_set_warnings(gen_m68k_bench)
+
+# Disassembler round trip through AS (M01-12); "skipped" when AS has not been fetched.
+add_executable(gen_disasm_roundtrip analysis/disasm_roundtrip.cpp)
+target_link_libraries(gen_disasm_roundtrip PRIVATE gen_analysis gen_common)
+target_compile_definitions(gen_disasm_roundtrip PRIVATE GENESIS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+genesis_set_warnings(gen_disasm_roundtrip)
+add_test(NAME analysis.disasm_roundtrip COMMAND gen_disasm_roundtrip)
+set_tests_properties(analysis.disasm_roundtrip PROPERTIES LABELS analysis SKIP_RETURN_CODE 4)
 
 add_subdirectory(cli)
 if(GENESIS_BUILD_APP)

@@ -1,7 +1,7 @@
 # M01-03 · Effective address modes
 
 **Milestone:** [M01 – Motorola 68000 CPU](README.md)  
-**Status:** Draft  
+**Status:** Done  
 **Depends on:** M01-01, M01-02  
 **Spec refs:** [02-cpu-m68k](../../docs/specs/02-cpu-m68k.md#requirements)
 
@@ -18,9 +18,9 @@ As a **developer**, I want all 14 68000 addressing modes with correct side effec
 
 ## Acceptance criteria
 
-- [ ] Operand fetch/store templated on size and mode
-- [ ] Index register sign-extension (Xn.W vs Xn.L) correct
-- [ ] EA cycle table matches the User's Manual
+- [x] Operand fetch/store templated on size and mode — `CpuCore::eaAddress<S, M>` / `readEa<S, M>`; handlers are instantiated per size and mode through `byMode()`
+- [x] Index register sign-extension (Xn.W vs Xn.L) correct — MOVE.b/w/l, LEA, PEA, JMP, JSR pass 100% (SingleStepTests 680x0 @ e0d5ece9 (`gen_m68k_sst`, Release, 2026-10-24))
+- [x] EA cycle table matches the User's Manual — verified through the suite's cycle counts for every EA combination of MOVE (0 cycle mismatches); EA time is the sum of the extension-word fetches, the operand access and 2 internal cycles for -(An) and indexed modes
 
 ## Test plan
 

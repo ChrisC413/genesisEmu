@@ -23,3 +23,13 @@ The full license texts of the vcpkg-built dependencies are installed by vcpkg un
 
 The known-ROM table (`src/core/cart/known_roms.cpp`) lists SHA-1/CRC32 values from the No-Intro
 Sega Mega Drive / Genesis DAT (as mirrored by libretro-database). It contains hashes only, no ROM data.
+
+## Downloaded for testing (never committed or distributed)
+
+`tools/fetch-test-data.py` downloads these into the ignored `test-data/` folder, pinned in
+`tools/test-data.lock.json`:
+
+| Item | Use | License | Source |
+|------|-----|---------|--------|
+| SingleStepTests 680x0 (68000 v1 vectors) | CPU test suite | none stated in the repository | <https://github.com/SingleStepTests/680x0> |
+| The Macro Assembler AS 1.42 build 315 (Windows binaries) | disassembler round-trip test | GPL-2.0 | <http://john.ccac.rwth-aachen.de:8000/as/> |
