@@ -32,12 +32,12 @@
 0   1       5054 M68K 00029E  11FC 0001 F000          move.b #$1,($FFFFF000).w           | - | W.B FFF000=01
 0   1       5166 M68K 0002A4  4A38 F000               tst.b ($FFFFF000).w                | - | -
 0   1       5250 M68K 0002A8  66FA                    bne.s $000002A4                    | - | -
-0 224     766080 M68K 0002A4                          interrupt level 6                  | A7=00FFFDFA SR=2600 | W.W FFFDFC=0000 W.W FFFDFE=02A4 W.W FFFDFA=2000
-0 224     766388 M68K 000340  4238 F000               clr.b ($FFFFF000).w                | SR=2604 | W.B FFF000=00
-0 224     766500 M68K 000344  52B8 F004               addq.l #1,($FFFFF004).w            | SR=2600 | W.W FFF004=0000 W.W FFF006=0001
-0 224     766668 M68K 000348  31F9 00C0 0008 F008     move.w ($00C00008).l,($FFFFF008).w | SR=2608 | W.W FFF008=E01D
-0 224     766836 M68K 000350  4E73                    rte                                | A7=00FFFE00 SR=2000 | -
-0 224     767116 M68K 0002AA  5278 F002               addq.w #1,($FFFFF002).w            | SR=2000 | W.W FFF002=0001
-0 224     767228 M68K 0002AE  60EE                    bra.s $0000029E                    | - | -
-1 224    1662150 M68K 0002A4                          interrupt level 6                  | A7=00FFFDFA SR=2600 | W.W FFFDFC=0000 W.W FFFDFE=02A4 W.W FFFDFA=2000
-2 224    2558220 M68K 0002A4                          interrupt level 6                  | A7=00FFFDFA SR=2600 | W.W FFFDFC=0000 W.W FFFDFE=02A4 W.W FFFDFA=2000
+0 224     766934 M68K 0002A8                          interrupt level 6                  | A7=00FFFDFA SR=2600 | W.W FFFDFC=0000 W.W FFFDFE=02A8 W.W FFFDFA=2000
+0 224     767242 M68K 000340  4238 F000               clr.b ($FFFFF000).w                | SR=2604 | W.B FFF000=00
+0 224     767354 M68K 000344  52B8 F004               addq.l #1,($FFFFF004).w            | SR=2600 | W.W FFF004=0000 W.W FFF006=0001
+0 224     767522 M68K 000348  31F9 00C0 0008 F008     move.w ($00C00008).l,($FFFFF008).w | SR=2608 | W.W FFF008=E048
+0 224     767690 M68K 000350  4E73                    rte                                | A7=00FFFE00 SR=2000 | -
+0 224     768040 M68K 0002AA  5278 F002               addq.w #1,($FFFFF002).w            | SR=2000 | W.W FFF002=0001
+0 224     768152 M68K 0002AE  60EE                    bra.s $0000029E                    | - | -
+1 224    1662920 M68K 0002A4                          interrupt level 6                  | A7=00FFFDFA SR=2600 | W.W FFFDFC=0000 W.W FFFDFE=02A4 W.W FFFDFA=2000
+2 224    2558990 M68K 0002A4                          interrupt level 6                  | A7=00FFFDFA SR=2600 | W.W FFFDFC=0000 W.W FFFDFE=02A4 W.W FFFDFA=2000
