@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Who&#x27;s in front: priority and shadow/highlight | genesisEmu</title>
+<meta name="description" content="Sonic runs in front of a loop&#x27;s back half and behind its front half, using a single bit per tile. The same bit, in another mode, darkens and brightens the screen.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Who&#x27;s in front: priority and shadow/highlight | genesisEmu">
+<meta property="og:description" content="Sonic runs in front of a loop&#x27;s back half and behind its front half, using a single bit per tile. The same bit, in another mode, darkens and brightens the screen.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m03">M03 · VDP video</a> · Story 8 of 11</p>
+<h1>Who's in front: priority and shadow/highlight</h1>
+<p class="subtitle">Sonic runs in front of a loop's back half and behind its front half, using a single bit per tile. The same bit, in another mode, darkens and brightens the screen.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-08-priority-and-shadow-highlight.md">Story M03-08</a></div>
+<div class="prose">
+<p>The Genesis has no depth buffer. Its idea of "in front" is simpler: every tile and every sprite has one
+<strong>priority bit</strong>. That's enough for one of the most memorable effects in the series. In a
+Green Hill loop, Sonic passes in front of one part of the loop and behind another, because the level's art
+marks some tiles high-priority and the game changes Sonic's own priority bit as he goes round.</p>
+
+<p>M03-08 implemented the composition rules, and the shadow/highlight mode that reuses the same bit for
+lighting effects.</p>
+
+<h2>Seven layers from three</h2>
+
+<p>Each pixel has up to three candidates: plane B, plane A (or the window) and the sprite layer, each high-
+or low-priority, plus the backdrop colour. The VDP's order, front to back, is:</p>
+
+<figure class="figure">
+<svg viewBox="0 0 640 110" role="img" aria-labelledby="m0308t">
+<title id="m0308t">Priority order from front to back: sprite high, plane A high, plane B high, sprite low, plane A low, plane B low, backdrop.</title>
+<rect class="dg-warm" x="10" y="30" width="80" height="44" rx="6"/><text class="dg-small" x="50" y="56" text-anchor="middle">sprite high</text>
+<rect class="dg-alt" x="98" y="30" width="80" height="44" rx="6"/><text class="dg-small" x="138" y="56" text-anchor="middle">A high</text>
+<rect class="dg-green" x="186" y="30" width="80" height="44" rx="6"/><text class="dg-small" x="226" y="56" text-anchor="middle">B high</text>
+<rect class="dg-warm" x="274" y="30" width="80" height="44" rx="6"/><text class="dg-small" x="314" y="56" text-anchor="middle">sprite low</text>
+<rect class="dg-alt" x="362" y="30" width="80" height="44" rx="6"/><text class="dg-small" x="402" y="56" text-anchor="middle">A low</text>
+<rect class="dg-green" x="450" y="30" width="80" height="44" rx="6"/><text class="dg-small" x="490" y="56" text-anchor="middle">B low</text>
+<rect class="dg-box" x="538" y="30" width="92" height="44" rx="6"/><text class="dg-small" x="584" y="56" text-anchor="middle">backdrop</text>
+<text class="dg-small" x="10" y="20">front</text>
+<text class="dg-small" x="630" y="20" text-anchor="end">back</text>
+<text class="dg-small" x="320" y="98" text-anchor="middle">the first opaque pixel in this order is shown</text>
+</svg>
+<figcaption>A low-priority sprite still beats low-priority planes, but any high-priority plane tile covers it. That's the whole loop trick.</figcaption>
+</figure>
+
+<p>Because the renderer from M03-04 keeps each layer as a line of "pixel codes", composing is a loop over the
+line with a few comparisons per pixel. The composer first finds the plane pixel underneath, then decides
+whether the sprite goes on top:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">std::uint8_t plane = backdrop;
+bool planeHigh = false;
+if (opaque(a) &amp;&amp; (a &amp; kPrio) != 0) {
+    plane = a;
+    planeHigh = true;
+} else if (opaque(b) &amp;&amp; (b &amp; kPrio) != 0) {
+    plane = b;
+    planeHigh = true;
+} else if (opaque(a)) {
+    plane = a;
+} else if (opaque(b)) {
+    plane = b;
+}
+const bool spriteOnTop = opaque(s) &amp;&amp; ((s &amp; kPrio) != 0 || !planeHigh);</code></pre><figcaption>Normal mode composition in <code>Vdp::renderLine</code>.</figcaption></figure>
+
+<h2>Shadow and highlight</h2>
+
+<p>Setting bit 3 of register 12 turns on <strong>shadow/highlight</strong> mode, and the priority bit gains a
+second meaning. Pixels where <em>neither</em> plane has priority are drawn darker (shadow). That gives games a
+cheap way to darken parts of the screen: mark the tiles low-priority. Sprites can then act as light
+sources and shadows. In palette line 3, colour 14 doesn't draw. It <em>highlights</em> whatever is
+beneath. Colour 15 shadows it.</p>
+
+<p>The rules have a few exceptions, and the composer implements them in about fifteen lines:</p>
+
+<ul>
+<li>A pixel is shadowed when neither plane's priority bit is set, <em>even if those plane pixels are
+transparent</em>. This is why M03-04 kept the priority bit on transparent pixel codes.</li>
+<li>A highlight operator on a shadowed pixel brings it back to normal; on a normal pixel it brightens it.</li>
+<li>High-priority sprite pixels are never shaded, and colour 14 of palettes 0–2 is always drawn at
+normal intensity.</li>
+</ul>
+
+<figure class="codefig"><pre><code class="language-cpp">if (spriteOnTop) {
+    const int sc = s &amp; kColorMask;
+    if (sc == 0x3E) {
+        level = level == 1 ? 0 : 2;
+    } else if (sc == 0x3F) {
+        level = 1;
+    } else {
+        color = s;
+        if ((s &amp; kPrio) != 0 || (sc &amp; 0x0F) == 0x0E) {
+            level = 0;
+        }
+    }
+}</code></pre><figcaption>The operator logic. <code>0x3E</code> and <code>0x3F</code> are palette 3, colours 14 and 15.</figcaption></figure>
+
+<p>The three intensities map onto the 15-step colour ramp from M03-04: shadow uses steps 0–7, normal the even
+steps, and highlight steps 7–14. All three versions of every CRAM colour are precomputed in the palette
+cache, so shading costs nothing extra per pixel.</p>
+
+<blockquote class="pull"><p>One bit per tile decides whether Sonic runs in front of the loop or behind
+it.</p></blockquote>
+
+<h2>Debug filters</h2>
+
+<p>The layer mask from M03-06 includes a priority filter: keep only high-priority pixels or only low ones. For
+a reverse engineer this shows at a glance which tiles a level designer marked as foreground, the
+information that decides what Sonic can pass behind.</p>
+
+<h2>Verified, partly</h2>
+
+<p>Unit tests check the full priority order (B low &lt; A low &lt; sprite low &lt; B high &lt; A high &lt;
+sprite high) and the shadow/highlight rules: plane-priority shading, both operators, high-priority sprites and
+colour 14. These replaced the test ROM the story originally asked for.</p>
+
+<p>The loop criterion is only <strong>partly checked</strong>. In Sonic 1's Green Hill attract demo at frame
+2,800, Sonic is drawn between the back of the loop and the grass in front of it, as expected. Passing behind
+the loop's front wasn't followed frame by frame, so the story is still "In progress". Shadow/highlight was
+verified only by the synthetic tests.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-08-priority-and-shadow-highlight.md">Story M03-08</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/vdp/vdp_render.cpp"><code>src/core/vdp/vdp_render.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/vdp_render_test.cpp"><code>tests/unit/vdp_render_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M03-07-sprites.html"><span class="label">&larr; Previous</span><span class="title">M03-07 · Eighty sprites, twenty per line</span></a>
+<a class="next" href="M03-09-interlace-mode-2.html"><span class="label">Next &rarr;</span><span class="title">M03-09 · Double resolution for two players</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

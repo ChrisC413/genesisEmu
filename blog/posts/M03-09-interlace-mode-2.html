@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Double resolution for two players | genesisEmu</title>
+<meta name="description" content="Sonic 2&#x27;s split-screen mode squeezes two full views into one screen by switching the VDP into interlace mode 2. The emulator has to draw 448 lines from two alternating fields.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Double resolution for two players | genesisEmu">
+<meta property="og:description" content="Sonic 2&#x27;s split-screen mode squeezes two full views into one screen by switching the VDP into interlace mode 2. The emulator has to draw 448 lines from two alternating fields.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m03">M03 · VDP video</a> · Story 9 of 11</p>
+<h1>Double resolution for two players</h1>
+<p class="subtitle">Sonic 2's split-screen mode squeezes two full views into one screen by switching the VDP into interlace mode 2. The emulator has to draw 448 lines from two alternating fields.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-09-interlace-mode-2.md">Story M03-09</a></div>
+<div class="prose">
+<p>Sonic 2 introduced a two-player mode with the screen split horizontally. The obvious approach, giving
+each player 112 lines, would squash the playfield to half height. Sonic 2 instead uses a rarely used VDP
+feature, <strong>interlace mode 2</strong>, which doubles the vertical resolution to 448 lines. Each player
+gets 224 lines, the same as single-player, just at half the line height. Decision D-003 calls this out:
+Sonic 2 requires interlace mode 2, so the emulator has to implement it.</p>
+
+<h2>What interlacing is</h2>
+
+<p>A standard-definition TV draws a frame as two <strong>fields</strong>: first the even lines, then the odd
+lines, slightly offset. Most consoles ignore this and draw the same lines in both fields (a "240p"
+picture). Interlace mode 2 makes the VDP draw <em>different</em> content in each field, so the two fields
+together form a 448-line picture. The cost is that each field shows only half the lines, so the picture
+appears to flicker on a real TV.</p>
+
+<h2>What changes in the VDP</h2>
+
+<p>Turning on mode 2 (register 12) changes several things at once:</p>
+
+<ul>
+<li><strong>Tiles become 8×16</strong>, 64 bytes each instead of 32. Name-table entries now index
+double-height tiles.</li>
+<li><strong>Y coordinates double.</strong> Planes are addressed in 448-line space, the vertical scroll grows to
+11 bits, and sprites use a 10-bit Y with an offset of 256 instead of 128.</li>
+<li>The VDP renders <strong>one field per frame</strong>, alternately the even and the odd lines, and the
+odd-frame bit in the status register toggles every frame so the game knows which one it is.</li>
+</ul>
+
+<p>In the renderer, each of these is a small parameter switch rather than a separate code path. The plane,
+window and sprite renderers all take their tile height, tile size and Y offset from the mode:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">const bool im2 = interlace2();
+const int tileH = im2 ? 16 : 8;
+const int tileBytes = im2 ? 64 : 32;</code></pre><figcaption>The same three lines open every layer renderer.</figcaption></figure>
+
+<blockquote class="pull"><p>Each frame draws half the lines. The other half stay from the previous frame,
+woven together into a 448-line picture.</p></blockquote>
+
+<h2>Weaving two fields</h2>
+
+<p>The framebuffer has room for 480 lines. In mode 2, each rendered line goes to row
+<code>2 × line + field</code>, where the field alternates every frame. The rows of the other field are left
+alone, so they still hold the previous frame's content. The two together form the full picture. This is
+called <strong>weave</strong> deinterlacing:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">const bool im2 = interlace2();
+const int field = im2 &amp;&amp; s_.oddFrame ? 1 : 0;
+const int width = h40() ? 320 : 256;
+const int outRow = im2 ? line * 2 + field : line;</code></pre><figcaption><code>Vdp::renderLine</code>: pick the field, then the output row and the Y coordinate within the 448-line plane.</figcaption></figure>
+
+<figure class="figure">
+<svg viewBox="0 0 640 170" role="img" aria-labelledby="m0309t">
+<title id="m0309t">Weave: frame N renders even rows, frame N+1 renders odd rows; the framebuffer interleaves both.</title>
+<text class="dg-small" x="20" y="20">frame N (field 0)</text>
+<rect class="dg-alt" x="20" y="30" width="160" height="10"/>
+<rect class="dg-alt" x="20" y="50" width="160" height="10"/>
+<rect class="dg-alt" x="20" y="70" width="160" height="10"/>
+<rect class="dg-alt" x="20" y="90" width="160" height="10"/>
+<text class="dg-small" x="220" y="20">frame N+1 (field 1)</text>
+<rect class="dg-warm" x="220" y="40" width="160" height="10"/>
+<rect class="dg-warm" x="220" y="60" width="160" height="10"/>
+<rect class="dg-warm" x="220" y="80" width="160" height="10"/>
+<rect class="dg-warm" x="220" y="100" width="160" height="10"/>
+<text class="dg-small" x="440" y="20">framebuffer after N+1</text>
+<rect class="dg-alt" x="440" y="30" width="160" height="10"/>
+<rect class="dg-warm" x="440" y="40" width="160" height="10"/>
+<rect class="dg-alt" x="440" y="50" width="160" height="10"/>
+<rect class="dg-warm" x="440" y="60" width="160" height="10"/>
+<rect class="dg-alt" x="440" y="70" width="160" height="10"/>
+<rect class="dg-warm" x="440" y="80" width="160" height="10"/>
+<rect class="dg-alt" x="440" y="90" width="160" height="10"/>
+<rect class="dg-warm" x="440" y="100" width="160" height="10"/>
+<path class="dg-line" d="M180 65 H220 M380 75 H440"/>
+<text class="dg-small" x="320" y="150" text-anchor="middle">rows 2 × line + field; the other field's rows keep the previous frame</text>
+</svg>
+<figcaption>Weave deinterlacing. Fast motion can show combing, as it does on a real interlaced display, but static content is sharp at full resolution.</figcaption>
+</figure>
+
+<p>Interlace mode 1, which shows the <em>same</em> content in both fields, is rendered progressively, since
+there's nothing to weave. The VDP's HV counter in both interlace modes follows the tables from M03-03.</p>
+
+<h2>Showing it at the right size</h2>
+
+<p>A 448-line frame shouldn't appear twice as tall as a normal one. The game view (M03-10) treats a mode-2
+frame as having half the lines when it computes the picture size, so the split-screen picture fills the same
+area as single-player, at double the vertical detail.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">// Logical picture size: interlace mode 2 frames have twice the lines in the same picture height.
+const float lines = static_cast&lt;float&gt;(height_ &gt; 240 ? height_ / 2 : height_);</code></pre><figcaption>From <code>GameView::draw</code>.</figcaption></figure>
+
+<h2>Verified without a menu</h2>
+
+<p>The acceptance criterion imagined reaching two-player mode through a save state or scripted input, both
+of which came later. It turned out to be unnecessary. Sonic 2's attract sequence includes a two-player
+Emerald Hill demo that switches to interlace mode 2 by itself. Both halves render in a 320×448 frame, with
+title cards, both HUDs, Sonic and Tails. Frames 1,400 and 2,000 of that demo are golden checkpoints. A unit
+test, <em>Interlace mode 2: 8x16 tiles, 448-line frames, one field per frame</em>, checks the tile layout,
+the doubled coordinates and the field alternation with synthetic VRAM.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-09-interlace-mode-2.md">Story M03-09</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/vdp/vdp_render.cpp"><code>src/core/vdp/vdp_render.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/vdp/vdp.cpp"><code>src/core/vdp/vdp.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/app/panels/game_view.cpp"><code>src/app/panels/game_view.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/vdp_render_test.cpp"><code>tests/unit/vdp_render_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M03-08-priority-and-shadow-highlight.html"><span class="label">&larr; Previous</span><span class="title">M03-08 · Who's in front: priority and shadow/highlight</span></a>
+<a class="next" href="M03-10-frame-presentation.html"><span class="label">Next &rarr;</span><span class="title">M03-10 · From framebuffer to screen, at 59.92 frames per second</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

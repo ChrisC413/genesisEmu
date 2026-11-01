@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>From framebuffer to screen, at 59.92 frames per second | genesisEmu</title>
+<meta name="description" content="The emulated console runs at 59.92 Hz and your monitor probably doesn&#x27;t. Getting smooth video into the app meant a texture, some aspect-ratio arithmetic and two pacing strategies.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="From framebuffer to screen, at 59.92 frames per second | genesisEmu">
+<meta property="og:description" content="The emulated console runs at 59.92 Hz and your monitor probably doesn&#x27;t. Getting smooth video into the app meant a texture, some aspect-ratio arithmetic and two pacing strategies.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m03">M03 · VDP video</a> · Story 10 of 11</p>
+<h1>From framebuffer to screen, at 59.92 frames per second</h1>
+<p class="subtitle">The emulated console runs at 59.92 Hz and your monitor probably doesn't. Getting smooth video into the app meant a texture, some aspect-ratio arithmetic and two pacing strategies.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-10-frame-presentation.md">Story M03-10</a></div>
+<div class="prose">
+<p>By M03-09 the core produced correct frames, but only the command-line tool could see them, as PNG files.
+M03-10 put them in the desktop app's game view, the empty panel created in M00-05, and made them move
+smoothly. It's the first story in the project written from the point of view of a <em>player</em>.</p>
+
+<h2>Framebuffer to texture</h2>
+
+<p>The VDP renders into an RGBA framebuffer in system memory, 320 pixels wide and up to 480 lines tall. After
+each emulated frame the app copies it into an OpenGL texture of the same size, uploading only the rows the
+current mode uses:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">width_ = vdp.frameWidth();
+height_ = vdp.frameHeight();
+glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, vdp::kFbWidth, height_, GL_RGBA, GL_UNSIGNED_BYTE,
+                vdp.framebuffer());</code></pre><figcaption><code>GameView::upload</code>. The texture is allocated once at 320×480 and updated in place.</figcaption></figure>
+
+<p>ImGui then draws the texture as an image, with texture coordinates that crop to the visible width and
+height. A 256-pixel-wide H32 frame and a 448-line interlaced frame share the same texture.</p>
+
+<h2>Scaling and aspect</h2>
+
+<p>Genesis pixels aren't square. On a 4:3 television, a 320-pixel line and a 256-pixel line fill the same
+width, so the pixels have different shapes in the two modes. The game view offers <strong>4:3 aspect
+correction</strong> (on by default), which sizes the picture as lines × 4/3 wide, and square pixels when
+it's off. On top of that, <strong>fit</strong> scales to the largest size that fits the panel, and
+<strong>integer</strong> scales only by whole multiples, for crisp pixels. The picture is centred and
+letterboxed in whatever space the dock layout gives it. A right-click menu toggles these, plus linear
+filtering and a frame-time overlay.</p>
+
+<blockquote class="pull"><p>The console runs at 59.92 Hz, not 60. Over a minute, that's about five frames
+of drift.</p></blockquote>
+
+<h2>Pacing: two strategies</h2>
+
+<p>An NTSC Genesis produces 59.92 frames per second: 53.69 MHz divided by 896,040 master clocks per frame.
+Monitors run at 60 Hz, 144 Hz or anything else. The app picks between two strategies on every tick:</p>
+
+<ul>
+<li>If the display's refresh rate is within 1 Hz of the console's, <strong>vsync drives the
+emulator</strong>. Every display refresh runs exactly one emulated frame, with no tearing and no uneven
+frame times. The 0.08 Hz difference is left to audio rate control, which arrived in M05.</li>
+<li>Otherwise, an <strong>accumulator</strong> paces against the real clock. Elapsed time is added up, and a
+frame is emulated for every 1/59.92 s accumulated, up to four per tick, so a hiccup can't snowball into a
+long catch-up.</li>
+</ul>
+
+<figure class="codefig"><pre><code class="language-cpp">if (std::abs(static_cast&lt;double&gt;(refresh) - 1.0 / period) &lt; 1.0) {
+    runFrame();
+    accumulator_ = 0;
+} else {
+    accumulator_ = std::min(accumulator_ + dt, 0.25);
+    while (accumulator_ &gt;= period &amp;&amp; frames &lt; 4) {
+        runFrame();
+        accumulator_ -= period;</code></pre><figcaption>The choice, made every UI tick in <code>App::stepEmulation</code>.</figcaption></figure>
+
+<p>PAL machines use the same logic with 49.70 Hz.</p>
+
+<h2>Fast-forward</h2>
+
+<p>Reverse engineering involves a lot of waiting for the game to reach a particular point. Holding Tab (or a
+menu toggle, or <code>--fast-forward</code> on the command line) runs emulated frames unthrottled for about
+12 ms of each UI tick, leaving time to draw the UI. The acceptance target was at least 5× real time. A
+smoke run of Sonic 3 &amp; Knuckles peaked at <strong>1,657 emulated frames per second, about 27×</strong>,
+with the core spending 0.62 ms per frame.</p>
+
+<h2>Controls and the smoke test</h2>
+
+<p>The Emulation menu gained Run/Pause (F5), Reset and Fast-forward. The app owns a <code>Machine</code>,
+created when a ROM is opened, with a <code>--lock-on=</code> option to stack Sonic &amp; Knuckles and Sonic 3
+the way the cartridges combine. The M00-05 smoke test became stricter: with a ROM loaded, it now fails unless
+frames were actually emulated <em>and</em> reached the game view, and it logs the frame hash. A local run of
+Sonic 1 for 1,300 frames averaged 0.66 ms of core time per frame.</p>
+
+<h2>Not verified yet</h2>
+
+<p>The story's first criterion, <em>no tearing and steady pacing on a 60 Hz display</em>, is open for a mundane
+reason. The development machine's display runs at about 100 Hz (the smoke test measured 99.9 ticks per
+second with vsync), so the vsync-locked path was never exercised. The clock-paced path ran instead. The
+aspect criterion was checked on a screenshot from a local run. The view settings weren't saved between runs
+in this story; persisting them came with M04's configuration work.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-10-frame-presentation.md">Story M03-10</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/app/panels/game_view.cpp"><code>src/app/panels/game_view.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/app/app.cpp"><code>src/app/app.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/app/panels/panels.hpp"><code>src/app/panels/panels.hpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M03-09-interlace-mode-2.html"><span class="label">&larr; Previous</span><span class="title">M03-09 · Double resolution for two players</span></a>
+<a class="next" href="M03-11-video-regression-tests.html"><span class="label">Next &rarr;</span><span class="title">M03-11 · Golden frames without golden images</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

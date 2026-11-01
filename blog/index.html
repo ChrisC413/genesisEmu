@@ -21,19 +21,20 @@
 </div></header>
 <main>
 <section class="hero">
-<p class="kicker">Build notes · 26 articles</p>
+<p class="kicker">Build notes · 37 articles</p>
 <h1>How genesisEmu is built</h1>
 <p class="lede">genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering and modding the
 Sonic games. The project is written spec-first: every feature starts as a short story with acceptance
 criteria. This series has one article per finished story. Each one covers what the feature does, why an
 emulator needs it, and how this code base builds and tests it.</p>
-<p class="meta">26 articles · about 2 hours of reading ·
+<p class="meta">37 articles · about 3 hours of reading ·
 <a href="https://github.com/ChrisC413/genesisEmu">source on GitHub</a> · start with <a href="posts/M00-01-repo-and-build-system.html">M00-01</a></p>
 </section>
 <nav class="toc" aria-label="Milestones">
 <a href="#m00">M00 · Foundation</a>
 <a href="#m01">M01 · 68000 CPU</a>
 <a href="#m02">M02 · System bus & boot</a>
+<a href="#m03">M03 · VDP video</a>
 </nav>
 <section class="milestone" id="m00">
 <div class="milestone-head"><span class="tag">M00 · 7 stories</span><h2>Foundation</h2><p>Repository, build, CI and an application shell that loads a ROM, on Windows and macOS.</p></div>
@@ -74,6 +75,22 @@ emulator needs it, and how this code base builds and tests it.</p>
 <li><a href="posts/M02-05-master-clock-scheduler.html"><span class="pid">M02-05</span><span class="ptitle">One clock to rule them all</span><span class="pblurb">The scanline scheduler: a 64-bit master-clock counter, 3,420 clocks per line, 68000 overshoot carried across lines, catch-up hooks for the Z80 and audio, and a run API with stop reasons.</span><span class="pmeta">4 min read</span></a></li>
 <li><a href="posts/M02-06-instruction-trace-logger.html"><span class="pid">M02-06</span><span class="ptitle">A line of text for every instruction</span><span class="pblurb">gen_cli trace writes one line per 68000 instruction with register deltas and memory writes, in a documented format, plus a trace-diff tool that finds the first divergence.</span><span class="pmeta">4 min read</span></a></li>
 <li><a href="posts/M02-07-boot-smoke-tests.html"><span class="pid">M02-07</span><span class="ptitle">Three games boot, with nothing on screen</span><span class="pblurb">Boot tests for all three games that never mention a game-specific address: a generic V-int wait-loop detector, fault counting, and XXH3 state hashes checked for determinism.</span><span class="pmeta">4 min read</span></a></li>
+</ul>
+</section>
+<section class="milestone" id="m03">
+<div class="milestone-head"><span class="tag">M03 · 11 stories</span><h2>VDP video</h2><p>The Video Display Processor: planes, sprites, scrolling, DMA, interrupts and golden-frame tests.</p></div>
+<ul class="post-list">
+<li><a href="posts/M03-01-vdp-ports-registers-memories.html"><span class="pid">M03-01</span><span class="ptitle">Talking to the video chip, exactly</span><span class="pblurb">The full VDP command interface: 24 registers, the two-word command latch and its edge cases, read-ahead buffers, CRAM/VSRAM wraparound, a FIFO model and the internal sprite cache.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M03-02-dma.html"><span class="pid">M03-02</span><span class="ptitle">DMA, and the cost of a free copy</span><span class="pblurb">All three VDP DMA modes: 68000-to-VDP transfers that freeze the CPU and run line by line at a bandwidth table, fills, copies, the 128 KB source wrap and onDma events.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M03-03-interrupts-and-counters.html"><span class="pid">M03-03</span><span class="ptitle">Interrupts on the right line</span><span class="pblurb">Per-line H-int and V-int timing, the Z80's one-line interrupt, HV counter jump tables for every mode, and why a palette change during line N shows from line N.</span><span class="pmeta">3 min read</span></a></li>
+<li><a href="posts/M03-04-plane-rendering.html"><span class="pid">M03-04</span><span class="ptitle">The first pixels: tiles, name tables and planes</span><span class="pblurb">The scanline renderer's foundation: 4-bit tiles, name-table entries with flips, palettes and priority, plane sizes and wrapping, the 'pixel code' line buffers and the colour ramp.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M03-05-scrolling.html"><span class="pid">M03-05</span><span class="ptitle">Parallax: scrolling every line differently</span><span class="pblurb">Horizontal scroll per screen, per 8-line cell or per line; vertical scroll per screen or per 2-cell column; the prohibited mode and an approximated hardware quirk at the left edge.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M03-06-window-plane.html"><span class="pid">M03-06</span><span class="ptitle">The window: a plane that doesn't scroll</span><span class="pblurb">The window plane: a fixed, unscrolled replacement for plane A in a region set by registers 17 and 18, implemented in a few lines and verified with synthetic VRAM.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M03-07-sprites.html"><span class="pid">M03-07</span><span class="ptitle">Eighty sprites, twenty per line</span><span class="pblurb">Sprite rendering: the link-list walk through the cached attribute table, sizes up to 4×4 cells, per-line sprite and pixel limits, the x = 0 masking rule, and overflow and collision flags.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M03-08-priority-and-shadow-highlight.html"><span class="pid">M03-08</span><span class="ptitle">Who's in front: priority and shadow/highlight</span><span class="pblurb">Per-pixel composition across six priority levels plus the backdrop, and the shadow/highlight mode where low-priority planes darken and two special sprite colours act as light operators.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M03-09-interlace-mode-2.html"><span class="pid">M03-09</span><span class="ptitle">Double resolution for two players</span><span class="pblurb">Interlace mode 2: 8×16 tiles, doubled Y coordinates for planes and sprites, an 11-bit vertical scroll, and a 320×448 framebuffer woven from alternating fields.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M03-10-frame-presentation.html"><span class="pid">M03-10</span><span class="ptitle">From framebuffer to screen, at 59.92 frames per second</span><span class="pblurb">Showing the emulator in the app: framebuffer to GL texture, fit or integer scaling with 4:3 correction, vsync- or clock-paced 59.92 Hz output, fast-forward, Run/Pause/Reset.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M03-11-video-regression-tests.html"><span class="pid">M03-11</span><span class="ptitle">Golden frames without golden images</span><span class="pblurb">Video regression tests: 19 frame-hash checkpoints across the three games, gen_cli run --check, a local frame cache, and expected/actual/diff PNGs written only on mismatch.</span><span class="pmeta">4 min read</span></a></li>
 </ul>
 </section>
 </main>

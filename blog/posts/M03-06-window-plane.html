@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The window: a plane that doesn&#x27;t scroll | genesisEmu</title>
+<meta name="description" content="Status bars and split screens need a part of the picture that stays put while the rest scrolls. The VDP&#x27;s window plane does this by replacing plane A in a rectangle of the screen.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="The window: a plane that doesn&#x27;t scroll | genesisEmu">
+<meta property="og:description" content="Status bars and split screens need a part of the picture that stays put while the rest scrolls. The VDP&#x27;s window plane does this by replacing plane A in a rectangle of the screen.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m03">M03 · VDP video</a> · Story 6 of 11</p>
+<h1>The window: a plane that doesn't scroll</h1>
+<p class="subtitle">Status bars and split screens need a part of the picture that stays put while the rest scrolls. The VDP's window plane does this by replacing plane A in a rectangle of the screen.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-06-window-plane.md">Story M03-06</a></div>
+<div class="prose">
+<p>Planes A and B scroll. That's their job. But many games want part of the screen <em>not</em> to scroll: a
+status bar, a menu panel, a text box. Sprites could do it, but they're limited per line, and a full-width
+bar would use up most of them. So the VDP has a third tile layer, the <strong>window</strong>. In a region
+of the screen it replaces plane A, it ignores both scroll registers, and it reads from its own name
+table.</p>
+
+<p>M03-06 is the shortest of the rendering stories, but it shows well how the renderer fits together.</p>
+
+<h2>Where the window is</h2>
+
+<p>Two registers define the region. Register 17 gives a horizontal boundary in units of 16 pixels and a
+direction bit (window left or right of it). Register 18 gives a vertical boundary in units of 8 lines and a
+direction bit (window above or below). The rule for combining them follows the hardware: if a line falls
+in the vertical window region, the <em>whole line</em> is window; otherwise the horizontal range applies.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">const int vp = (s_.regs[18] &amp; 0x1F) * 8;
+const bool vWin = (s_.regs[18] &amp; 0x80) != 0 ? line &gt;= vp : line &lt; vp;
+int winFrom = 0;
+int winTo = 0;
+if (vWin) {
+    winTo = width;
+} else {
+    const int hp = std::min((s_.regs[17] &amp; 0x1F) * 16, width);
+    if ((s_.regs[17] &amp; 0x80) != 0) {
+        winFrom = hp;
+        winTo = width;
+    } else {
+        winTo = hp;
+    }
+}</code></pre><figcaption>Working out the window's extent on one line, in <code>Vdp::renderLine</code>.</figcaption></figure>
+
+<p>Typical uses: a status bar at the top or bottom (vertical boundary), a side panel (horizontal boundary),
+or no window at all (both boundaries at zero with the direction bits clear).</p>
+
+<figure class="figure">
+<svg viewBox="0 0 640 180" role="img" aria-labelledby="m0306t">
+<title id="m0306t">Two window layouts: a bar across the top lines, and a panel on the right side; the rest of the screen shows plane A.</title>
+<rect class="dg-alt" x="30" y="20" width="260" height="140"/>
+<rect class="dg-warm" x="30" y="20" width="260" height="32"/>
+<text class="dg-small" x="160" y="40" text-anchor="middle">window (reg 18: lines above 32)</text>
+<text class="dg-small" x="160" y="110" text-anchor="middle">plane A, scrolled</text>
+<rect class="dg-alt" x="350" y="20" width="260" height="140"/>
+<rect class="dg-warm" x="510" y="20" width="100" height="140"/>
+<text class="dg-small" x="560" y="90" text-anchor="middle">window</text>
+<text class="dg-small" x="560" y="105" text-anchor="middle">(reg 17)</text>
+<text class="dg-small" x="430" y="90" text-anchor="middle">plane A, scrolled</text>
+</svg>
+<figcaption>The window takes plane A's place in its region. Plane B and sprites are unaffected.</figcaption>
+</figure>
+
+<h2>Drawing it</h2>
+
+<p>The window's renderer is a simplified copy of the plane renderer: no horizontal scroll, no vertical
+scroll, a fixed name-table width (64 cells in the 320-pixel mode, 32 in the 256-pixel mode) and its own
+name-table base from register 3. It writes into the <em>same</em> line buffer as plane A, over the window's
+columns. From the composer's point of view the window simply <em>is</em> plane A there, with its own
+priority bits, so priorities and shadow/highlight (M03-08) apply to it automatically.</p>
+
+<p>The renderer only draws plane A at all when part of the line is outside the window. On a line that's
+entirely window, it skips the scrolled plane-A fetch.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if (layers_.planeA &amp;&amp; (winFrom &gt; 0 || winTo &lt; width)) {
+    renderPlane(bufA.data(), true, y, width);
+}
+if (winTo &gt; winFrom) {
+    if (layers_.window) {
+        renderWindow(bufA.data(), y, winFrom, winTo);
+    } else {
+        std::fill(bufA.begin() + winFrom, bufA.begin() + winTo, std::uint8_t{0});
+    }
+}</code></pre><figcaption>Plane A only where it's visible, then the window over its range. A debug toggle can hide the window layer.</figcaption></figure>
+
+<blockquote class="pull"><p>To the composer, the window simply <em>is</em> plane A in its region. Every
+other rule applies to it for free.</p></blockquote>
+
+<h2>Layer toggles</h2>
+
+<p>That excerpt also shows the <code>LayerMask</code>, a set of debug switches that hide plane B, plane A,
+the window or sprites, or keep only high- or low-priority pixels. They aren't part of the emulated state and
+don't affect the state hash. They're tools for the reverse engineer: hide plane A and you can see what's
+behind the foreground; show only high-priority pixels and you can see what the game draws in front of
+sprites.</p>
+
+<h2>What's not modelled</h2>
+
+<p>Real hardware has a known bug at the boundary between the window and plane A: when plane A is
+fine-scrolled horizontally, the first column after the window can be garbled. The story notes that this
+isn't modelled. A game that relied on it would render that column cleanly in genesisEmu.</p>
+
+<h2>Verified with synthetic VRAM</h2>
+
+<p>The acceptance criterion asked for a test ROM. The project uses a synthetic unit test instead, which
+needs no external file and is easier to reason about. It builds a plane A pattern and a different window
+pattern in VRAM, then checks the window to the left and to the right of a horizontal boundary, above and
+below a vertical one, that scrolling plane A doesn't move the window, and that the debug toggle hides it.</p>
+
+<p>The game-level check, <em>Sonic 2's two-player mode and menus look right</em>, is still open. Reaching
+those screens needs menu navigation, which needs controller input from M04, so the story stays
+"In progress" and says why.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-06-window-plane.md">Story M03-06</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/vdp/vdp_render.cpp"><code>src/core/vdp/vdp_render.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/vdp_render_test.cpp"><code>tests/unit/vdp_render_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M03-05-scrolling.html"><span class="label">&larr; Previous</span><span class="title">M03-05 · Parallax: scrolling every line differently</span></a>
+<a class="next" href="M03-07-sprites.html"><span class="label">Next &rarr;</span><span class="title">M03-07 · Eighty sprites, twenty per line</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

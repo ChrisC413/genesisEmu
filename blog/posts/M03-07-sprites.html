@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eighty sprites, twenty per line | genesisEmu</title>
+<meta name="description" content="Sonic, rings, badniks and the HUD are hardware sprites. The VDP walks a linked list of them every line, runs out of time and drops the rest, and genesisEmu has to drop exactly the same ones.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Eighty sprites, twenty per line | genesisEmu">
+<meta property="og:description" content="Sonic, rings, badniks and the HUD are hardware sprites. The VDP walks a linked list of them every line, runs out of time and drops the rest, and genesisEmu has to drop exactly the same ones.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m03">M03 · VDP video</a> · Story 7 of 11</p>
+<h1>Eighty sprites, twenty per line</h1>
+<p class="subtitle">Sonic, rings, badniks and the HUD are hardware sprites. The VDP walks a linked list of them every line, runs out of time and drops the rest, and genesisEmu has to drop exactly the same ones.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-07-sprites.md">Story M03-07</a></div>
+<div class="prose">
+<p>Everything that moves independently of the background (Sonic himself, rings, enemies, the score)
+is a <strong>sprite</strong>. The VDP supports up to 80 of them in the 320-pixel mode and 64 in the 256-pixel
+mode, each from 1×1 to 4×4 tiles in size. But the hardware has a fixed amount of time per scanline to fetch
+sprite data, so it imposes per-line limits. When too many sprites share a line, some disappear. Games
+that rotate their sprite order each frame turn that into the familiar flicker. M03-07 implemented sprites with those limits, because games are designed
+around them.</p>
+
+<h2>A linked list, not an array</h2>
+
+<p>Sprites are described in the <strong>sprite attribute table</strong> in VRAM, 8 bytes per sprite: Y
+position, size, a <em>link</em> to the next sprite, the tile index with flips, palette and priority, and the X
+position. The VDP doesn't scan the table in order. It starts at sprite 0 and follows the link fields until a
+link of 0. Games use the links to control drawing order, which is also priority order among sprites: earlier
+in the list wins.</p>
+
+<figure class="figure">
+<svg viewBox="0 0 640 150" role="img" aria-labelledby="m0307t">
+<title id="m0307t">Sprite link list: sprite 0 links to 5, 5 links to 2, 2 links to 9, 9 has link 0 and ends the list.</title>
+<rect class="dg-alt" x="20" y="45" width="110" height="56" rx="8"/>
+<text class="dg-text dg-bold" x="75" y="68" text-anchor="middle">sprite 0</text>
+<text class="dg-small" x="75" y="86" text-anchor="middle">link → 5</text>
+<rect class="dg-alt" x="180" y="45" width="110" height="56" rx="8"/>
+<text class="dg-text dg-bold" x="235" y="68" text-anchor="middle">sprite 5</text>
+<text class="dg-small" x="235" y="86" text-anchor="middle">link → 2</text>
+<rect class="dg-alt" x="340" y="45" width="110" height="56" rx="8"/>
+<text class="dg-text dg-bold" x="395" y="68" text-anchor="middle">sprite 2</text>
+<text class="dg-small" x="395" y="86" text-anchor="middle">link → 9</text>
+<rect class="dg-warm" x="500" y="45" width="110" height="56" rx="8"/>
+<text class="dg-text dg-bold" x="555" y="68" text-anchor="middle">sprite 9</text>
+<text class="dg-small" x="555" y="86" text-anchor="middle">link 0: end</text>
+<path class="dg-accent-line" d="M130 73 H180 M290 73 H340 M450 73 H500"/>
+<text class="dg-small" x="320" y="130" text-anchor="middle">drawn front to back in list order: sprite 0 is on top of sprite 5, and so on</text>
+</svg>
+<figcaption>An example list. The table is walked by links, not by index, at most 80 steps.</figcaption>
+</figure>
+
+<p>The first four bytes of each entry (Y, size and link) don't come from VRAM at render time. They come from
+the VDP's internal sprite cache from M03-01, which updates only when the CPU writes into the table. The
+renderer reads the rest (tile, flips, palette, X) from VRAM.</p>
+
+<h2>Two passes per line</h2>
+
+<p>The renderer works the way the hardware does: first <em>evaluate</em>, then <em>draw</em>.</p>
+
+<p><strong>Evaluation</strong> walks the link list and collects the sprites that cover the current line, up to
+20 in H40 mode (16 in H32). Finding a 21st sets the overflow flag and stops:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if (y &gt;= sy &amp;&amp; y &lt; sy + heightPx) {
+    if (count &gt;= maxPerLine) {
+        s_.spriteOverflow = true;
+        break;
+    }
+    found[static_cast&lt;std::size_t&gt;(count++)] = idx;
+}
+const int link = c[3] &amp; 0x7F;
+if (link == 0 || link &gt;= maxTotal) {
+    break;
+}
+idx = link;</code></pre><figcaption>The evaluation loop in <code>Vdp::renderSprites</code>.</figcaption></figure>
+
+<p><strong>Drawing</strong> fetches each found sprite's pixels for this line, 8 at a time, against a second
+limit: 320 sprite pixels per line in H40 (256 in H32). A wide sprite late in the list can be cut off
+part-way when the pixel budget runs out. Earlier sprites are drawn first and win: a pixel already set in the
+sprite line buffer isn't overwritten.</p>
+
+<blockquote class="pull"><p>Missing sprites aren't a bug in the emulator. The hardware runs out of time
+on a scanline, and games are designed around it.</p></blockquote>
+
+<h2>The masking rule</h2>
+
+<p>The odd part of sprite handling is <strong>masking</strong>. A sprite whose X coordinate is exactly 0
+(that is, −128 on screen, entirely off the left edge) can hide all lower-priority sprites on the rest of
+its lines, which lets a game cut sprites off at an invisible boundary. The rule has conditions,
+and the renderer implements them as documented in the story: the mask takes effect once a sprite with
+non-zero X has been seen on that line, or if the previous line ran out of sprite pixels.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if (rawX == 0) {
+    masked = masked || seenNonZero || s_.prevLineDotOverflow;
+} else {
+    seenNonZero = true;
+}</code></pre><figcaption>Masking: an x = 0 sprite hides what follows, but only under these conditions.</figcaption></figure>
+
+<p>Masked sprites still count against the pixel budget, as on hardware. They take time even though nothing
+is drawn.</p>
+
+<h2>Status flags</h2>
+
+<p>Two status-register bits come from sprites. <strong>Overflow</strong> is set when a line hits either
+limit. <strong>Collision</strong> is set when two opaque sprite pixels land on the same spot. Both clear when
+the status register is read. The collision flag doesn't say <em>which</em> sprites collided, which limits
+its use, but it's cheap to emulate.</p>
+
+<h2>Sizes and flips</h2>
+
+<p>A sprite of W×H cells stores its tiles column by column: the first H tiles are the left column, the next
+H the second, and so on. Horizontal flip reverses the column order as well as the pixels within each tile;
+vertical flip reverses the rows. Interlace mode 2 (M03-09) doubles tile height and changes the Y offset
+from 128 to 256.</p>
+
+<h2>Verified</h2>
+
+<p>A synthetic unit test covers the link list, sizes, flips, per-line limits, masking and collision. One part
+puts 21 sprites on one H40 line and checks that the 21st is dropped and the overflow flag is set; the story
+originally asked for a test ROM for that. For the games, dumped frames were checked by eye across all three
+titles: Sonic, Tails and Knuckles, rings, badniks, the HUD and title-screen sprites in Sonic 1's Green Hill
+demo, Sonic 2's Emerald Hill (two-player), Chemical Plant and Aquatic Ruin demos, and Sonic 3 &amp;
+Knuckles' Angel Island intro and demo. Several of those frames are golden checkpoints.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-07-sprites.md">Story M03-07</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/vdp/vdp_render.cpp"><code>src/core/vdp/vdp_render.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/vdp/vdp.cpp"><code>src/core/vdp/vdp.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/vdp_render_test.cpp"><code>tests/unit/vdp_render_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M03-06-window-plane.html"><span class="label">&larr; Previous</span><span class="title">M03-06 · The window: a plane that doesn't scroll</span></a>
+<a class="next" href="M03-08-priority-and-shadow-highlight.html"><span class="label">Next &rarr;</span><span class="title">M03-08 · Who's in front: priority and shadow/highlight</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

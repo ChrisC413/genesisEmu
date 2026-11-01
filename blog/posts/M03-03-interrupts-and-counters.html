@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interrupts on the right line | genesisEmu</title>
+<meta name="description" content="Underwater palettes, split-screen effects and status bars all depend on interrupts firing at the right scanline. Here&#x27;s how genesisEmu lines up the 68000, the VDP and the beam.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Interrupts on the right line | genesisEmu">
+<meta property="og:description" content="Underwater palettes, split-screen effects and status bars all depend on interrupts firing at the right scanline. Here&#x27;s how genesisEmu lines up the 68000, the VDP and the beam.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m03">M03 · VDP video</a> · Story 3 of 11</p>
+<h1>Interrupts on the right line</h1>
+<p class="subtitle">Underwater palettes, split-screen effects and status bars all depend on interrupts firing at the right scanline. Here's how genesisEmu lines up the 68000, the VDP and the beam.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>3 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-03-interrupts-and-counters.md">Story M03-03</a></div>
+<div class="prose">
+<p>The Genesis draws its picture one scanline at a time, top to bottom, and games can change VDP state
+while it draws. Change the palette halfway down and the bottom half of the screen uses new colours. That
+is how the water in Sonic games gets its tint: the game switches to an underwater palette exactly at the
+water surface. To do that on the right line, the game needs an interrupt on the right line. M03-03 made
+those interrupts precise.</p>
+
+<h2>The order of events in a line</h2>
+
+<p>Every line, the scheduler from M02-05 does the same three things: <code>Vdp::beginLine</code>, run the
+68000 for the line's 3,420 master clocks, then <code>Vdp::endLine</code>. Where each VDP event sits in that
+sequence decides which line a change affects.</p>
+
+<figure class="figure">
+<svg viewBox="0 0 640 210" role="img" aria-labelledby="m0303t">
+<title id="m0303t">Line N: beginLine raises V-int at line 224; the 68000 runs; endLine renders the line and steps the H-int counter. An H-int raised at the end of line N runs during line N+1, so CRAM writes show from line N+1.</title>
+<text class="dg-text dg-bold" x="20" y="24">line N</text>
+<rect class="dg-green" x="20" y="34" width="120" height="44" rx="6"/>
+<text class="dg-text" x="80" y="54" text-anchor="middle">beginLine</text>
+<text class="dg-small" x="80" y="70" text-anchor="middle">V-int at 224</text>
+<rect class="dg-alt" x="150" y="34" width="250" height="44" rx="6"/>
+<text class="dg-text" x="275" y="54" text-anchor="middle">68000 runs</text>
+<text class="dg-small" x="275" y="70" text-anchor="middle">3,420 master clocks</text>
+<rect class="dg-warm" x="410" y="34" width="210" height="44" rx="6"/>
+<text class="dg-text" x="515" y="54" text-anchor="middle">endLine</text>
+<text class="dg-small" x="515" y="70" text-anchor="middle">render line N · H-int counter</text>
+<text class="dg-text dg-bold" x="20" y="124">line N+1</text>
+<rect class="dg-green" x="20" y="134" width="120" height="44" rx="6"/>
+<text class="dg-text" x="80" y="160" text-anchor="middle">beginLine</text>
+<rect class="dg-alt" x="150" y="134" width="250" height="44" rx="6"/>
+<text class="dg-text" x="275" y="154" text-anchor="middle">H-int handler runs</text>
+<text class="dg-small" x="275" y="170" text-anchor="middle">writes new palette to CRAM</text>
+<rect class="dg-warm" x="410" y="134" width="210" height="44" rx="6"/>
+<text class="dg-text" x="515" y="154" text-anchor="middle">endLine</text>
+<text class="dg-small" x="515" y="170" text-anchor="middle">line N+1 uses new colours</text>
+<path class="dg-accent-line" d="M560 78 C 560 110, 300 100, 275 134"/>
+<text class="dg-small" x="430" y="104">underflow raises H-int</text>
+</svg>
+<figcaption>Each line is rendered at its end. Whatever the 68000 changed during the line is visible on that line.</figcaption>
+</figure>
+
+<p>Because each line is rendered at its <em>end</em>, after the CPU has run for it, a CRAM write the CPU
+makes during line N shows from line N on. A unit test, <em>Mid-frame CRAM writes land on the following
+lines</em>, pins this behaviour down.</p>
+
+<h2>The H-int counter</h2>
+
+<p>The horizontal interrupt is driven by a counter. The game loads register 10 with a value N. The VDP
+decrements the counter after each active line, and when it underflows it raises H-int and reloads the
+counter from register 10. During vertical blank the counter is simply reloaded. The result is an interrupt
+every N+1 lines, starting at a line the game controls:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">// H-int counter: decremented after every active line (and the first V-blank line), reloaded in
+// V-blank. An underflow raises H-int; its handler runs during the next line, so a CRAM change it makes
+// shows from the next rendered line on.
+if (line &lt;= height) {
+    if (--s_.hintCounter &lt; 0) {
+        s_.hintCounter = s_.regs[10];
+        s_.hintPending = true;
+    }
+} else {
+    s_.hintCounter = s_.regs[10];
+}</code></pre><figcaption><code>Vdp::endLine</code>. The comment records the consequence for palette changes.</figcaption></figure>
+
+<p>A water effect sets register 10 so the counter underflows on the line just above the surface. The
+handler then runs on the surface line and swaps the palette, and the rest of the frame is underwater.</p>
+
+<blockquote class="pull"><p>The underwater palette starts exactly at the water surface. One line off, and
+anyone who has played the game would notice.</p></blockquote>
+
+<h2>V-int and the Z80</h2>
+
+<p>At the first vertical-blank line (224 in the usual mode), <code>beginLine</code> sets the V-int pending
+flag. If register 1 enables it, the 68000 gets a level-6 interrupt. The pending flag also appears in the
+status register, and a test checks that enabling V-int <em>late</em>, after the flag is already set, still
+fires the interrupt.</p>
+
+<p>The same line raises the Z80's interrupt input for one line. The Z80 has only one interrupt, and sound
+drivers typically use it as a once-per-frame tick. In M03 nothing consumed it yet, because the Z80 didn't run, but
+the signal was exposed as <code>VdpState::z80Int</code> for M04.</p>
+
+<h2>HV counter tables</h2>
+
+<p>M02-04 introduced the HV counter with its NTSC jumps. M03-03 completed the tables: vertical counts for
+224- and 240-line modes on NTSC and PAL, horizontal counts for the 256- and 320-pixel modes, and both
+interlace modes, where the vertical counter doubles and shows bit 8 in its lowest bit. Each variant has a
+unit test with expected values at the jump points.</p>
+
+<h2>Verified, and not verified</h2>
+
+<p>The story's headline criterion, <em>Labyrinth Zone's water line in Sonic 1 appears at the right
+height</em>, is <strong>not checked</strong>. Labyrinth Zone isn't part of Sonic 1's attract demos, so
+reaching it needs controller input, which arrived in M04. The same mechanism was checked instead on Sonic
+2's Aquatic Ruin Zone attract demo. The underwater palette begins exactly at the water surface, and that
+frame (8,000) is one of the golden checkpoints in M03-11. The unit tests cover the counter sequences:
+H-int every N+1 lines including line 224, reload in V-blank, V-int and the Z80 interrupt for one line, and
+acknowledgement.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-03-interrupts-and-counters.md">Story M03-03</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/vdp/vdp.cpp"><code>src/core/vdp/vdp.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/sched/machine.cpp"><code>src/core/sched/machine.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/vdp_test.cpp"><code>tests/unit/vdp_test.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/vdp_render_test.cpp"><code>tests/unit/vdp_render_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M03-02-dma.html"><span class="label">&larr; Previous</span><span class="title">M03-02 · DMA, and the cost of a free copy</span></a>
+<a class="next" href="M03-04-plane-rendering.html"><span class="label">Next &rarr;</span><span class="title">M03-04 · The first pixels: tiles, name tables and planes</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

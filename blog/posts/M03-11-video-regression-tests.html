@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Golden frames without golden images | genesisEmu</title>
+<meta name="description" content="How do you regression-test a renderer for commercial games without storing a single frame of them? Store hashes, keep the pictures on your own machine, and draw the differences in red.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Golden frames without golden images | genesisEmu">
+<meta property="og:description" content="How do you regression-test a renderer for commercial games without storing a single frame of them? Store hashes, keep the pictures on your own machine, and draw the differences in red.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m03">M03 · VDP video</a> · Story 11 of 11</p>
+<h1>Golden frames without golden images</h1>
+<p class="subtitle">How do you regression-test a renderer for commercial games without storing a single frame of them? Store hashes, keep the pictures on your own machine, and draw the differences in red.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-11-video-regression-tests.md">Story M03-11</a></div>
+<div class="prose">
+<p>The renderer built in M03 has a lot of rules, and a change to one can break another. A tweak to
+sprite masking could quietly break the HUD in Sonic 2's two-player mode. M03-11 added the safety net:
+<strong>golden frames</strong>. At fixed points in each game's start-up and attract sequence, the rendered
+frame must match a known-good result.</p>
+
+<p>There's a constraint that shapes the whole design. The repository is public and can't contain anything
+from the games: no ROM bytes, and no screenshots either.</p>
+
+<h2>Hashes only</h2>
+
+<p>So the golden file stores <em>hashes</em> of frames, not the frames. <code>Vdp::frameHash()</code> runs
+XXH3-64 over the visible pixels and the frame's dimensions. The file lists, for each game (found by SHA-1),
+the frame number, the expected hash and a note of what the frame shows:</p>
+
+<figure class="codefig"><pre><code class="language-json">"description": "M03-11 golden frames: per canonical ROM (D-023, found by SHA-1) the Vdp::frameHash() after N frames from power-on with no input (SEGA logo, title, attract demos). Hashes only, never images or ROM bytes. Checked by the [rom] frame test and `gen_cli run --check`. Changing them needs a [golden-update] commit with a reason (spec 13).",</code></pre><figcaption>Part of <code>tests/golden/m03_frames.json</code>. The description field states the rules.</figcaption></figure>
+
+<p>There are 19 checkpoints: 6 for Sonic 1, 7 for Sonic 2 and 6 for Sonic 3 &amp; Knuckles. They were chosen to
+cover the features built in this milestone:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Game</th><th>Frames</th><th>What they exercise</th></tr></thead>
+<tbody>
+<tr><td>Sonic 1</td><td>150, 600, 1000, 1300, 2000, 2800</td><td>SEGA logo, title screen, title card, Green Hill demo with parallax, water band and the loop</td></tr>
+<tr><td>Sonic 2</td><td>300, 500, 1100, 1400, 2000, 4600, 8000</td><td>SEGA logo, intro, title, two-player Emerald Hill in interlace mode 2, Chemical Plant, Aquatic Ruin with the H-int water palette</td></tr>
+<tr><td>Sonic 3 &amp; Knuckles</td><td>300, 800, 1400, 1700, 2200, 2600</td><td>SEGA logo, title screen, Angel Island intro scenes and the attract demo</td></tr>
+</tbody></table></div>
+
+<p>Every run starts from power-on with no input, and the emulator is deterministic, so frame 2,800 is always
+the same frame.</p>
+
+<blockquote class="pull"><p>The repository proves the frame is right by its hash. The picture never leaves
+the developer's machine.</p></blockquote>
+
+<h2>But a hash can't show you what broke</h2>
+
+<p>The weakness of hashes is that a mismatch tells you <em>that</em> something changed, not <em>what</em>.
+The fix is a <strong>local cache</strong>. Whenever a checkpoint matches, its raw pixels are saved outside
+the repository: in <code>$GENESIS_GOLDEN_CACHE</code>, or by default in a <code>genesisEmu-golden-frames</code>
+folder under the system's temp directory. The file name includes the frame number and the hash, so a stale
+picture can never stand in for the wrong golden value.</p>
+
+<p>When a checkpoint later fails, three PNGs are written: the actual frame, the expected frame from the cache,
+and a <strong>diff</strong> image. The diff shows the actual frame dimmed to a quarter of its brightness, with
+every differing pixel in solid red:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if (inA != inE || a != e) {
+    d = 0xFF0000FFu;  // red (R in the low byte)
+} else {
+    d = ((a &gt;&gt; 2) &amp; 0x003F3F3Fu) | 0xFF000000u;
+}</code></pre><figcaption>From <code>writeFrameMismatch</code>: red where pixels differ, a dimmed copy of the frame elsewhere.</figcaption></figure>
+
+<p>The dimmed background keeps the frame recognisable, so you can see at a glance that, for example, the
+error is a band of wrong pixels along one sprite's edge. If there's no cached expected frame, perhaps on a
+fresh machine, only the actual PNG is written.</p>
+
+<h2>A PNG writer in ninety lines</h2>
+
+<p>The project had no image library, and adding one for this felt heavy. <code>src/common/png.cpp</code> is a
+minimal PNG encoder that writes uncompressed ("stored") deflate blocks. The files are larger than a real
+encoder would make, but they're valid PNGs that any viewer opens, and it reuses the CRC32 written in M00-04
+for the chunk checksums.</p>
+
+<h2>Two ways to run it</h2>
+
+<p>The checks are available from the CLI and as a test:</p>
+
+<ul>
+<li><code>gen_cli run --rom game.bin --check tests/golden/m03_frames.json --out dir</code> runs to the
+last checkpoint, compares each hash, writes PNGs for mismatches into <code>dir</code>, and exits with code 3
+if anything differs, the "check failure" code from M00-06.</li>
+<li>The <code>[rom]</code> test <code>tests/roms/frame_test.cpp</code> does the same for every game found in
+<code>GENESIS_ROM_DIR</code>, writing diffs to a temp folder. Without ROMs, CTest reports it as skipped.</li>
+</ul>
+
+<p>The mismatch path was checked deliberately: with a tampered golden file, <code>gen_cli run --check</code>
+wrote the <code>_actual</code>, <code>_expected</code> and <code>_diff</code> PNGs.</p>
+
+<h2>Changing a golden value</h2>
+
+<p>When emulation changes on purpose, say a more accurate sprite rule changes one frame, the golden hash has
+to change too. Spec 13 requires that to happen in its own commit, tagged <code>[golden-update]</code>, with a
+reason. A changed hash is never buried in an unrelated change, and the history records each time the
+"correct" picture changed and why. The M04 and M05 milestones added more golden data, for scripted input and
+audio, using the same rule.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-11-video-regression-tests.md">Story M03-11</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/golden/m03_frames.json"><code>tests/golden/m03_frames.json</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/common/golden_frames.cpp"><code>src/common/golden_frames.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/common/png.cpp"><code>src/common/png.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/roms/frame_test.cpp"><code>tests/roms/frame_test.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/cli/main.cpp"><code>src/cli/main.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M03-10-frame-presentation.html"><span class="label">&larr; Previous</span><span class="title">M03-10 · From framebuffer to screen, at 59.92 frames per second</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>
