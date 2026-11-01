@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>An emulator you can drive from a script | genesisEmu</title>
+<meta name="description" content="gen_cli started as three subcommands and a table of exit codes. It became the way every later milestone is tested.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="An emulator you can drive from a script | genesisEmu">
+<meta property="og:description" content="gen_cli started as three subcommands and a table of exit codes. It became the way every later milestone is tested.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m00">M00 · Foundation</a> · Story 6 of 7</p>
+<h1>An emulator you can drive from a script</h1>
+<p class="subtitle">gen_cli started as three subcommands and a table of exit codes. It became the way every later milestone is tested.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M00-foundation/M00-06-headless-cli-skeleton.md">Story M00-06</a></div>
+<div class="prose">
+<p>A desktop window is how a person uses an emulator. Scripts, CI and analysis tools need something else:
+a program they can start with arguments, that does its job without a display and reports through its exit
+code and standard output. That program is <code>gen_cli</code>, and M00-06 created its skeleton.</p>
+
+<p>The story was small. It asked for argument parsing, an <code>info</code> command, a <code>run</code>
+command that did nothing yet, a <code>--help</code> that documents every subcommand, and four exit codes.
+The design choices made here decided how the rest of the project gets tested.</p>
+
+<h2>A contract made of exit codes</h2>
+
+<p>The exit codes are part of the interface, so they're defined once, at the top of the file:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">enum ExitCode : int {
+    kExitOk = 0,
+    kExitUsage = 1,
+    kExitLoadError = 2,
+    kExitCheckFailure = 3,
+};</code></pre><figcaption><code>src/cli/main.cpp</code>. Each failure class has its own number, so a calling script can react differently.</figcaption></figure>
+
+<p>The split matters. A <strong>usage error</strong> (1) means the caller made a mistake, such as an
+unknown option, a missing <code>--rom</code> or <code>--frames ten</code>. A <strong>load error</strong>
+(2) means the input was bad: a missing file, a ROM that's too small, a Master System image. A
+<strong>check failure</strong> (3) means the tool ran correctly and found a problem. In M00 nothing used
+code 3 yet. Later milestones use it for a 68000 fault exception during a run, a golden frame that doesn't
+match, or an audio hash that changed. A CI job can tell "the test harness is broken" from "the emulator
+regressed".</p>
+
+<h2>One formatter, two front-ends</h2>
+
+<p><code>gen_cli info --rom game.bin</code> prints the same ROM description that the desktop app's ROM
+Info panel shows. Both get it from one place: <code>gen_common</code> turns a parsed <code>Rom</code> into
+a list of label/value pairs (<code>describeRom</code>) or a JSON object (<code>romToJson</code>). The CLI
+just aligns the labels:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">std::size_t width = 0;
+const auto fields = gen::common::describeRom(*rom);
+for (const auto&amp; f : fields) {
+    width = std::max(width, f.label.size());
+}
+for (const auto&amp; f : fields) {
+    std::printf("%-*s  %s\n", static_cast&lt;int&gt;(width), f.label.c_str(), f.value.c_str());
+}</code></pre><figcaption>The text form of <code>info</code>: compute the widest label, then print aligned rows.</figcaption></figure>
+
+<p>With <code>--json</code> the same data comes out as JSON, ready for another program to parse. Sharing
+the formatter means the app and the CLI can never disagree about what a header field says.</p>
+
+<blockquote class="pull"><p>The CLI is the emulator's test interface. Almost every later acceptance
+criterion is checked by running it.</p></blockquote>
+
+<h2>Testing a command-line tool with CTest</h2>
+
+<p>Each CLI test case is one line in <code>tests/cli/CMakeLists.txt</code>: a name, an expected exit code,
+the arguments, and optionally a regular expression the output must match. A helper function expands that
+into a CTest test that runs a small CMake script, <code>run_cli.cmake</code>, which executes
+<code>gen_cli</code> and checks both.</p>
+
+<figure class="codefig"><pre><code class="language-cmake">genesis_cli_test(info_smd_matches_bin 0 "info|--rom|${rom_dir}/synthetic.smd"
+  EXPECT "Format +SMD"
+  COMPARE "info|--rom|${rom_dir}/synthetic.bin")
+genesis_cli_test(info_too_small 2 "info|--rom|${rom_dir}/tiny.bin" EXPECT "too small")</code></pre><figcaption>Two of the original cases: an SMD file must report its format <em>and</em> produce the same SHA-1 line as the BIN.</figcaption></figure>
+
+<p>The <code>COMPARE</code> option runs a second command and requires a chosen piece of output (by default
+the SHA-1 line) to be identical in both. That one mechanism checks that SMD and BIN give the same hash, and
+later that two runs of the same ROM give the same state hash.</p>
+
+<p>The test ROMs aren't commercial games. A fixture, <code>cli.make_test_roms</code>, runs first and
+writes synthetic images into the build folder: a normal BIN, the same image interleaved as SMD, a
+too-small file, and later a small bootable program. Every other CLI test declares that fixture as a
+requirement, so CTest orders them correctly even in parallel runs.</p>
+
+<h2>The skeleton grows</h2>
+
+<p>When M00 closed, <code>run</code> loaded a ROM and returned 0 without emulating anything. It existed so
+scripts and tests could be written against the interface before the machine was. Its help text has grown
+with every milestone since. <code>run</code> now emulates N frames and prints instructions per frame, the
+deterministic state hash and any CPU faults. It can dump frames as PNG, compare them against golden
+checkpoints, replay scripted controller input, load and save SRAM, record a WAV file and write a log of
+sound-chip register writes. A <code>trace</code> command writes instruction traces.</p>
+
+<p>The original fifteen <code>cli.*</code> cases still run, joined by many more. Typical of the later ones,
+<code>cli.run_faulting_rom</code> runs a ROM that isn't a valid program and expects exit code 3 with the
+message <code>faults N: first vector ...</code>, and <code>cli.help</code> checks that the help text
+mentions every command and the exit codes.</p>
+
+<h2>Small decisions that paid off</h2>
+
+<ul>
+<li><strong>Errors go to stderr, data to stdout.</strong> <code>gen_cli info --json | jq .sha1</code>
+works even when the loader prints warnings.</li>
+<li><strong>Warnings aren't failures.</strong> A header checksum mismatch is logged through the
+<code>cli</code> logger and the command still exits 0, the same policy as the loader itself.</li>
+<li><strong>Unknown options are errors.</strong> A typo like <code>--frmaes</code> exits 1 with
+"unknown option" instead of being silently ignored, so a test can't pass by accident.</li>
+</ul>
+
+<p>None of this is glamorous. But when M02 needed to show that three games boot the same way twice, M03
+needed golden frames, and M05 needed audio hashes, the harness was already there.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M00-foundation/M00-06-headless-cli-skeleton.md">Story M00-06</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/cli/main.cpp"><code>src/cli/main.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/common/rom_info.cpp"><code>src/common/rom_info.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/cli/CMakeLists.txt"><code>tests/cli/CMakeLists.txt</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/cli/run_cli.cmake"><code>tests/cli/run_cli.cmake</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/cli/make_test_roms.cpp"><code>tests/cli/make_test_roms.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M00-05-app-shell-window.html"><span class="label">&larr; Previous</span><span class="title">M00-05 · A window with room for a workbench</span></a>
+<a class="next" href="M00-07-local-mac-validation.html"><span class="label">Next &rarr;</span><span class="title">M00-07 · Testing on macOS without paying for macOS CI</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>genesisEmu: How it&#x27;s built</title>
+<meta name="description" content="One article per completed story: how a hand-written Sega Genesis emulator is built.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="genesisEmu: How it&#x27;s built">
+<meta property="og:description" content="One article per completed story: how a hand-written Sega Genesis emulator is built.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<section class="hero">
+<p class="kicker">Build notes · 7 articles</p>
+<h1>How genesisEmu is built</h1>
+<p class="lede">genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering and modding the
+Sonic games. The project is written spec-first: every feature starts as a short story with acceptance
+criteria. This series has one article per finished story. Each one covers what the feature does, why an
+emulator needs it, and how this code base builds and tests it.</p>
+<p class="meta">7 articles · about 1 hours of reading ·
+<a href="https://github.com/ChrisC413/genesisEmu">source on GitHub</a> · start with <a href="posts/M00-01-repo-and-build-system.html">M00-01</a></p>
+</section>
+<nav class="toc" aria-label="Milestones">
+<a href="#m00">M00 · Foundation</a>
+</nav>
+<section class="milestone" id="m00">
+<div class="milestone-head"><span class="tag">M00 · 7 stories</span><h2>Foundation</h2><p>Repository, build, CI and an application shell that loads a ROM, on Windows and macOS.</p></div>
+<ul class="post-list">
+<li><a href="posts/M00-01-repo-and-build-system.html"><span class="pid">M00-01</span><span class="ptitle">A build that works the same from every clean clone</span><span class="pblurb">CMake presets, a pinned vcpkg manifest and a module layout that keeps the emulated machine a headless library, separate from the UI.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M00-02-ci-pipeline.html"><span class="pid">M00-02</span><span class="ptitle">Continuous integration on a zero-dollar budget</span><span class="pblurb">A GitHub Actions workflow that uses only free-tier features: a formatting gate, Debug and Release builds, vcpkg binary caching and pinned test data.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M00-03-logging-and-config.html"><span class="pid">M00-03</span><span class="ptitle">Where settings live, and how they survive upgrades</span><span class="pblurb">Per-subsystem logging with spdlog, a forward-compatible JSON config with schema migrations, and platform-correct data folders keyed by ROM SHA-1.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M00-04-rom-loading-and-header.html"><span class="pid">M00-04</span><span class="ptitle">Knowing exactly which ROM you're holding</span><span class="pblurb">BIN and interleaved SMD loading, the $100-$1FF cartridge header, header checksums, in-house SHA-1/CRC32 and a known-ROM table for the Sonic revisions.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M00-05-app-shell-window.html"><span class="pid">M00-05</span><span class="ptitle">A window with room for a workbench</span><span class="pblurb">The desktop shell: an SDL3 window with an OpenGL 3.3 context, Dear ImGui docking with the layout saved in the JSON config, native file dialogs and a self-checking smoke test.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M00-06-headless-cli-skeleton.html"><span class="pid">M00-06</span><span class="ptitle">An emulator you can drive from a script</span><span class="pblurb">The headless gen_cli runner: info, run and help subcommands, stable exit codes, JSON output, and CTest cases that check both exit code and output.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M00-07-local-mac-validation.html"><span class="pid">M00-07</span><span class="ptitle">Testing on macOS without paying for macOS CI</span><span class="pblurb">tools/validate-mac.sh builds and tests the release and sanitizer configurations, signs the .app bundle, and prints a summary block for the pull request.</span><span class="pmeta">4 min read</span></a></li>
+</ul>
+</section>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

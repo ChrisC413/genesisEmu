@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Continuous integration on a zero-dollar budget | genesisEmu</title>
+<meta name="description" content="Every push is formatted, built twice and tested on GitHub&#x27;s free Windows runners. Here is how it stays under three minutes.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Continuous integration on a zero-dollar budget | genesisEmu">
+<meta property="og:description" content="Every push is formatted, built twice and tested on GitHub&#x27;s free Windows runners. Here is how it stays under three minutes.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m00">M00 · Foundation</a> · Story 2 of 7</p>
+<h1>Continuous integration on a zero-dollar budget</h1>
+<p class="subtitle">Every push is formatted, built twice and tested on GitHub's free Windows runners. Here is how it stays under three minutes.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M00-foundation/M00-02-ci-pipeline.md">Story M00-02</a></div>
+<div class="prose">
+<p>An emulator is a large pile of small, exact rules, and it is easy to break one rule while fixing
+another. A tweak to the shifter can quietly break a flag in the arithmetic unit. Continuous integration
+is how this project notices. Every push and every pull request builds the whole project and runs every
+test.</p>
+
+<p>There was one constraint. Decision D-016 says GitHub Actions <em>free tier only</em>: standard
+<code>windows-latest</code> runners, the standard cache and default artifact retention. No macOS runners,
+no larger machines, no paid minutes. The acceptance criteria even include a test for the constraint: the
+workflow files may contain no <code>runs-on</code> other than <code>windows-latest</code>.</p>
+
+<h2>The shape of the pipeline</h2>
+
+<figure class="figure">
+<svg viewBox="0 0 640 190" role="img" aria-labelledby="m0002t">
+<title id="m0002t">CI pipeline: a format job gates two parallel build jobs, debug and release; release on main uploads an artifact.</title>
+<rect class="dg-warm" x="16" y="70" width="150" height="54" rx="8"/>
+<text class="dg-text dg-bold" x="91" y="93" text-anchor="middle">clang-format</text>
+<text class="dg-small" x="91" y="110" text-anchor="middle">+ line-ending check</text>
+<rect class="dg-alt" x="236" y="20" width="200" height="60" rx="8"/>
+<text class="dg-text dg-bold" x="336" y="44" text-anchor="middle">build (debug)</text>
+<text class="dg-small" x="336" y="62" text-anchor="middle">configure · build · ctest</text>
+<rect class="dg-alt" x="236" y="112" width="200" height="60" rx="8"/>
+<text class="dg-text dg-bold" x="336" y="136" text-anchor="middle">build (release)</text>
+<text class="dg-small" x="336" y="154" text-anchor="middle">configure · build · ctest</text>
+<rect class="dg-green" x="490" y="112" width="134" height="60" rx="8"/>
+<text class="dg-text dg-bold" x="557" y="136" text-anchor="middle">artifact</text>
+<text class="dg-small" x="557" y="154" text-anchor="middle">push to main only</text>
+<path class="dg-line" d="M166 90 L236 50 M166 104 L236 142 M436 142 H490"/>
+</svg>
+<figcaption>A cheap formatting job gates two expensive build jobs. Only a Release build of <code>main</code> produces a downloadable Windows build.</figcaption>
+</figure>
+
+<p>The first job is deliberately cheap. It installs a pinned clang-format with pip, checks every source
+file, and runs <code>tools/check_line_endings.py</code> to reject carriage returns. If formatting fails,
+the build jobs never start, which keeps runner minutes free for builds that can pass. That behaviour was
+an acceptance criterion: run 40109907468 failed in <code>clang-format</code> and both build jobs show as
+skipped.</p>
+
+<p>clang-format is pinned to version 22.1.8 and installed with pip rather than taken from whatever the
+runner image ships. Different versions of clang-format format the same code slightly differently. Pinning
+the version means "formatted on my machine" and "formatted in CI" mean the same thing.
+<code>tools/format.py</code> wraps it for local use.</p>
+
+<h2>Caching what is expensive</h2>
+
+<p>The slow part of a C++ build with vcpkg is building the dependencies: SDL3, ImGui, spdlog and the rest.
+They change rarely, so the workflow caches vcpkg's binary packages. The cache key combines the pinned vcpkg
+commit with a hash of the manifest:</p>
+
+<figure class="codefig"><pre><code class="language-yaml">key: vcpkg-x64-windows-static-md-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
+restore-keys: vcpkg-x64-windows-static-md-${{ env.VCPKG_COMMIT }}-</code></pre><figcaption>From <code>.github/workflows/ci.yml</code>. A new library version or manifest edit produces a new key; anything else reuses the cached binaries.</figcaption></figure>
+
+<p>A few details here came from things going wrong. The save step also runs after a <em>failed</em>
+configure, because by then vcpkg has usually finished compiling the libraries, and throwing that work
+away would make the next run slow too. The save is <code>continue-on-error</code> because the Debug and
+Release jobs run in parallel and may race to save the same key. vcpkg itself lives under
+<code>RUNNER_TEMP</code>, because <code>actions/cache</code> rejects paths containing <code>..</code>.</p>
+
+<blockquote class="pull"><p>With a warm cache the two build jobs took 2m14s and 2m26s: about three
+minutes from push to green.</p></blockquote>
+
+<p>The acceptance criterion was a warm-cache build under ten minutes. Run 40117589455 recorded 2m14s for
+Debug and 2m26s for Release.</p>
+
+<h2>Test data that isn't in the repository</h2>
+
+<p>Later milestones added large external test suites: about a million 68000 test vectors and 1.6 million
+Z80 vectors from the SingleStepTests project, plus the AS macro assembler used for disassembly round trips.
+None of that is committed. <code>tools/fetch-test-data.py</code> downloads pinned versions listed in a lock
+file. The workflow caches each data set separately, keyed by the hash of that lock file, so one failed
+download can't poison the others.</p>
+
+<p>Release builds run every vector; Debug builds run a subset to keep the job fast:</p>
+
+<figure class="codefig"><pre><code class="language-yaml">-DGENESIS_SST_LIMIT=${{ matrix.config == 'release' &amp;&amp; '0' || '250' }}
+-DGENESIS_Z80_SST_LIMIT=${{ matrix.config == 'release' &amp;&amp; '0' || '100' }}</code></pre><figcaption>Release runs everything; Debug runs 250 vectors per 68000 instruction file and 100 per Z80 file.</figcaption></figure>
+
+<h2>What CI can't do</h2>
+
+<p>The free Windows runner has no GPU that can provide an OpenGL 3.3 context. The desktop app's smoke tests
+need one, so the app exits with code 77 when it can't create a context, and CTest maps 77 to
+<em>skipped</em> rather than <em>failed</em>. CI still compiles and links the app on every push; the smoke
+tests run on any developer machine with a GPU.</p>
+
+<p>macOS isn't covered by CI at all. Instead, a local validation script prints a summary block that gets
+pasted into the pull request, and the PR template asks for it whenever platform code, CMake or the
+audio/video backends change. That template also carries a short checklist: CI green, acceptance criteria
+updated only when verified, and <em>no ROMs, ROM-derived data or test data committed</em>.</p>
+
+<h2>Proving the gate works</h2>
+
+<p>A CI pipeline that has never failed hasn't been tested, so the story asks for failures. Besides the
+formatting run above, run 40109963389 shows a deliberately failing CTest test (an app smoke test crash)
+failing the <code>Test</code> step and the job. Concurrency settings cancel an in-progress run when a newer
+commit lands on the same branch, and a Release build of <code>main</code> is packaged with
+<code>cmake --install</code> and uploaded as <code>genesisEmu-windows-x64-&lt;sha&gt;</code>.</p>
+
+<p>At the end of M00 that pipeline ran 51 CTest tests on every push: 32 unit tests, 15 <code>gen_cli</code>
+tests, 3 app smoke tests and 1 <code>[rom]</code> test. By M05 the same workflow also checks millions of CPU
+vectors, golden video frames and audio hashes, still on the free tier.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M00-foundation/M00-02-ci-pipeline.md">Story M00-02</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/.github/workflows/ci.yml"><code>.github/workflows/ci.yml</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tools/format.py"><code>tools/format.py</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tools/check_line_endings.py"><code>tools/check_line_endings.py</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/.github/pull_request_template.md"><code>.github/pull_request_template.md</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M00-01-repo-and-build-system.html"><span class="label">&larr; Previous</span><span class="title">M00-01 · A build that works the same from every clean clone</span></a>
+<a class="next" href="M00-03-logging-and-config.html"><span class="label">Next &rarr;</span><span class="title">M00-03 · Where settings live, and how they survive upgrades</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A build that works the same from every clean clone | genesisEmu</title>
+<meta name="description" content="Before a single opcode runs, an emulator needs a repository layout, a pinned toolchain and a hard line between the machine and the UI.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="A build that works the same from every clean clone | genesisEmu">
+<meta property="og:description" content="Before a single opcode runs, an emulator needs a repository layout, a pinned toolchain and a hard line between the machine and the UI.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m00">M00 · Foundation</a> · Story 1 of 7</p>
+<h1>A build that works the same from every clean clone</h1>
+<p class="subtitle">Before a single opcode runs, an emulator needs a repository layout, a pinned toolchain and a hard line between the machine and the UI.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>5 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M00-foundation/M00-01-repo-and-build-system.md">Story M00-01</a></div>
+<div class="prose">
+<p>Most emulator write-ups start with the CPU. This one starts with the folder structure, because the
+folder structure decides what the emulator can become. genesisEmu is not only meant to play Sonic. It is
+meant to be a <em>reverse-engineering workbench</em>. It will trace every instruction, map which bytes of
+the ROM are code and which are data, and later rebuild the games from source. Each of those features needs
+to drive the emulated machine without a window in the way.</p>
+
+<p>The first story, M00-01, therefore had a modest goal. Anyone should be able to build the project the
+same way from a clean clone, on Windows 11 or macOS, with one command.</p>
+
+<h2>Six modules, one direction of dependency</h2>
+
+<p>The architecture spec divides the code into libraries with a strict rule: dependencies only point
+downwards. At the bottom sits <code>gen_core</code>, the emulated hardware itself: CPUs, bus, video, audio,
+cartridge. It knows nothing about windows, files on disk, JSON or logging frameworks. Above it,
+<code>gen_instrument</code> adds tracing and coverage hooks, and <code>gen_analysis</code> builds the
+disassemblers on top of that. Two executables sit on top: the desktop app (<code>genesisEmu</code>) and a
+headless command-line runner (<code>gen_cli</code>).</p>
+
+<figure class="figure">
+<svg viewBox="0 0 640 300" role="img" aria-labelledby="m0001t">
+<title id="m0001t">Module dependency diagram: app and CLI depend on analysis and common, which depend on instrument and core.</title>
+<rect class="dg-alt" x="70" y="20" width="200" height="46" rx="8"/>
+<text class="dg-text dg-bold" x="170" y="40" text-anchor="middle">genesisEmu (app)</text>
+<text class="dg-small" x="170" y="56" text-anchor="middle">SDL3 · ImGui · OpenGL</text>
+<rect class="dg-alt" x="370" y="20" width="200" height="46" rx="8"/>
+<text class="dg-text dg-bold" x="470" y="40" text-anchor="middle">gen_cli</text>
+<text class="dg-small" x="470" y="56" text-anchor="middle">headless runner for CI</text>
+<rect class="dg-box" x="70" y="110" width="200" height="46" rx="8"/>
+<text class="dg-text dg-bold" x="170" y="130" text-anchor="middle">gen_analysis</text>
+<text class="dg-small" x="170" y="146" text-anchor="middle">disassemblers</text>
+<rect class="dg-box" x="370" y="110" width="200" height="46" rx="8"/>
+<text class="dg-text dg-bold" x="470" y="130" text-anchor="middle">gen_common</text>
+<text class="dg-small" x="470" y="146" text-anchor="middle">config · logging · paths</text>
+<rect class="dg-box" x="70" y="190" width="200" height="40" rx="8"/>
+<text class="dg-text dg-bold" x="170" y="215" text-anchor="middle">gen_instrument</text>
+<rect class="dg-warm" x="70" y="250" width="500" height="40" rx="8"/>
+<text class="dg-text dg-bold" x="320" y="268" text-anchor="middle">gen_core: the emulated machine</text>
+<text class="dg-small" x="320" y="283" text-anchor="middle">headless, deterministic, no UI or I/O dependencies</text>
+<path class="dg-line" d="M170 66 V110 M470 66 V110 M270 43 Q330 85 380 110 M170 156 V190 M170 230 V250 M470 156 V250"/>
+</svg>
+<figcaption>Dependencies point down. The core at the bottom has no idea a window exists, which is what lets CI, tracing and analysis tools drive it directly.</figcaption>
+</figure>
+
+<p>The decision log records this as D-011: <em>the core is a headless, deterministic library, separate from
+the UI</em>. The reason is practical. CI can run thousands of CPU test vectors through it with no display
+attached. An analysis pass can replay a boot sequence and get the same answer every time. A future
+recompiler runtime could link against it.</p>
+
+<p>One library appeared that the spec had not planned: <code>gen_common</code>. Both executables need
+configuration, logging and platform paths, but the core must stay free of them. The M00 pull request
+introduced <code>gen_common</code> as the shared home for those services and flagged it as a deviation to
+review.</p>
+
+<blockquote class="pull"><p>The core knows nothing about windows, files, JSON or logging. That
+restriction is what makes it testable.</p></blockquote>
+
+<h2>Presets instead of instructions</h2>
+
+<p>A README full of "run this, then pass that flag" drifts out of date. CMake presets put the instructions
+in the repository instead. <code>CMakePresets.json</code> defines a hidden <code>base</code> preset that
+wires in the vcpkg toolchain, then layers platform presets on top. A condition hides the Windows presets on
+macOS and the other way round:</p>
+
+<figure class="codefig"><pre><code class="language-json">{
+  "name": "windows",
+  "hidden": true,
+  "inherits": "base",
+  "architecture": "x64",
+  "cacheVariables": { "VCPKG_TARGET_TRIPLET": "x64-windows-static-md" },
+  "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+},</code></pre><figcaption>From <code>CMakePresets.json</code>: the Windows family uses a static vcpkg triplet and only shows up on a Windows host.</figcaption></figure>
+
+<p>The user-facing presets are <code>win-debug</code>, <code>win-release</code>, <code>mac-debug</code>,
+<code>mac-release</code> and a <code>mac-asan</code> build with AddressSanitizer and
+UndefinedBehaviorSanitizer. Building and testing on Windows is three commands, and the same three appear in
+the README.</p>
+
+<p>The static <code>x64-windows-static-md</code> triplet was a deliberate deviation. The spec imagined a
+portable folder of "exe + DLLs". With static linking the portable build is just
+<code>genesisEmu.exe</code> and <code>gen_cli.exe</code>, and the licences of the linked libraries are
+installed under <code>licenses/</code>.</p>
+
+<h2>Pinning the third-party world</h2>
+
+<p>Dependencies come from vcpkg in manifest mode. The important line in <code>vcpkg.json</code> is the
+<code>builtin-baseline</code>, a vcpkg commit hash that fixes every library version. CI fetches exactly that
+vcpkg commit, so a library release upstream can't change the build without a commit in this repository.</p>
+
+<p>The scope listed eight libraries. The pull request trimmed the list to what M00 actually used: SDL3,
+Dear ImGui with docking, spdlog, nlohmann-json and Catch2. SHA-1 and CRC32 were written in-house (about
+a hundred lines) instead of adding a hashing library. Others arrive with the milestone that needs them; by
+M05 the manifest also lists <code>xxhash</code>, and the YM2612 sound chip comes from the vendored, BSD-licensed
+ymfm library (D-013).</p>
+
+<h2>Warnings: strict in CI, forgiving at the desk</h2>
+
+<p>Every target goes through one small CMake function, so the warning level is the same everywhere:</p>
+
+<figure class="codefig"><pre><code class="language-cmake">function(genesis_set_warnings target)
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8 /external:anglebrackets /external:W0)
+  else()
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wshadow)
+  endif()
+endfunction()</code></pre><figcaption><code>cmake/GenesisWarnings.cmake</code>: <code>/W4</code> on MSVC, <code>-Wall -Wextra -Wpedantic -Wshadow</code> on clang.</figcaption></figure>
+
+<p>Warnings are not errors in the presets. CI and the macOS validation script pass
+<code>-DCMAKE_COMPILE_WARNING_AS_ERROR=ON</code> instead. A stray unused variable won't block someone
+experimenting locally, but it won't get merged either. <code>/external:W0</code> silences warnings
+from third-party headers, so the strict level only applies to the project's own code.</p>
+
+<p>One later detail shows how the build changed as the code grew. The 68000 core uses a large decode table
+that instantiates many handler templates in a single file, which overflows MSVC's default object-file
+limits. <code>src/core/CMakeLists.txt</code> adds <code>/bigobj</code> to <code>gen_core</code> with a
+comment explaining why.</p>
+
+<h2>Licensing as a build input</h2>
+
+<p>The repository is public and MIT-licensed (D-014). The build treats that as a constraint as well as a
+file. Only permissively licensed sources may be consulted or vendored. <code>THIRD_PARTY_NOTICES.md</code>
+lists every component, and the install step copies the dependency copyright files next to the binaries.
+The <code>.gitignore</code> excludes ROMs and test data, so a careless <code>git add</code> can't commit a
+commercial game.</p>
+
+<h2>How it was verified, honestly</h2>
+
+<p>The acceptance criteria were small: both presets build, C++20 is on, warnings are strict, and a trivial
+Catch2 test runs through <code>ctest</code>. The story file records what was verified and what was not.
+The Windows build passed locally with Visual Studio 2022 and in CI, where <code>windows-latest</code>
+had already moved to Visual Studio 2026 (the presets don't pin a generator, so CMake picks up whichever is
+installed). The macOS box stayed unchecked, marked <em>unverified: no Mac available</em>, until it could be
+checked on real hardware. A later decision (D-025) raised the macOS minimum to 15.0 after libc++
+version gates broke a Mac build in M03.</p>
+
+<p>That honesty about unverified boxes runs through the whole project. A story is only "Done" when its
+criteria are met and its tests run in CI. That's why this foundational story still says "In progress".</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M00-foundation/M00-01-repo-and-build-system.md">Story M00-01</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/CMakeLists.txt"><code>CMakeLists.txt</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/CMakePresets.json"><code>CMakePresets.json</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/vcpkg.json"><code>vcpkg.json</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/cmake/GenesisWarnings.cmake"><code>cmake/GenesisWarnings.cmake</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/CMakeLists.txt"><code>src/core/CMakeLists.txt</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="next" href="M00-02-ci-pipeline.html"><span class="label">Next &rarr;</span><span class="title">M00-02 · Continuous integration on a zero-dollar budget</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A window with room for a workbench | genesisEmu</title>
+<meta name="description" content="SDL3, OpenGL 3.3 and Dear ImGui&#x27;s docking branch give every future debugger panel a home. A smoke test checks that it actually renders.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="A window with room for a workbench | genesisEmu">
+<meta property="og:description" content="SDL3, OpenGL 3.3 and Dear ImGui&#x27;s docking branch give every future debugger panel a home. A smoke test checks that it actually renders.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m00">M00 · Foundation</a> · Story 5 of 7</p>
+<h1>A window with room for a workbench</h1>
+<p class="subtitle">SDL3, OpenGL 3.3 and Dear ImGui's docking branch give every future debugger panel a home. A smoke test checks that it actually renders.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>5 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M00-foundation/M00-05-app-shell-window.md">Story M00-05</a></div>
+<div class="prose">
+<p>A typical emulator shows one thing: the game. genesisEmu will eventually show a dozen things at once,
+including CPU registers, memory viewers, a disassembly that follows the program counter, VDP tile viewers
+and a colour-coded map of the ROM. The application shell built in M00-05 was designed for that future. At
+the time it held just two panels, an empty game view and a ROM information panel.</p>
+
+<h2>The stack</h2>
+
+<p>Decision D-001 picked C++20, SDL3 and <strong>Dear ImGui</strong> on its docking branch. ImGui is an
+"immediate mode" GUI library: instead of building a tree of widget objects, the program describes the
+whole UI from scratch every frame, and ImGui works out what changed. That suits debugging tools very well.
+A register view is just a function that prints the registers every frame. There's no state to keep in sync
+with the emulator.</p>
+
+<p>SDL3 creates the window and handles input, and OpenGL 3.3 core renders ImGui's draw lists. The story
+allowed either OpenGL or SDL's newer GPU API. OpenGL 3.3 won because it runs on both target platforms, and
+its shaders are pinned to GLSL <code>#version 150</code> so the same shader source compiles on macOS's
+core-profile driver.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+#if defined(__APPLE__)
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+#endif</code></pre><figcaption><code>src/app/platform/window.cpp</code>: request a 3.3 core context; macOS additionally insists on the forward-compatible flag.</figcaption></figure>
+
+<p>A context request can "succeed" and still hand back something useless. On headless Windows machines
+some drivers, such as Windows' GDI fallback, hand out a legacy context anyway. The window code therefore reads the version
+string after creating the context, and fails with a clear message if the major version is below 3.</p>
+
+<h2>Hi-DPI: think in logical pixels</h2>
+
+<p>On a 150%-scaled laptop or a Retina display, a UI drawn at "100 pixels" is tiny unless something scales
+it. The shell asks SDL for the display's content scale, multiplies the window size by it, and passes the
+same factor to ImGui's style and font scale (<code>ScaleAllSizes</code> and <code>FontScaleDpi</code>).
+On macOS the bundle's <code>Info.plist</code> sets <code>NSHighResolutionCapable</code>. The code paths
+exist, but the acceptance box for crisp rendering at 150% stays unchecked: only a 100% display was
+available.</p>
+
+<h2>Docking, saved in the config</h2>
+
+<p>ImGui normally saves window positions to an <code>imgui.ini</code> file next to the executable. That
+conflicts with M00-03's rule that settings live in one JSON config in the user's data folder. The fix is a
+single line: turn off ImGui's own file and round-trip the layout through memory.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">io.IniFilename = nullptr;  // the layout is persisted in the JSON config instead</code></pre><figcaption>The layout goes into <code>ui.dockLayout</code> in <code>config.json</code> instead of a stray ini file.</figcaption></figure>
+
+<p>On start-up the saved string is fed to <code>ImGui::LoadIniSettingsFromMemory</code>. When ImGui reports a change,
+<code>SaveIniSettingsToMemory</code> captures the current layout back into the config. On first run, or
+after <em>Help &gt; Reset Layout</em>, there is nothing to restore, so the dock builder creates a default:
+the game view in the centre and ROM info in a column on the right.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">ImGuiID centre = dockspace;
+const ImGuiID right = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Right, 0.34f, nullptr, &amp;centre);
+ImGui::DockBuilderDockWindow(kGameViewWindow, centre);
+ImGui::DockBuilderDockWindow(kRomInfoWindow, right);
+ImGui::DockBuilderFinish(dockspace);</code></pre><figcaption>The first-run layout: split the dock space, 34% to the right-hand column.</figcaption></figure>
+
+<h2>Menus, dialogs and recent files</h2>
+
+<p>The menu bar was laid out for the whole project from the start, with File, Emulation, Debug, Analysis
+and Help menus, even though most items didn't exist yet. <em>File &gt; Open ROM</em> uses SDL3's native
+file dialog, so Windows users get the Windows dialog and Mac users the Mac one. Files can also be dropped
+onto the window. Every successful open goes to the top of a <em>Recent ROMs</em> list stored in the
+config and capped at a configurable length.</p>
+
+<p>Opening a ROM fills the ROM Info panel with the parsed header from M00-04: titles, serial, region, ROM
+and RAM ranges, SRAM declaration, header and computed checksums, SHA-1, CRC32 and the identified game.</p>
+
+<p>The packaging is per platform. Windows gets an executable with an embedded icon from a resource file.
+macOS gets a proper <code>.app</code> bundle, with the icon, version and bundle identifier set from CMake.</p>
+
+<blockquote class="pull"><p>A GUI test that can't see the screen still knows whether its panels are
+docked, its layout was restored and its ROM was loaded.</p></blockquote>
+
+<h2>Testing a GUI without looking at it</h2>
+
+<p>GUI code is notoriously hard to test automatically. genesisEmu's approach is a built-in self-check.
+Launched with <code>--smoke-test=N</code>, the app renders N frames and then inspects its own state before
+exiting:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">for (const char* name : {kGameViewWindow, kRomInfoWindow}) {
+    const ImGuiWindow* w = ImGui::FindWindowByName(name);
+    if (w == nullptr || w-&gt;DockId == 0) {
+        fail("panel is not docked");
+    }
+}</code></pre><figcaption>Part of <code>App::smokeCheck</code>: both panels must have a dock id, i.e. actually be docked.</figcaption></figure>
+
+<p>CTest runs it twice in a row against a synthetic ROM, with <code>GENESISEMU_HOME</code> pointing at a
+fresh folder. <code>app.smoke_first_run</code> checks a genuine first launch: defaults written, default
+layout docked, ROM loaded. <code>app.smoke_layout_restored</code> then runs with
+<code>--expect-restored-layout</code> and fails unless the layout saved by the first run was loaded back.
+That run also takes a PNG screenshot with <code>--screenshot=</code>, which was inspected by hand on
+Windows. The smoke check grew with the project, and since M03 it also verifies that frames were emulated
+and reached the game view.</p>
+
+<p>Exit codes keep this honest in CI. The app returns 77 when it can't get an OpenGL 3.3 context, and
+CTest is told that 77 means "skipped". On GitHub's GPU-less runners the smoke tests show as skipped rather
+than passing, while on any developer machine they run for real.</p>
+
+<h2>What is still open</h2>
+
+<p>The story is "In progress" for documented reasons. macOS launch is unverified, the display refresh
+rate wasn't measured (vsync is on), Hi-DPI is untested, and interactive drag-and-undock was never driven by
+a test. Restoring the layout is covered automatically; dragging panels around isn't. The story file lists
+each of these separately.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M00-foundation/M00-05-app-shell-window.md">Story M00-05</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/app/platform/window.cpp"><code>src/app/platform/window.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/app/app.cpp"><code>src/app/app.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/app/main.cpp"><code>src/app/main.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/app/platform/file_dialog.cpp"><code>src/app/platform/file_dialog.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/app/CMakeLists.txt"><code>tests/app/CMakeLists.txt</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M00-04-rom-loading-and-header.html"><span class="label">&larr; Previous</span><span class="title">M00-04 · Knowing exactly which ROM you're holding</span></a>
+<a class="next" href="M00-06-headless-cli-skeleton.html"><span class="label">Next &rarr;</span><span class="title">M00-06 · An emulator you can drive from a script</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testing on macOS without paying for macOS CI | genesisEmu</title>
+<meta name="description" content="When the free CI tier has no Mac runners, the Mac check becomes a script that you run yourself and paste into the pull request.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Testing on macOS without paying for macOS CI | genesisEmu">
+<meta property="og:description" content="When the free CI tier has no Mac runners, the Mac check becomes a script that you run yourself and paste into the pull request.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m00">M00 · Foundation</a> · Story 7 of 7</p>
+<h1>Testing on macOS without paying for macOS CI</h1>
+<p class="subtitle">When the free CI tier has no Mac runners, the Mac check becomes a script that you run yourself and paste into the pull request.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M00-foundation/M00-07-local-mac-validation.md">Story M00-07</a></div>
+<div class="prose">
+<p>genesisEmu targets two desktop platforms, Windows 11 and macOS, but its CI runs on only one. Decision
+D-016 limits CI to GitHub's free <code>windows-latest</code> runners. macOS runners are billed at a premium,
+and this is a personal project. Dropping macOS wasn't acceptable, and neither was finding out about a broken
+Mac build three milestones late.</p>
+
+<p>M00-07's answer is a single script, <code>tools/validate-mac.sh</code>, which does on a Mac what CI does
+on Windows, plus a bit more. Its last step prints a summary that goes into the pull request.</p>
+
+<h2>What the script does</h2>
+
+<figure class="figure">
+<svg viewBox="0 0 640 150" role="img" aria-labelledby="m0007t">
+<title id="m0007t">Validation steps: preflight checks, mac-release build and test, mac-asan build and test, app bundle sign and verify, summary block.</title>
+<rect class="dg-box" x="8" y="45" width="110" height="60" rx="8"/>
+<text class="dg-text dg-bold" x="63" y="71" text-anchor="middle">preflight</text>
+<text class="dg-small" x="63" y="88" text-anchor="middle">clang, cmake, vcpkg</text>
+<rect class="dg-alt" x="136" y="45" width="110" height="60" rx="8"/>
+<text class="dg-text dg-bold" x="191" y="71" text-anchor="middle">mac-release</text>
+<text class="dg-small" x="191" y="88" text-anchor="middle">build + ctest</text>
+<rect class="dg-warm" x="264" y="45" width="110" height="60" rx="8"/>
+<text class="dg-text dg-bold" x="319" y="71" text-anchor="middle">mac-asan</text>
+<text class="dg-small" x="319" y="88" text-anchor="middle">ASan + UBSan</text>
+<rect class="dg-alt" x="392" y="45" width="110" height="60" rx="8"/>
+<text class="dg-text dg-bold" x="447" y="71" text-anchor="middle">.app bundle</text>
+<text class="dg-small" x="447" y="88" text-anchor="middle">sign + verify</text>
+<rect class="dg-green" x="520" y="45" width="112" height="60" rx="8"/>
+<text class="dg-text dg-bold" x="576" y="71" text-anchor="middle">summary</text>
+<text class="dg-small" x="576" y="88" text-anchor="middle">paste into PR</text>
+<path class="dg-line" d="M118 75 H136 M246 75 H264 M374 75 H392 M502 75 H520"/>
+</svg>
+<figcaption>Every step logs to <code>build/validate-mac/</code>. A failure prints the last 30 lines of that step's log and makes the final result FAIL.</figcaption>
+</figure>
+
+<p>It starts by refusing to run in the wrong place. It checks that it's on Darwin, that CMake, CTest and the
+Xcode command-line tools are installed, and that <code>VCPKG_ROOT</code> points at a real vcpkg checkout.
+Each missing piece produces a one-line error that says how to fix it.</p>
+
+<p>Then it configures, builds and tests the <code>mac-release</code> preset with warnings as errors, the
+same test set CI runs on Windows. Next comes a second full build, <code>mac-asan</code>, with
+AddressSanitizer and UndefinedBehaviorSanitizer, and the tests run again. This is the one check the Mac
+does <em>better</em> than Windows CI. An emulator does a lot of array indexing driven by guest data: a tile
+index read from video memory, a register number decoded from an opcode. Sanitizers catch an out-of-bounds
+read the moment it happens rather than when it corrupts something three frames later.</p>
+
+<blockquote class="pull"><p>The Mac script adds the one check Windows CI doesn't have: a full test run
+under AddressSanitizer and UBSan.</p></blockquote>
+
+<p>Finally it ad-hoc signs the <code>.app</code> bundle and verifies the signature strictly, then checks
+that the executable and icon are where the bundle says they are. A broken bundle is the kind of failure no
+unit test notices.</p>
+
+<h2>Keeping going after a failure</h2>
+
+<p>A naive script would use <code>set -e</code> and stop at the first error. This one uses
+<code>set -uo pipefail</code> without <code>-e</code> and tracks failures itself, so a failing release
+test doesn't hide whether the sanitizer build is also broken. The final exit status is still non-zero if
+anything failed. Each step goes through a small wrapper:</p>
+
+<figure class="codefig"><pre><code class="language-bash">run_step() {
+  local name="$1"; shift
+  local logfile="$log_dir/${name// /-}.log"
+  echo "==&gt; $name"
+  if "$@" &gt;"$logfile" 2&gt;&amp;1; then
+    return 0
+  fi
+  echo "    FAILED (log: $logfile)"
+  tail -n 30 "$logfile" | sed 's/^/    /'
+  return 1
+}</code></pre><figcaption>The step runner: log everything, show the tail on failure, return the status.</figcaption></figure>
+
+<h2>A summary that matches the template</h2>
+
+<p>The output that matters is the block at the end: commit (with a note if the tree has uncommitted
+changes), macOS version and build, CPU architecture, the clang version, build and test results for each
+configuration, the bundle check, the duration and an overall PASS or FAIL.</p>
+
+<p>The pull request template contains the same block with the values left empty, and the field names match
+exactly. That was the one acceptance criterion that could be verified without a Mac. Turning CTest's output
+into "N passed, N failed, N skipped of N" meant parsing CTest's summary line, whose wording varies between
+CTest versions. The parser accepts both the old and new wording and was tested against real CTest
+output.</p>
+
+<figure class="codefig"><pre><code class="language-bash"># CTest prints "100% tests passed, 0 tests failed out of N" (older) or "100% tests passed out of N".
+total=$(sed -n 's/.*tests passed.* out of \([0-9][0-9]*\).*/\1/p' "$logfile" | tail -n 1)</code></pre><figcaption>The summary parser copes with both CTest phrasings.</figcaption></figure>
+
+<h2>When the check is required</h2>
+
+<p><code>CONTRIBUTING.md</code> spells out when a pull request needs the Mac block: changes to platform
+code under <code>src/app/platform</code>, to CMake, presets or the vcpkg manifest, or to the audio and video
+backends. A change to the 68000 instruction decoder needs only Windows CI. Its tests are platform-neutral
+C++, and the Mac run would only repeat them.</p>
+
+<h2>ROM tests, the same idea</h2>
+
+<p>The same story added <code>tools/validate-roms.sh</code> and <code>tools/validate-roms.ps1</code>.
+Tests that need commercial games are tagged <code>[rom]</code> and look for dumps in the folder named by
+<code>GENESIS_ROM_DIR</code>. Those ROMs can never be in the repository or in CI, so these scripts are the
+way to run that tier on either OS, and the PR template has a checkbox for them too.</p>
+
+<h2>Honest status</h2>
+
+<p>At the time the story was written no Mac was available. The script was syntax-checked with
+<code>bash -n</code>, but the criteria "runs from a clean clone on macOS 15+" and "non-zero exit on any
+failure" stayed unchecked, and the story is still "In progress". The risk it guards against is real. The
+VDP milestone's pull request later broke the Mac build through libc++'s per-macOS-version feature gates,
+which Windows CI could not see. The fix became decision D-025: raise the macOS minimum to 15.0.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M00-foundation/M00-07-local-mac-validation.md">Story M00-07</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tools/validate-mac.sh"><code>tools/validate-mac.sh</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tools/validate-roms.sh"><code>tools/validate-roms.sh</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tools/validate-roms.ps1"><code>tools/validate-roms.ps1</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/CONTRIBUTING.md"><code>CONTRIBUTING.md</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/.github/pull_request_template.md"><code>.github/pull_request_template.md</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M00-06-headless-cli-skeleton.html"><span class="label">&larr; Previous</span><span class="title">M00-06 · An emulator you can drive from a script</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>
