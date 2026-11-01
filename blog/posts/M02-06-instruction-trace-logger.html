@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A line of text for every instruction | genesisEmu</title>
+<meta name="description" content="When a game misbehaves in an emulator, the fastest way to find out why is to log every instruction and compare it with a reference. genesisEmu&#x27;s trace format is built for diffing.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="A line of text for every instruction | genesisEmu">
+<meta property="og:description" content="When a game misbehaves in an emulator, the fastest way to find out why is to log every instruction and compare it with a reference. genesisEmu&#x27;s trace format is built for diffing.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m02">M02 · System bus & boot</a> · Story 6 of 7</p>
+<h1>A line of text for every instruction</h1>
+<p class="subtitle">When a game misbehaves in an emulator, the fastest way to find out why is to log every instruction and compare it with a reference. genesisEmu's trace format is built for diffing.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M02-system-bus-boot/M02-06-instruction-trace-logger.md">Story M02-06</a></div>
+<div class="prose">
+<p>Bringing up an emulator means finding bugs whose effects show up long after their cause. A wrong flag
+in frame 3 changes a branch, which leaves a variable unset, which crashes in frame 40. Looking at the crash
+tells you little. The reliable technique is an <strong>instruction trace</strong>: log every instruction
+the CPU executes with its effects, do the same in a trusted emulator, and find the first line where the two
+disagree. That line is usually the bug.</p>
+
+<p>M02-06 added this to genesisEmu as <code>gen_cli trace</code>, along with a format designed for diffing
+and a tool to do the diffing.</p>
+
+<h2>The format</h2>
+
+<p>Each executed instruction, and each interrupt entry, becomes one line of text. Here are the first lines
+of the golden trace of the project's own synthetic boot ROM:</p>
+
+<figure class="codefig"><pre><code class="language-text"># genesisEmu trace v1
+# frame line mclk cpu pc words disassembly | register deltas | memory writes
+0   0        280 M68K 000200  46FC 2700               move.w #$2700,sr                   | - | -
+0   0        392 M68K 000204  1039 00A1 0001          move.b ($00A10001).l,d0            | D0=000000A0 SR=2708 | -
+0   0        504 M68K 00020A  0200 000F               andi.b #$F,d0                      | D0=00000000 SR=2704 | -
+0   0        560 M68K 00020E  670A                    beq.s $0000021A                    | - | -
+0   0        630 M68K 00021A  33FC 0100 00A1 1100     move.w #$100,($00A11100).l         | SR=2700 | W.W A11100=0100</code></pre><figcaption>From <code>tests/golden/boot_trace.txt</code>. Columns: frame, line, master clock, CPU, PC, opcode words, disassembly, then register deltas and memory writes.</figcaption></figure>
+
+<p>The second line reads the version register and gets <code>$A0</code>, the NTSC Americas value from
+M02-02. The branch skips ahead, and the next line asks for the Z80 bus (M02-03), and the trace shows the word written to
+<code>$A11100</code>. Each layer built so far is visible in a few lines of text.</p>
+
+<p>Some deliberate choices make the format good for diffing:</p>
+
+<ul>
+<li><strong>Register deltas, not full dumps.</strong> Only registers that changed are listed, in a fixed
+order. Lines stay short, and a difference in a register stands out.</li>
+<li><strong>Memory writes in bus order</strong>, as <code>W.B</code> or <code>W.W</code> with address and
+value. A long write appears as two word writes, as it does on the bus. At most 16 are listed, then
+<code>+N</code>.</li>
+<li><strong>Fixed-width columns</strong> and LF line endings, so standard tools such as <code>diff</code> and
+<code>grep</code> work, and so does reading by eye.</li>
+<li><strong>Interrupt entries are records too</strong>: <code>interrupt level 6</code> with the stack writes
+and the interrupted PC, so a trace shows exactly where V-ints land.</li>
+</ul>
+
+<p>The full specification is a table in <code>docs/specs/08-debugger.md</code> under "Text trace format
+(v1)", and the file starts with a version header, so future format changes can be detected.</p>
+
+<blockquote class="pull"><p>Two traces that should be identical are diffed line by line. The first
+difference is usually the bug.</p></blockquote>
+
+<h2>How the writer attaches</h2>
+
+<p>The trace writer lives in <code>gen_instrument</code>, not in the core. It installs itself through the
+same <code>Hooks</code> struct from M01-01: <code>onInstr</code> to start a record, <code>onAccess</code> to
+collect writes, and <code>onIrq</code> for interrupt entries. With no writer attached, the core pays nothing
+beyond its existing null-pointer checks. The writer gets its disassembler as a callback that
+<code>gen_cli</code> passes in, so the instrumentation library doesn't depend on the analysis library.</p>
+
+<p>Filters keep traces manageable: a frame range (<code>--start-frame</code>, <code>--frames</code>), a PC
+range (<code>--pc lo-hi</code>), "first execution only" (<code>--first</code>, which logs each address once
+and is a quick way to see which code ran at all) and a record limit. Output is buffered and written in
+large blocks. A trace of Sonic 1's first 11 frames is 163,613 records and 18 MB, and takes 0.16 seconds.
+Traces of commercial games are never committed; they contain the game's code.</p>
+
+<h2>trace-diff</h2>
+
+<p><code>tools/trace-diff.py</code> compares two traces record by record and prints the first divergence
+with some context. By default it ignores the frame, line and master-clock columns, because another emulator
+will count time differently even when it executes the same instructions. Everything from the CPU column on
+must match: PC, opcode words, disassembly, register deltas and writes. Options relax the comparison further
+(<code>--no-writes</code>, <code>--no-disasm</code>) or include timing (<code>--timing</code>). A trace from
+another emulator has to be converted to this format first.</p>
+
+<h2>Tested against itself</h2>
+
+<p>The story asked for proof that trace-diff finds a divergence. CTest's <code>cli.trace_golden</code>
+does two things. It traces three frames of the synthetic boot ROM with <code>--first</code> and compares the
+result byte for byte with <code>tests/golden/boot_trace.txt</code>, so any change in CPU behaviour, timing
+or disassembly shows up. Then it copies the golden trace, changes one register delta, and requires
+<code>trace-diff.py</code> to report it. The second part runs when CMake finds Python 3.</p>
+
+<p>The same writer is planned to back the debugger's <em>trace from pause</em> feature in M06, with a
+binary format and a ring buffer added there. The text format stays the reference.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M02-system-bus-boot/M02-06-instruction-trace-logger.md">Story M02-06</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/instrument/trace_writer.hpp"><code>src/instrument/trace_writer.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/instrument/trace_writer.cpp"><code>src/instrument/trace_writer.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tools/trace-diff.py"><code>tools/trace-diff.py</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/golden/boot_trace.txt"><code>tests/golden/boot_trace.txt</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/docs/specs/08-debugger.md"><code>docs/specs/08-debugger.md</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M02-05-master-clock-scheduler.html"><span class="label">&larr; Previous</span><span class="title">M02-05 · One clock to rule them all</span></a>
+<a class="next" href="M02-07-boot-smoke-tests.html"><span class="label">Next &rarr;</span><span class="title">M02-07 · Three games boot, with nothing on screen</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

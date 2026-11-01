@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sixteen megabytes, 256 pages | genesisEmu</title>
+<meta name="description" content="The 68000 can address 16 MB, and the Genesis wires that space to a cartridge, 64 KB of RAM, the sound CPU and the video chip. A table of 256 entries routes every access.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Sixteen megabytes, 256 pages | genesisEmu">
+<meta property="og:description" content="The 68000 can address 16 MB, and the Genesis wires that space to a cartridge, 64 KB of RAM, the sound CPU and the video chip. A table of 256 entries routes every access.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m02">M02 · System bus & boot</a> · Story 1 of 7</p>
+<h1>Sixteen megabytes, 256 pages</h1>
+<p class="subtitle">The 68000 can address 16 MB, and the Genesis wires that space to a cartridge, 64 KB of RAM, the sound CPU and the video chip. A table of 256 entries routes every access.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M02-system-bus-boot/M02-01-memory-map-and-bus.md">Story M02-01</a></div>
+<div class="prose">
+<p>With M01 finished, genesisEmu had a CPU that executed instructions perfectly against a flat 16 MB block
+of test memory. A real Genesis isn't flat. Its 24-bit address space is split among very different
+things: the cartridge, 64 KB of work RAM, the Z80 sound processor's memory, I/O registers and the video
+chip. Some regions repeat (<em>mirrors</em>), some are empty, and some have side effects when read.
+M02-01 built the <strong>system bus</strong> that decides, for every access the CPU makes, what answers.</p>
+
+<h2>The map</h2>
+
+<figure class="figure">
+<svg viewBox="0 0 640 300" role="img" aria-labelledby="m0201t">
+<title id="m0201t">68000 memory map: cartridge at 0 to 3FFFFF, unmapped, Z80 area at A00000, I/O at A10000, VDP at C00000 to DFFFFF, RAM mirrored over E00000 to FFFFFF.</title>
+<rect class="dg-alt" x="120" y="10" width="260" height="70"/>
+<text class="dg-text dg-bold" x="250" y="42" text-anchor="middle">Cartridge ROM</text>
+<text class="dg-small" x="250" y="60" text-anchor="middle">up to 4 MB · fast pages</text>
+<text class="dg-mono" x="110" y="22" text-anchor="end">$000000</text>
+<rect class="dg-box" x="120" y="80" width="260" height="70"/>
+<text class="dg-text" x="250" y="113" text-anchor="middle">unmapped (expansion, 32X)</text>
+<text class="dg-small" x="250" y="131" text-anchor="middle">open bus · logged</text>
+<text class="dg-mono" x="110" y="92" text-anchor="end">$400000</text>
+<rect class="dg-warm" x="120" y="150" width="260" height="22"/>
+<text class="dg-text" x="250" y="166" text-anchor="middle">Z80 area</text>
+<text class="dg-mono" x="110" y="165" text-anchor="end">$A00000</text>
+<rect class="dg-warm" x="120" y="172" width="260" height="22"/>
+<text class="dg-text" x="250" y="188" text-anchor="middle">I/O, Z80 control, TMSS</text>
+<text class="dg-mono" x="110" y="187" text-anchor="end">$A10000</text>
+<rect class="dg-box" x="120" y="194" width="260" height="22"/>
+<text class="dg-small" x="250" y="209" text-anchor="middle">unmapped</text>
+<rect class="dg-green" x="120" y="216" width="260" height="34"/>
+<text class="dg-text" x="250" y="238" text-anchor="middle">VDP ports (mirrored every 32 bytes)</text>
+<text class="dg-mono" x="110" y="230" text-anchor="end">$C00000</text>
+<rect class="dg-alt" x="120" y="250" width="260" height="40"/>
+<text class="dg-text dg-bold" x="250" y="268" text-anchor="middle">Work RAM, 64 KB</text>
+<text class="dg-small" x="250" y="283" text-anchor="middle">mirrored 32 times · fast pages</text>
+<text class="dg-mono" x="110" y="263" text-anchor="end">$E00000</text>
+<text class="dg-mono" x="110" y="292" text-anchor="end">$FFFFFF</text>
+<text class="dg-small" x="400" y="50">ROM and RAM: the CPU reads</text>
+<text class="dg-small" x="400" y="66">them through direct pointers</text>
+<text class="dg-small" x="400" y="180">registers with side effects:</text>
+<text class="dg-small" x="400" y="196">every access calls a handler</text>
+</svg>
+<figcaption>Not to scale. Work RAM's 64 KB appear 32 times over the top 2 MB; games normally use the copy at <code>$FF0000</code>.</figcaption>
+</figure>
+
+<h2>A page table</h2>
+
+<p>Checking address ranges with a chain of <code>if</code>s on every access would be slow, and the CPU makes
+millions of accesses per second. The major regions of the map all start and end on 64 KB boundaries, so
+the bus splits the address space into 256 pages of 64 KB and keeps a small table that says what each page
+is. Finer decoding, such as the individual registers inside the I/O page, happens only inside that
+page's handler:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">enum class PageKind : std::uint8_t { Unmapped, Rom, Ram, Z80, Io, Vdp, Cart };</code></pre><figcaption><code>src/core/bus/system_bus.hpp</code>. <code>Cart</code> is a ROM page with a device on top, such as save RAM (added in M04).</figcaption></figure>
+
+<p>A read is then a single switch on <code>pages_[addr &gt;&gt; 16]</code>. For ROM and RAM the bus also
+fills in the CPU's <em>fast page</em> pointers from M01, so the CPU reads that memory directly without
+calling the bus at all. That's safe because reading ROM or RAM has no side effects.</p>
+
+<p>Building the table shows the whole map in a dozen lines. The RAM mirror is a nice detail: all 32 pages
+from <code>$E00000</code> to <code>$FFFFFF</code> point at the <em>same</em> 64 KB array, so a write
+through one mirror is visible through all of them at no cost:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">pages_[0xA0] = PageKind::Z80;
+pages_[0xA1] = PageKind::Io;
+for (std::size_t p = 0xC0; p &lt;= 0xDF; ++p) {
+    pages_[p] = PageKind::Vdp;
+}
+// Work RAM: 64 KB mirrored over $E00000-$FFFFFF.
+for (std::size_t p = 0xE0; p &lt;= 0xFF; ++p) {
+    pages_[p] = PageKind::Ram;
+    fastRead[p] = state_.ram.data();
+    fastWrite[p] = state_.ram.data();
+}</code></pre><figcaption>The tail of <code>buildPages()</code>: Z80, I/O, VDP and the mirrored work RAM.</figcaption></figure>
+
+<p>The machine pads the ROM image to a whole number of 64 KB pages, so every page of the cartridge gets a
+direct pointer. Pages past the end of the image are left unmapped.</p>
+
+<blockquote class="pull"><p>Reading an address that nothing answers doesn't return zero. It returns
+whatever was last on the data bus.</p></blockquote>
+
+<h2>Open bus</h2>
+
+<p>What does a read from an unmapped address return? On real hardware nothing drives the data lines, so
+the CPU sees whatever value they last held, usually part of the most recent instruction fetch. This is
+called <strong>open bus</strong>, and code occasionally depends on it, by accident or on purpose. The spec
+approximates it with the CPU's prefetch word:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">std::uint16_t SystemBus::openBus() const {
+    // Approximation (spec 04): the last prefetched word.
+    return cpu_ != nullptr ? cpu_-&gt;state().irc : 0;
+}</code></pre><figcaption>Open bus is the word in the 68000's IRC register, the last instruction word it fetched.</figcaption></figure>
+
+<h2>The issue log: who wrote there?</h2>
+
+<p>An access that hits nothing is usually a sign of a bug, either in the emulator or in the game. The bus
+records every such access with the address, value, size, direction and, most usefully, the <strong>PC of
+the instruction</strong> that made it. Four kinds are tracked: unmapped, a write to ROM, a Z80-area access
+while the 68000 doesn't own the Z80 bus, and a VDP access while TMSS hasn't unlocked it (see M02-02).</p>
+
+<p>The story planned to log these through spdlog, but <code>gen_core</code> deliberately has no logging
+dependency (the core is a pure library). So the "log" is an in-memory list of the first 4,096 records plus a
+counter per kind, which <code>gen_cli run</code> prints. During M02 this caught something real. Sonic 3
+&amp; Knuckles writes to <code>$200001</code> and above, which is its save-RAM range, and those writes showed
+up as ROM writes until save RAM was implemented in M04-08.</p>
+
+<h2>Byte lanes and odd details</h2>
+
+<p>The 68000 has a 16-bit data bus, and some devices behave differently for byte and word accesses. The
+bus handles each case explicitly, all from spec 04. A byte write to a VDP port puts the byte on both halves
+of the word. A word read from Z80 RAM returns the byte in both halves. A word write into the Z80 area
+delivers only its high byte. Each rule is a line or two in the dispatch functions, with a comment pointing
+at the spec.</p>
+
+<h2>Tests</h2>
+
+<p><code>tests/unit/bus_test.cpp</code> covers every range in the spec's table. ROM is readable through fast
+pages and ignores writes. Space past the ROM, the expansion area and the 32X area return open bus and are
+logged. Work RAM is mirrored (a write at <code>$E00000</code> is read back at <code>$FF0000</code>). The VDP
+ports are mirrored every 32 bytes. Unmapped writes are recorded with the PC of the writing instruction. A
+synthetic ROM provides the code, so none of these tests need a commercial game.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M02-system-bus-boot/M02-01-memory-map-and-bus.md">Story M02-01</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/bus/system_bus.hpp"><code>src/core/bus/system_bus.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/bus/system_bus.cpp"><code>src/core/bus/system_bus.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/bus_test.cpp"><code>tests/unit/bus_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M01-12-m68k-disassembler.html"><span class="label">&larr; Previous</span><span class="title">M01-12 · A disassembler that proves itself with an assembler</span></a>
+<a class="next" href="M02-02-io-and-version-registers.html"><span class="label">Next &rarr;</span><span class="title">M02-02 · Which console am I running on?</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

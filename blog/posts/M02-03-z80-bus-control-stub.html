@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Borrowing the sound CPU&#x27;s memory | genesisEmu</title>
+<meta name="description" content="Before the Z80 runs a single instruction, the 68000 has to stop it, take over its bus and copy a sound driver into its 8 KB of RAM.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Borrowing the sound CPU&#x27;s memory | genesisEmu">
+<meta property="og:description" content="Before the Z80 runs a single instruction, the 68000 has to stop it, take over its bus and copy a sound driver into its 8 KB of RAM.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m02">M02 · System bus & boot</a> · Story 3 of 7</p>
+<h1>Borrowing the sound CPU's memory</h1>
+<p class="subtitle">Before the Z80 runs a single instruction, the 68000 has to stop it, take over its bus and copy a sound driver into its 8 KB of RAM.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M02-system-bus-boot/M02-03-z80-bus-control-stub.md">Story M02-03</a></div>
+<div class="prose">
+<p>The Genesis has a second processor, a Zilog Z80 at about 3.58 MHz, whose usual job is sound. It has its
+own 8 KB of RAM and talks directly to the sound chips. But it can't load its own program, because nothing
+on its side holds code at power-on. The 68000 does that: it pauses the Z80, copies a sound driver into Z80
+RAM, and releases it.</p>
+
+<p>Running the Z80 was planned for M04. M02-03 only needed the 68000's side of the arrangement, so that
+games could get through boot. That meant the two control registers, Z80 RAM visible from the 68000, and
+somewhere for sound-chip writes to land.</p>
+
+<h2>Two registers that control a CPU</h2>
+
+<figure class="figure">
+<svg viewBox="0 0 640 170" role="img" aria-labelledby="m0203t">
+<title id="m0203t">Boot sequence: 68000 asserts BUSREQ at A11100, waits for the grant bit, copies the driver into A00000, then releases RESET and BUSREQ so the Z80 runs.</title>
+<rect class="dg-alt" x="10" y="20" width="140" height="56" rx="8"/>
+<text class="dg-text dg-bold" x="80" y="44" text-anchor="middle">request bus</text>
+<text class="dg-mono" x="80" y="62" text-anchor="middle">$A11100 = $100</text>
+<rect class="dg-alt" x="170" y="20" width="140" height="56" rx="8"/>
+<text class="dg-text dg-bold" x="240" y="44" text-anchor="middle">wait for grant</text>
+<text class="dg-small" x="240" y="62" text-anchor="middle">bit 8 reads 0</text>
+<rect class="dg-warm" x="330" y="20" width="140" height="56" rx="8"/>
+<text class="dg-text dg-bold" x="400" y="44" text-anchor="middle">copy driver</text>
+<text class="dg-mono" x="400" y="62" text-anchor="middle">→ $A00000…</text>
+<rect class="dg-green" x="490" y="20" width="140" height="56" rx="8"/>
+<text class="dg-text dg-bold" x="560" y="44" text-anchor="middle">release</text>
+<text class="dg-small" x="560" y="62" text-anchor="middle">RESET, then BUSREQ</text>
+<path class="dg-line" d="M150 48 H170 M310 48 H330 M470 48 H490"/>
+<text class="dg-small" x="320" y="112" text-anchor="middle">While the 68000 holds the bus, the Z80 is stopped and its RAM appears at $A00000-$A01FFF.</text>
+<text class="dg-small" x="320" y="132" text-anchor="middle">Without the bus, those accesses are logged as Z80NotOwned and read open bus.</text>
+</svg>
+<figcaption>The usual pattern at boot. The same sequence repeats at run time whenever the 68000 needs to talk to the sound driver.</figcaption>
+</figure>
+
+<p><code>$A11100</code> is <strong>BUSREQ</strong>. The 68000 writes 1 to bit 8 to ask the Z80 to give up its
+bus, then polls the same bit, which reads 0 once the bus has been granted. <code>$A11200</code> controls the
+Z80's <strong>RESET</strong> line: writing 0 holds the Z80 in reset, writing 1 lets it go. While the 68000
+holds the bus, the Z80's memory appears in the 68000's address space at <code>$A00000</code>.</p>
+
+<p>Both registers decode bit 8 of a word, which is bit 0 of a byte written to the even address. Games use
+both forms, so the bus extracts the bit either way:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">// The control registers decode bit 8 of a word, i.e. bit 0 of a byte written to the even address.
+const bool bit8 = size == 2 ? (value &amp; 0x0100) != 0 : (value &amp; 0x01) != 0;</code></pre><figcaption>From <code>SystemBus::writeIo</code>.</figcaption></figure>
+
+<h2>The Z80's world, seen from the 68000</h2>
+
+<p>The state lives in a small struct, <code>Z80ControlState</code>: 8 KB of RAM, the two control bits, the
+bank register and the last value written to each sound-chip register. Keeping it all in one plain struct
+means the state hash (M02-05) and, later, save states can cover it.</p>
+
+<p>Inside the 32 KB window at <code>$A00000</code>, the 68000 can reach:</p>
+
+<ul>
+<li><strong>Z80 RAM</strong> at <code>$0000–$1FFF</code>, mirrored up to <code>$3FFF</code>;</li>
+<li>the <strong>YM2612</strong> FM sound chip's four ports at <code>$4000–$4003</code>;</li>
+<li>the <strong>bank register</strong> at <code>$6000</code>, which selects which 32 KB of 68000 memory the
+Z80 sees through its own window. It's loaded <em>serially</em>: each write shifts in one bit;</li>
+<li>the <strong>PSG</strong>, the simpler square-wave chip, at <code>$7F11</code>.</li>
+</ul>
+
+<figure class="codefig"><pre><code class="language-cpp">// Serial bank register: each write shifts bit 0 in as the new address bit 23.
+s_.bank = static_cast&lt;std::uint16_t&gt;(((s_.bank &gt;&gt; 1) | ((value &amp; 1) &lt;&lt; 8)) &amp; 0x1FF);</code></pre><figcaption>The bank register is nine bits wide and loaded one bit per write, so a driver needs nine writes to set it.</figcaption></figure>
+
+<p>In M02 the sound chips were stubs. Writes were remembered per register, and a status read of the YM2612
+always said "ready", because a driver that waits for a busy flag to clear would otherwise hang. The real
+chips arrived in M05 behind the same interface.</p>
+
+<blockquote class="pull"><p>The sound CPU can't load its own program. The 68000 has to pause it, write the
+driver into its memory, and let it go.</p></blockquote>
+
+<h2>Breaking the rules is logged, not fatal</h2>
+
+<p>Touching Z80 space without owning the bus is a bug on real hardware. The access may collide with the Z80
+and the result is unreliable. The emulator reports it as a <code>Z80NotOwned</code> issue with the PC of the
+offending instruction, and reads return open bus. If a game did this, the report would point straight at
+the instruction.</p>
+
+<h2>A deliberate simplification, later removed</h2>
+
+<p>On real hardware the grant takes a few cycles to arrive, and the 68000 is only supposed to access the
+Z80's bus while the Z80 is also out of reset. M02-03 made the grant immediate and ignored the reset line,
+and noted it as a simplification: none of the three games needed more. When the Z80 began executing in
+M04-07, the rule was tightened. The 68000 now owns the Z80 bus only while BUSREQ is asserted <em>and</em>
+RESET is released:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">bool busGranted() const { return s_.busRequested &amp;&amp; !s_.resetAsserted; }
+// The Z80 executes (neither BUSREQ nor RESET asserted).
+bool running() const { return !s_.busRequested &amp;&amp; !s_.resetAsserted; }</code></pre><figcaption>The M04 version of the grant logic.</figcaption></figure>
+
+<h2>Verified with Sonic's own sound driver</h2>
+
+<p>Unit tests cover the grant bit, RAM access with and without the bus, and word/byte behaviour. The real
+check was a <code>[rom]</code> test. After 600 frames of Sonic 1, Z80 RAM must contain more than 256
+non-zero bytes, which is evidence that the game copied its sound driver across, through this code, exactly
+as it would on a console. The test checks only a count; the bytes themselves stay on the user's machine.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M02-system-bus-boot/M02-03-z80-bus-control-stub.md">Story M02-03</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/z80/z80_control.hpp"><code>src/core/z80/z80_control.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/z80/z80_control.cpp"><code>src/core/z80/z80_control.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/bus/system_bus.cpp"><code>src/core/bus/system_bus.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/bus_test.cpp"><code>tests/unit/bus_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M02-02-io-and-version-registers.html"><span class="label">&larr; Previous</span><span class="title">M02-02 · Which console am I running on?</span></a>
+<a class="next" href="M02-04-vdp-port-stub.html"><span class="label">Next &rarr;</span><span class="title">M02-04 · A video chip that draws nothing</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

@@ -21,18 +21,19 @@
 </div></header>
 <main>
 <section class="hero">
-<p class="kicker">Build notes · 19 articles</p>
+<p class="kicker">Build notes · 26 articles</p>
 <h1>How genesisEmu is built</h1>
 <p class="lede">genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering and modding the
 Sonic games. The project is written spec-first: every feature starts as a short story with acceptance
 criteria. This series has one article per finished story. Each one covers what the feature does, why an
 emulator needs it, and how this code base builds and tests it.</p>
-<p class="meta">19 articles · about 1 hours of reading ·
+<p class="meta">26 articles · about 2 hours of reading ·
 <a href="https://github.com/ChrisC413/genesisEmu">source on GitHub</a> · start with <a href="posts/M00-01-repo-and-build-system.html">M00-01</a></p>
 </section>
 <nav class="toc" aria-label="Milestones">
 <a href="#m00">M00 · Foundation</a>
 <a href="#m01">M01 · 68000 CPU</a>
+<a href="#m02">M02 · System bus & boot</a>
 </nav>
 <section class="milestone" id="m00">
 <div class="milestone-head"><span class="tag">M00 · 7 stories</span><h2>Foundation</h2><p>Repository, build, CI and an application shell that loads a ROM, on Windows and macOS.</p></div>
@@ -61,6 +62,18 @@ emulator needs it, and how this code base builds and tests it.</p>
 <li><a href="posts/M01-10-exceptions-and-interrupts.html"><span class="pid">M01-10</span><span class="ptitle">When things go wrong, and when the screen wants attention</span><span class="pblurb">The full 68000 exception model: reset, the 14-byte address-error frame, traps, autovectored interrupts with a level-7 edge, trace, and the onIrq hook.</span><span class="pmeta">5 min read</span></a></li>
 <li><a href="posts/M01-11-cycle-timing-audit.html"><span class="pid">M01-11</span><span class="ptitle">Counting every cycle, then counting how fast</span><span class="pblurb">The audit that closed the 68000 milestone: exact cycle counts across the whole suite, every exclusion explained, and a 98-100 MIPS benchmark left honestly open.</span><span class="pmeta">4 min read</span></a></li>
 <li><a href="posts/M01-12-m68k-disassembler.html"><span class="pid">M01-12</span><span class="ptitle">A disassembler that proves itself with an assembler</span><span class="pblurb">An AS-syntax 68000 disassembler with flow types, targets and symbol hooks, verified by a round trip through the AS assembler with zero byte mismatches.</span><span class="pmeta">4 min read</span></a></li>
+</ul>
+</section>
+<section class="milestone" id="m02">
+<div class="milestone-head"><span class="tag">M02 · 7 stories</span><h2>System bus & boot</h2><p>The memory map, I/O, scheduler and tracing that let Sonic 1, 2 and 3K boot headless, deterministically.</p></div>
+<ul class="post-list">
+<li><a href="posts/M02-01-memory-map-and-bus.html"><span class="pid">M02-01</span><span class="ptitle">Sixteen megabytes, 256 pages</span><span class="pblurb">The 68000 memory map as a 256-entry page table: direct pages for ROM and RAM, mirrors, open bus from the prefetch word, and an issue log that records the PC of every stray access.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M02-02-io-and-version-registers.html"><span class="pid">M02-02</span><span class="ptitle">Which console am I running on?</span><span class="pblurb">The version register, idle controller ports with the TH select protocol already in place, and an optional TMSS model that locks the video chip until the game writes 'SEGA'.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M02-03-z80-bus-control-stub.html"><span class="pid">M02-03</span><span class="ptitle">Borrowing the sound CPU's memory</span><span class="pblurb">BUSREQ and RESET at $A11100/$A11200, 8 KB of Z80 RAM reachable from the 68000, the serial bank register and sound-chip write stubs, all before the Z80 executes anything.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M02-04-vdp-port-stub.html"><span class="pid">M02-04</span><span class="ptitle">A video chip that draws nothing</span><span class="pblurb">A first VDP: the two-word command latch, registers and memories, a status register driven by the beam position, HV counters with the hardware's jumps, and V-int at line 224.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M02-05-master-clock-scheduler.html"><span class="pid">M02-05</span><span class="ptitle">One clock to rule them all</span><span class="pblurb">The scanline scheduler: a 64-bit master-clock counter, 3,420 clocks per line, 68000 overshoot carried across lines, catch-up hooks for the Z80 and audio, and a run API with stop reasons.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M02-06-instruction-trace-logger.html"><span class="pid">M02-06</span><span class="ptitle">A line of text for every instruction</span><span class="pblurb">gen_cli trace writes one line per 68000 instruction with register deltas and memory writes, in a documented format, plus a trace-diff tool that finds the first divergence.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M02-07-boot-smoke-tests.html"><span class="pid">M02-07</span><span class="ptitle">Three games boot, with nothing on screen</span><span class="pblurb">Boot tests for all three games that never mention a game-specific address: a generic V-int wait-loop detector, fault counting, and XXH3 state hashes checked for determinism.</span><span class="pmeta">4 min read</span></a></li>
 </ul>
 </section>
 </main>
