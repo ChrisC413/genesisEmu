@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>When things go wrong, and when the screen wants attention | genesisEmu</title>
+<meta name="description" content="Exceptions and interrupts are how the 68000 reacts to the outside world and to its own mistakes. On the Genesis, every frame starts with one.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="When things go wrong, and when the screen wants attention | genesisEmu">
+<meta property="og:description" content="Exceptions and interrupts are how the 68000 reacts to the outside world and to its own mistakes. On the Genesis, every frame starts with one.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m01">M01 · 68000 CPU</a> · Story 10 of 12</p>
+<h1>When things go wrong, and when the screen wants attention</h1>
+<p class="subtitle">Exceptions and interrupts are how the 68000 reacts to the outside world and to its own mistakes. On the Genesis, every frame starts with one.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>5 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-10-exceptions-and-interrupts.md">Story M01-10</a></div>
+<div class="prose">
+<p>An exception is the 68000's way of dropping what it's doing and running a handler. Some come from
+inside the program: a TRAP instruction, a division by zero, an illegal opcode, an odd address. Others
+come from outside: an interrupt, or the reset line. Every handler address sits in the <strong>vector
+table</strong>, the first 1 KB of memory, which on the Genesis is the start of the cartridge ROM.</p>
+
+<p>For a Genesis emulator, interrupts aren't an edge case. The video chip raises a <em>vertical
+interrupt</em> at the start of every frame's blanking period, and nearly every game runs its main per-frame
+work from that handler. Some also use the horizontal interrupt, for example to change palettes partway
+down the screen for water effects. M01-10 built the complete exception model.</p>
+
+<h2>Groups and frames</h2>
+
+<p>Most exceptions are handled the same way: switch to supervisor mode, clear the trace bit, push the PC
+and the old status register (a six-byte frame), read the handler address from the vector table and refill
+the prefetch queue there. One helper does it:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">void CpuCore::exception(int vector, std::uint32_t stackedPc, int idleCycles) {
+    const std::uint16_t oldSr = s.sr;
+    setSr(static_cast&lt;std::uint16_t&gt;((s.sr | kSrSupervisor) &amp; ~kSrTrace));
+    idle(idleCycles);
+    push32(stackedPc);
+    push16(oldSr);
+    lastVector = vector;
+    jump(read&lt;4&gt;(static_cast&lt;std::uint32_t&gt;(vector) * 4));
+    flow = Flow::Exception;
+}</code></pre><figcaption><code>CpuCore::exception</code>. <code>idleCycles</code> is the internal time the 68000 spends before its first stack write.</figcaption></figure>
+
+<p>TRAP, TRAPV, CHK, zero-divide, illegal instructions, line A and line F, privilege violations and
+trace all go through it, each with its own vector, its own stacked PC (the faulting instruction or the
+next one, depending on the exception) and its own idle time.</p>
+
+<h2>The address error is different</h2>
+
+<p>An odd word access raises a <em>group 0</em> exception, the most severe class. It stacks a 14-byte
+frame instead of 6, because the handler needs to know what went wrong:</p>
+
+<figure class="figure">
+<svg viewBox="0 0 640 230" role="img" aria-labelledby="m0110t">
+<title id="m0110t">Address error stack frame of seven words: status word, access address high and low, instruction register, status register, program counter high and low.</title>
+<text class="dg-small" x="20" y="18">SP after the exception</text>
+<rect class="dg-warm" x="20" y="24" width="260" height="28"/><text class="dg-mono" x="150" y="43" text-anchor="middle">status: IR[15:5] R/W I/N FC</text>
+<rect class="dg-alt" x="20" y="52" width="260" height="28"/><text class="dg-mono" x="150" y="71" text-anchor="middle">access address (high)</text>
+<rect class="dg-alt" x="20" y="80" width="260" height="28"/><text class="dg-mono" x="150" y="99" text-anchor="middle">access address (low)</text>
+<rect class="dg-box" x="20" y="108" width="260" height="28"/><text class="dg-mono" x="150" y="127" text-anchor="middle">instruction register</text>
+<rect class="dg-box" x="20" y="136" width="260" height="28"/><text class="dg-mono" x="150" y="155" text-anchor="middle">status register</text>
+<rect class="dg-box" x="20" y="164" width="260" height="28"/><text class="dg-mono" x="150" y="183" text-anchor="middle">program counter (high)</text>
+<rect class="dg-box" x="20" y="192" width="260" height="28"/><text class="dg-mono" x="150" y="211" text-anchor="middle">program counter (low)</text>
+<text class="dg-text" x="310" y="43">which access failed: read or write,</text>
+<text class="dg-text" x="310" y="61">instruction fetch or data, which mode</text>
+<text class="dg-text" x="310" y="90">the odd address itself</text>
+<text class="dg-text" x="310" y="127">the opcode being executed</text>
+<text class="dg-text" x="310" y="183">the six-byte frame every exception has</text>
+<path class="dg-line" d="M290 150 h10 v64 h-10"/>
+</svg>
+<figcaption>The group 0 frame. The extra four words describe the failed access; the lower three are the normal frame.</figcaption>
+</figure>
+
+<p>Address errors happen in the middle of an instruction, so the core implements them as a C++ exception
+thrown from the bus primitive and caught in <code>step()</code>. The catch handler builds the frame word by
+word and charges 50 cycles on top of whatever the instruction had spent up to the fault. Because every
+access charged its time as it happened (M01-01), "whatever it had spent" is already right.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">const std::uint16_t fc = static_cast&lt;std::uint16_t&gt;((c.s.supervisor() ? 4 : 0) | (e.program ? 2 : 1));
+const std::uint16_t status =
+    static_cast&lt;std::uint16_t&gt;((opcode &amp; 0xFFE0) | (e.read ? 0x10 : 0) | (e.program ? 0x08 : 0) | fc);</code></pre><figcaption>The status word packs the opcode's top bits with three flags and the function code.</figcaption></figure>
+
+<p>If writing the frame itself faults, because the stack pointer is odd too, the real chip gives up with a
+<em>double bus fault</em> and halts until reset. The core does the same: a second
+<code>AddressErrorTrap</code> inside the handler sets <code>halted</code>.</p>
+
+<blockquote class="pull"><p>On the Genesis, every frame starts with an interrupt. Getting interrupts
+exactly right isn't an edge case.</p></blockquote>
+
+<h2>Interrupts</h2>
+
+<p>The 68000 has three interrupt input pins, giving priority levels 1 to 7. The emulator sets the level with
+<code>setIrqLevel</code>, and <code>step()</code> samples it <em>between</em> instructions, as the chip
+does. A level is taken only if it's above the 3-bit mask in the status register. Level 7 is special: it
+can't be masked, and it's edge-triggered, so holding the line at 7 doesn't re-interrupt forever:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">void M68k::setIrqLevel(int level) {
+    level &amp;= 7;
+    if (level == 7 &amp;&amp; core_-&gt;irqLevel != 7) {
+        core_-&gt;nmiPending = true;
+    }
+    core_-&gt;irqLevel = level;
+}</code></pre><figcaption>A rising edge to level 7 latches a pending NMI; a level held at 7 doesn't fire again.</figcaption></figure>
+
+<p>Taking an interrupt runs an <em>acknowledge</em> cycle on the bus, where the hardware can supply a vector
+number. On the Genesis the answer is always "autovector": level N uses vector 24+N, so the level-6
+vertical interrupt lands at address <code>$78</code>. The bus interface can also return a specific vector
+or a <em>spurious</em> interrupt (vector 24), and both are supported. Taking an autovectored interrupt costs
+44 cycles. The interrupt raises the mask to its own level, so the handler isn't re-entered by the same
+source, and the <code>onIrq</code> hook reports the level for the debugger.</p>
+
+<h2>Reset and trace</h2>
+
+<p>Reset reads the initial supervisor stack pointer from <code>$000000</code> and the initial PC from
+<code>$000004</code>, which is how a Genesis cartridge's first eight bytes start the machine. Trace mode
+(the T bit) raises an exception after every instruction, which a debugger can use for single-stepping.</p>
+
+<h2>Tested both ways</h2>
+
+<p>The SingleStepTests suite covers TRAP, CHK and TRAPV (24,195 vectors) and every address error in the
+word and long files, and all pass, including frames and cycles. The suite has no ILLEGAL file, never sets
+the trace bit and never raises interrupts, so unit tests cover the rest:</p>
+
+<ul>
+<li><em>Autovectored interrupts respect the mask</em>: level 6 with mask 3 vectors to <code>$78</code> in 44
+cycles with the right frame; with mask 6 the CPU keeps executing.</li>
+<li><em>Level 7 is edge triggered and not maskable</em>.</li>
+<li><em>Reset loads SSP from $0 and PC from $4</em>.</li>
+<li><em>Trace exception follows each instruction while T is set</em>: a NOP plus trace takes 4 + 34 cycles.</li>
+<li><em>Odd word access raises an address error with a group 0 frame</em>: 50 cycles, SP lowered by 14,
+and the status word's low bits read <code>$15</code> (read, data access, supervisor data).</li>
+</ul>
+
+<p>One known gap is written down rather than hidden. When TRAP, CHK, TRAPV or a zero-divide happens with
+the trace bit set, real hardware takes a second exception for the trace, and the core doesn't. None of the
+target games trace their own code, so it's noted for later.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-10-exceptions-and-interrupts.md">Story M01-10</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/m68k.cpp"><code>src/core/m68k/m68k.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/m68k_test.cpp"><code>tests/unit/m68k_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M01-09-system-instructions.html"><span class="label">&larr; Previous</span><span class="title">M01-09 · Supervisor mode and the status register</span></a>
+<a class="next" href="M01-11-cycle-timing-audit.html"><span class="label">Next &rarr;</span><span class="title">M01-11 · Counting every cycle, then counting how fast</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

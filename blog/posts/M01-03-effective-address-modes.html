@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Every way to find an operand | genesisEmu</title>
+<meta name="description" content="The 68000&#x27;s addressing modes are where most of the instruction set&#x27;s complexity lives. Written once as templates, they serve every instruction.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Every way to find an operand | genesisEmu">
+<meta property="og:description" content="The 68000&#x27;s addressing modes are where most of the instruction set&#x27;s complexity lives. Written once as templates, they serve every instruction.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m01">M01 · 68000 CPU</a> · Story 3 of 12</p>
+<h1>Every way to find an operand</h1>
+<p class="subtitle">The 68000's addressing modes are where most of the instruction set's complexity lives. Written once as templates, they serve every instruction.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>5 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-03-effective-address-modes.md">Story M01-03</a></div>
+<div class="prose">
+<p>Most 68000 instructions don't care <em>where</em> their operands come from. <code>ADD</code> adds,
+whether the source is a register, a memory location pointed to by a register, a constant in the
+instruction stream or a table entry indexed by another register. The "where" is the job of the
+<strong>effective address</strong> (EA): a 6-bit field in the opcode, made of a 3-bit mode and a 3-bit
+register number, that picks one of twelve addressing forms. (The story says fourteen; how many you count depends on how you group them. The opcode field encodes the twelve below.)</p>
+
+<p>Get the EA logic right once and every instruction that uses it is right. Get it subtly wrong, for
+example by incrementing a register at the wrong moment, and the bug shows up in hundreds of instructions.
+M01-03 implemented the modes as one shared path.</p>
+
+<h2>The modes</h2>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Syntax</th><th>Meaning</th><th>Side effect / cost</th></tr></thead>
+<tbody>
+<tr><td><code>Dn</code>, <code>An</code></td><td>the register itself</td><td>none</td></tr>
+<tr><td><code>(An)</code></td><td>memory at An</td><td>none</td></tr>
+<tr><td><code>(An)+</code></td><td>memory at An, then An += size</td><td>post-increment</td></tr>
+<tr><td><code>-(An)</code></td><td>An -= size, then memory at An</td><td>pre-decrement, +2 cycles</td></tr>
+<tr><td><code>d16(An)</code></td><td>An + signed 16-bit displacement</td><td>one extension word</td></tr>
+<tr><td><code>d8(An,Xn)</code></td><td>An + signed byte + index register</td><td>one extension word, +2 cycles</td></tr>
+<tr><td><code>abs.W</code>, <code>abs.L</code></td><td>a fixed address</td><td>one or two extension words</td></tr>
+<tr><td><code>d16(PC)</code>, <code>d8(PC,Xn)</code></td><td>relative to the program counter</td><td>as above</td></tr>
+<tr><td><code>#imm</code></td><td>a constant in the instruction stream</td><td>one or two extension words</td></tr>
+</tbody></table></div>
+
+<p>The modes are first decoded into an enum, in the order the hardware encodes them, so the first seven
+are a direct cast:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">constexpr Mode decodeMode(unsigned mode, unsigned reg) {
+    if (mode &lt; 7) {
+        return static_cast&lt;Mode&gt;(mode);
+    }</code></pre><figcaption>Mode 7 is an escape: the register field then picks between the absolute, PC-relative and immediate forms.</figcaption></figure>
+
+<h2>Templates instead of switches</h2>
+
+<p>The obvious implementation is a function with a big <code>switch</code> on the mode, called for every
+operand of every instruction. That costs a branch per operand and buries the mode-specific behaviour in
+one huge function. genesisEmu makes both the operand size <code>S</code> (1, 2 or 4 bytes) and the mode
+<code>M</code> template parameters:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">template &lt;int S, Mode M&gt;
+std::uint32_t eaAddress(unsigned reg) {
+    constexpr std::uint32_t step = S == 4 ? 4 : 2;
+    if constexpr (M == Ind) {
+        return s.a[reg];
+    } else if constexpr (M == PostInc) {
+        const std::uint32_t a = s.a[reg];
+        s.a[reg] += (S == 1 &amp;&amp; reg != 7) ? 1 : step;
+        return a;
+    } else if constexpr (M == PreDec) {
+        idle(2);
+        s.a[reg] -= (S == 1 &amp;&amp; reg != 7) ? 1 : step;
+        return s.a[reg];</code></pre><figcaption>Part of <code>CpuCore::eaAddress&lt;S, M&gt;</code>. <code>if constexpr</code> means each instantiation contains only its own case.</figcaption></figure>
+
+<p>When the decode table is built, a helper called <code>byMode</code> turns the run-time mode of each
+opcode into the matching compile-time instantiation. The result is one specialised handler per
+size/mode combination. MOVE is the extreme case, with a source mode <em>and</em> a destination mode, and
+gets a handler for every valid pair.</p>
+
+<blockquote class="pull"><p>A byte pushed onto the stack still moves the stack pointer by two. The chip
+keeps A7 word-aligned, and so must the emulator.</p></blockquote>
+
+<h2>The quirks that matter</h2>
+
+<p><strong>A7 and bytes.</strong> <code>(A0)+</code> on a byte operand adds 1 to A0. On A7, the stack
+pointer, it adds 2, because the 68000 keeps the stack word-aligned. Look for <code>reg != 7</code> in the
+excerpt above. Get this wrong and the first byte-sized push corrupts the stack.</p>
+
+<p><strong>Index registers can be words or longs.</strong> In <code>d8(An,Xn)</code> the extension word
+picks the index register and whether to use all 32 bits or only the low 16, sign-extended. Sign extension
+is the classic bug here: index a table with <code>D0.W = $FFFE</code> and the correct offset is −2, not
+65,534.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">std::uint32_t indexed(std::uint32_t base, std::uint16_t ext) const {
+    const std::uint32_t xn = (ext &amp; 0x8000) != 0 ? s.a[(ext &gt;&gt; 12) &amp; 7] : s.d[(ext &gt;&gt; 12) &amp; 7];
+    const std::int32_t index =
+        (ext &amp; 0x0800) != 0 ? static_cast&lt;std::int32_t&gt;(xn) : static_cast&lt;std::int16_t&gt;(xn &amp; 0xFFFF);
+    return base + static_cast&lt;std::uint32_t&gt;(static_cast&lt;std::int8_t&gt;(ext &amp; 0xFF)) +
+           static_cast&lt;std::uint32_t&gt;(index);
+}</code></pre><figcaption>The brief extension word: bit 15 picks A or D, bits 14-12 the register, bit 11 word or long, the low byte is the displacement.</figcaption></figure>
+
+<p><strong>PC-relative means relative to the extension word.</strong> During execution the core's PC
+points at the word in the prefetch register, which is the base the hardware uses for
+<code>d16(PC)</code>. Because the core models the prefetch queue, the base falls out naturally.</p>
+
+<p><strong>abs.W is sign-extended.</strong> <code>($F600).w</code> doesn't mean address
+<code>$00F600</code>. It means <code>$FFF600</code>, the top of the 24-bit address space, where the
+Genesis keeps its 64 KB of work RAM. Sonic code uses this short form constantly to reach RAM variables in
+two bytes instead of four.</p>
+
+<h2>Address errors are detected here</h2>
+
+<p>A word or long access to an odd address makes the 68000 raise an address error. The check sits in the
+lowest-level bus primitives, so it applies to every EA mode automatically. It throws a small C++ exception
+that <code>step()</code> catches and turns into the correct exception frame, which M01-10 completes. Long
+accesses are always issued as two word accesses, because an odd long access must fault on its
+<em>first</em> word, before anything is written.</p>
+
+<h2>Timing and verification</h2>
+
+<p>EA time isn't looked up in a table. It's the sum of what happens: 4 cycles per extension-word fetch,
+4 cycles per operand word, plus 2 internal cycles for <code>-(An)</code> and the indexed modes. The
+acceptance criterion asked for the EA cycle table to match the 68000 User's Manual. The check used was
+MOVE, which combines every source mode with every destination mode. The SingleStepTests files for MOVE.b,
+MOVE.w and MOVE.l, plus LEA, PEA, JMP and JSR, which use the "control" addressing modes, all pass at 100%,
+with zero cycle mismatches.</p>
+
+<p>From here on, adding an instruction mostly means writing what it <em>computes</em>. Where its operands
+live and what that costs is already handled.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-03-effective-address-modes.md">Story M01-03</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/cpu_core.hpp"><code>src/core/m68k/cpu_core.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/ops_move.cpp"><code>src/core/m68k/ops_move.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M01-02-singlesteptests-harness.html"><span class="label">&larr; Previous</span><span class="title">M01-02 · A million tests before breakfast</span></a>
+<a class="next" href="M01-04-data-movement.html"><span class="label">Next &rarr;</span><span class="title">M01-04 · Moving data, in exactly the right order</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

@@ -21,17 +21,18 @@
 </div></header>
 <main>
 <section class="hero">
-<p class="kicker">Build notes · 7 articles</p>
+<p class="kicker">Build notes · 19 articles</p>
 <h1>How genesisEmu is built</h1>
 <p class="lede">genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering and modding the
 Sonic games. The project is written spec-first: every feature starts as a short story with acceptance
 criteria. This series has one article per finished story. Each one covers what the feature does, why an
 emulator needs it, and how this code base builds and tests it.</p>
-<p class="meta">7 articles · about 1 hours of reading ·
+<p class="meta">19 articles · about 1 hours of reading ·
 <a href="https://github.com/ChrisC413/genesisEmu">source on GitHub</a> · start with <a href="posts/M00-01-repo-and-build-system.html">M00-01</a></p>
 </section>
 <nav class="toc" aria-label="Milestones">
 <a href="#m00">M00 · Foundation</a>
+<a href="#m01">M01 · 68000 CPU</a>
 </nav>
 <section class="milestone" id="m00">
 <div class="milestone-head"><span class="tag">M00 · 7 stories</span><h2>Foundation</h2><p>Repository, build, CI and an application shell that loads a ROM, on Windows and macOS.</p></div>
@@ -43,6 +44,23 @@ emulator needs it, and how this code base builds and tests it.</p>
 <li><a href="posts/M00-05-app-shell-window.html"><span class="pid">M00-05</span><span class="ptitle">A window with room for a workbench</span><span class="pblurb">The desktop shell: an SDL3 window with an OpenGL 3.3 context, Dear ImGui docking with the layout saved in the JSON config, native file dialogs and a self-checking smoke test.</span><span class="pmeta">5 min read</span></a></li>
 <li><a href="posts/M00-06-headless-cli-skeleton.html"><span class="pid">M00-06</span><span class="ptitle">An emulator you can drive from a script</span><span class="pblurb">The headless gen_cli runner: info, run and help subcommands, stable exit codes, JSON output, and CTest cases that check both exit code and output.</span><span class="pmeta">4 min read</span></a></li>
 <li><a href="posts/M00-07-local-mac-validation.html"><span class="pid">M00-07</span><span class="ptitle">Testing on macOS without paying for macOS CI</span><span class="pblurb">tools/validate-mac.sh builds and tests the release and sanitizer configurations, signs the .app bundle, and prints a summary block for the pull request.</span><span class="pmeta">4 min read</span></a></li>
+</ul>
+</section>
+<section class="milestone" id="m01">
+<div class="milestone-head"><span class="tag">M01 · 12 stories</span><h2>68000 CPU</h2><p>A hand-written Motorola 68000 core that passes the SingleStepTests suite, plus a disassembler.</p></div>
+<ul class="post-list">
+<li><a href="posts/M01-01-cpu-core-framework.html"><span class="pid">M01-01</span><span class="ptitle">The skeleton of a 68000</span><span class="pblurb">The 68000 core's skeleton: the State struct, the Bus68k interface, a decode table with one handler per opcode, per-access timing and zero-cost instrumentation hooks.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M01-02-singlesteptests-harness.html"><span class="pid">M01-02</span><span class="ptitle">A million tests before breakfast</span><span class="pblurb">A harness for the SingleStepTests 68000 suite: pinned and checksummed downloads, a compact binary format, full state comparison and an exclusion list with reasons.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M01-03-effective-address-modes.html"><span class="pid">M01-03</span><span class="ptitle">Every way to find an operand</span><span class="pblurb">All 68000 addressing modes as compile-time templates: register side effects, sign-extended index registers, the A7 byte quirk and EA timing verified by every MOVE vector.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M01-04-data-movement.html"><span class="pid">M01-04</span><span class="ptitle">Moving data, in exactly the right order</span><span class="pblurb">MOVE, MOVEM, MOVEP, LEA, PEA, LINK and friends: write ordering revealed by address errors, MOVEM's reversed register mask and the read-before-clear of CLR.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M01-05-integer-arithmetic.html"><span class="pid">M01-05</span><span class="ptitle">Arithmetic, flags and the price of a division</span><span class="pblurb">ADD/SUB/CMP families, NEG/NEGX, EXT and the multiply and divide instructions, with the X flag's sticky-zero rule and data-dependent MUL/DIV timing.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M01-06-logic-shift-bit.html"><span class="pid">M01-06</span><span class="ptitle">Bit twiddling, and a disagreement with the reference</span><span class="pblurb">AND/OR/EOR/NOT, every shift and rotate, the bit instructions, Scc and TAS, including the Genesis TAS quirk and the ASR vectors where the project sided with the manual.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M01-07-bcd-instructions.html"><span class="pid">M01-07</span><span class="ptitle">Decimal arithmetic on a binary chip</span><span class="pblurb">ABCD, SBCD and NBCD: how the 68000 adds in binary and then corrects to decimal, and how the 'undefined' N and V flags were matched against real silicon.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M01-08-program-control.html"><span class="pid">M01-08</span><span class="ptitle">Branches, calls and knowing where you went</span><span class="pblurb">Bcc, BSR, DBcc, JMP, JSR, RTS, RTR and RTE, with taken/not-taken timing, the DBcc wrap at -1, odd-target faults and a Flow value reported for every step.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M01-09-system-instructions.html"><span class="pid">M01-09</span><span class="ptitle">Supervisor mode and the status register</span><span class="pblurb">MOVE to/from SR and CCR, MOVE USP, ANDI/ORI/EORI to SR, STOP and RESET, with privilege violations and stack pointer swaps tested where the suite can't reach.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M01-10-exceptions-and-interrupts.html"><span class="pid">M01-10</span><span class="ptitle">When things go wrong, and when the screen wants attention</span><span class="pblurb">The full 68000 exception model: reset, the 14-byte address-error frame, traps, autovectored interrupts with a level-7 edge, trace, and the onIrq hook.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M01-11-cycle-timing-audit.html"><span class="pid">M01-11</span><span class="ptitle">Counting every cycle, then counting how fast</span><span class="pblurb">The audit that closed the 68000 milestone: exact cycle counts across the whole suite, every exclusion explained, and a 98-100 MIPS benchmark left honestly open.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M01-12-m68k-disassembler.html"><span class="pid">M01-12</span><span class="ptitle">A disassembler that proves itself with an assembler</span><span class="pblurb">An AS-syntax 68000 disassembler with flow types, targets and symbol hooks, verified by a round trip through the AS assembler with zero byte mismatches.</span><span class="pmeta">4 min read</span></a></li>
 </ul>
 </section>
 </main>

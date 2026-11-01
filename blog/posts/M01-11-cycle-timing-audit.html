@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Counting every cycle, then counting how fast | genesisEmu</title>
+<meta name="description" content="996,322 vectors, zero cycle mismatches, two documented exclusions, and a throughput benchmark that came in just short of its target.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Counting every cycle, then counting how fast | genesisEmu">
+<meta property="og:description" content="996,322 vectors, zero cycle mismatches, two documented exclusions, and a throughput benchmark that came in just short of its target.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m01">M01 · 68000 CPU</a> · Story 11 of 12</p>
+<h1>Counting every cycle, then counting how fast</h1>
+<p class="subtitle">996,322 vectors, zero cycle mismatches, two documented exclusions, and a throughput benchmark that came in just short of its target.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-11-cycle-timing-audit.md">Story M01-11</a></div>
+<div class="prose">
+<p>Why does an emulator care how many clock cycles an instruction takes? On the Genesis, timing is
+behaviour. The video chip raises its interrupts at fixed points in the frame, DMA transfers steal time from
+the CPU, and the sound CPU runs alongside on its own clock. A game that does slightly too much work per
+frame on real hardware drops a frame. An emulator that runs the same code a little too fast won't. A Sonic
+water level changes its palette at a precise scanline, and if the CPU reaches that code a few dozen cycles
+late, the water line moves.</p>
+
+<p>Decision D-002 sets the project's level of accuracy. Instructions execute atomically, but each must
+take exactly the right number of cycles. M01-11 was the audit that checked it across the whole instruction
+set.</p>
+
+<h2>The result</h2>
+
+<blockquote class="pull"><p>996,322 of 996,322 non-excluded vectors pass, including exact cycle counts.</p></blockquote>
+
+<p>Every earlier story had already required exact cycles for its own instruction families. The audit ran
+the full suite (1,000,060 vectors in 124 files, pinned to commit <code>e0d5ece9</code>) and accounted for
+every vector that didn't pass. There are exactly two kinds, and both are listed in
+<code>tests/m68k/sst_exclusions.txt</code> and in the story:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Vectors</th><th>Why they're excluded</th></tr></thead>
+<tbody>
+<tr><td>3,736 in ASR.b/w/l</td><td>Register count greater than the operand size on a negative operand. The suite
+expects C = X = 0; a bit-by-bit shift keeps shifting out the sign bit, so the manual ("set according to the
+last bit shifted out") and Musashi give 1. The core follows the manual.</td></tr>
+<tr><td>2 in ASL.b</td><td>The expected final D2 differs in all 32 bits, which a byte shift can't do. The vectors
+are corrupt.</td></tr>
+</tbody></table></div>
+
+<p>Neither exclusion is about timing. In cycle terms the core matches the reference everywhere.</p>
+
+<h2>Why per-access timing paid off</h2>
+
+<p>Looking back, the decision that made this possible was M01-01's: charge 4 cycles per word access
+<em>when the access happens</em>, plus explicit internal delays, instead of looking up a total per
+instruction. A table can give the right total for an instruction that completes. It can't give the right
+total for one that faults halfway through, which is a large share of the word and long vectors. With
+per-access timing, the cycle count at the fault is simply whatever had been charged so far, plus the 50
+cycles of the address-error sequence.</p>
+
+<p>The approach also makes deviations visible. Where the suite and common timing tables disagree, the story
+notes record the suite's value and the core follows it: <code>ADDQ.L</code>/<code>SUBQ.L #,An</code> takes
+6 cycles rather than 8, <code>BTST</code> with an immediate bit number on a register takes 10, and the DIVS
+overflow path takes (8 or 9) × 2.</p>
+
+<h2>The benchmark: honest about a near miss</h2>
+
+<p>The second criterion was speed: at least 100 million 68000 instructions per second on the reference
+machine. A real 68000 at 7.67 MHz manages roughly 1.3 million instructions per second at most, so
+100 MIPS sounds excessive. The headroom is deliberate. Later milestones add instrumentation on every
+access, coverage maps, fast-forward and analysis passes that replay long stretches of execution, and all of
+that needs a core with a lot of spare speed.</p>
+
+<p><code>gen_m68k_bench</code> runs a mix modelled on typical Sonic-style code: block copies, table lookups,
+arithmetic, branches and subroutine calls. It reports instructions per second. A <code>--virtual</code> flag
+turns off the direct memory pages so the two bus paths can be compared:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">explicit Bus(bool direct) {
+    for (std::size_t p = 0; direct &amp;&amp; p &lt; 256; ++p) {
+        fastRead[p] = mem.data() + (p &lt;&lt; 16);
+        fastWrite[p] = mem.data() + (p &lt;&lt; 16);
+    }
+}</code></pre><figcaption>The benchmark's bus maps all 256 pages directly unless <code>--virtual</code> is given.</figcaption></figure>
+
+<p>The fast pages were added during this audit. When the bus marks a 64 KB page as plain memory, the CPU's
+<code>readWord</code> reads two bytes from a pointer instead of making a virtual call. Hooks still see every
+access, so instrumentation loses nothing.</p>
+
+<p>The measured result, Release build with MSVC on an i7-11700KF: <strong>98–100 MIPS</strong> with the fast
+pages, and <strong>93 MIPS</strong> through the virtual bus calls. That's about 110 times a real 68000. It's
+also not quite the target, and the class of machine the architecture spec budgets for (an Apple M1 or a
+Ryzen 5 3600) is probably a little slower. So the box stays unchecked and the story stays "In progress", with a note that it
+hasn't been profiled further.</p>
+
+<h2>Exactness in practice</h2>
+
+<p>The payoff came in later milestones. M02's boot tests record a deterministic state hash after N frames,
+and those hashes only stay stable if timing is exact. When M03 introduced DMA, which freezes the 68000
+while the video chip copies memory, the boot hashes changed in a deliberate, reviewed
+<code>[golden-update]</code> commit, because CPU timing had legitimately changed. Timing is visible enough
+to be tested, which is what the audit was for.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-11-cycle-timing-audit.md">Story M01-11</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/m68k/sst_exclusions.txt"><code>tests/m68k/sst_exclusions.txt</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/bench/m68k_bench.cpp"><code>tests/bench/m68k_bench.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/m68k.hpp"><code>src/core/m68k/m68k.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/cpu_core.hpp"><code>src/core/m68k/cpu_core.hpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M01-10-exceptions-and-interrupts.html"><span class="label">&larr; Previous</span><span class="title">M01-10 · When things go wrong, and when the screen wants attention</span></a>
+<a class="next" href="M01-12-m68k-disassembler.html"><span class="label">Next &rarr;</span><span class="title">M01-12 · A disassembler that proves itself with an assembler</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

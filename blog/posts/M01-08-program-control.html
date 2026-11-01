@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Branches, calls and knowing where you went | genesisEmu</title>
+<meta name="description" content="Control-flow instructions decide where the program goes next. The core also reports what kind of jump just happened, which the debugger and coverage tools rely on.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Branches, calls and knowing where you went | genesisEmu">
+<meta property="og:description" content="Control-flow instructions decide where the program goes next. The core also reports what kind of jump just happened, which the debugger and coverage tools rely on.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m01">M01 · 68000 CPU</a> · Story 8 of 12</p>
+<h1>Branches, calls and knowing where you went</h1>
+<p class="subtitle">Control-flow instructions decide where the program goes next. The core also reports what kind of jump just happened, which the debugger and coverage tools rely on.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>5 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-08-program-control.md">Story M01-08</a></div>
+<div class="prose">
+<p>Everything that makes a program more than a straight list of instructions goes through a handful of
+opcodes: conditional branches (Bcc and BRA), subroutine calls (BSR and JSR), jumps (JMP), returns (RTS,
+RTR and RTE), and DBcc, the 68000's loop instruction. M01-08 implemented them and passed 100% of 72,585
+vectors. It also added something the test suite doesn't check: an answer to "what kind of control
+transfer just happened?"</p>
+
+<h2>Branches are relative to the extension word</h2>
+
+<p>A branch carries a signed displacement: 8 bits packed into the opcode for the short form, or a 16-bit
+extension word for the long form. The base it's added to is the address just after the opcode, which is
+also the address of the word sitting in the prefetch register IRC. Because the core models the prefetch
+queue, the base is simply the current <code>s.pc</code>:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">const unsigned cc = (op &gt;&gt; 8) &amp; 15;
+const std::uint32_t base = c.s.pc;
+const std::uint32_t disp =
+    Word ? sext16(c.s.irc) : static_cast&lt;std::uint32_t&gt;(static_cast&lt;std::int8_t&gt;(op &amp; 0xFF));
+if (cc == 1) {  // BSR
+    c.idle(2);
+    c.push32(Word ? base + 2 : base);
+    c.jump(base + disp);
+    c.flow = Flow::Call;
+    return;
+}</code></pre><figcaption>Bcc, BRA and BSR share one handler. Condition code 1 ("never") is reused by the hardware as BSR.</figcaption></figure>
+
+<p>The opcode quirk in that comment is real. In the 68000's encoding, condition 0 is "always" (BRA) and
+condition 1 is "never". A branch that never branches is useless, so Motorola reused that encoding for BSR.</p>
+
+<p>Timing differs for taken and not-taken branches. A taken branch costs 2 internal cycles plus refilling
+the prefetch queue at the target. A not-taken branch costs 4 internal cycles, plus skipping the extension
+word in the long form. The 16 condition codes come from a single function, <code>testCondition</code>,
+that mirrors table 3-19 of the Programmer's Reference Manual.</p>
+
+<h2>DBcc: a loop in one instruction</h2>
+
+<p>DBcc means "decrement and branch unless condition". It's the 68000's loop primitive: if the condition
+is true, fall through; otherwise decrement the low word of a data register and branch back unless it
+reached −1. The almost universal form is <code>dbf d0,loop</code>, where the condition is "false" and the
+instruction is a plain counted loop that runs D0+1 times.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">std::uint32_t&amp; d = c.dreg(op);
+const std::uint16_t counter = static_cast&lt;std::uint16_t&gt;((d &amp; 0xFFFF) - 1);
+d = (d &amp; 0xFFFF0000u) | counter;
+if (counter != 0xFFFF) {
+    c.idle(2);
+    c.jump(base + sext16(c.s.irc));
+    c.flow = Flow::Branch;
+    return;
+}</code></pre><figcaption>The counter is only the low 16 bits; the high word is preserved. The loop ends when it wraps to $FFFF.</figcaption></figure>
+
+<p>Three timings exist: condition true (exit without decrementing), counter expired (exit after
+decrementing), and loop back. All three appear in the vectors.</p>
+
+<blockquote class="pull"><p>The CPU already knows whether it just made a call, a return or a jump. The
+core reports it, so tools don't have to work it out again.</p></blockquote>
+
+<h2>Odd targets and faulting jumps</h2>
+
+<p>A jump to an odd address can't fetch its first instruction, so the 68000 raises an address error. What
+gets stacked is not intuitive, and the suite pins it down. The fault on the first fetch at the target
+stacks <code>target − 4</code> as the PC, with the target itself as the faulting address. The core's
+<code>jump()</code> helper sets its PC so that this falls out:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">void jump(std::uint32_t target) {
+    s.pc = target - 2;  // an odd target faults on the first fetch, which stacks target - 4
+    s.ir = readWord(target, true);
+    s.irc = readWord(target + 2, true);
+    s.pc = target + 2;
+}</code></pre><figcaption><code>CpuCore::jump</code>: load the two-word queue at a new address.</figcaption></figure>
+
+<p>JSR has an ordering detail of its own. It fetches the first word at the target <em>before</em> pushing
+the return address. An odd target therefore faults with the stack untouched, and the story notes record
+it because a naive push-then-jump fails those vectors.</p>
+
+<h2>Returns</h2>
+
+<p>RTS pops the PC. RTR pops the condition codes (the low byte of SR) and then the PC. RTE, the return from
+an exception, pops the whole status register and then the PC, which can switch the CPU from supervisor back
+to user mode and swap stack pointers. On the original 68000 the exception frame is always this simple
+six-byte format (SR plus PC). Later 68k chips added format words; the story scopes RTE to the original
+68000 frame.</p>
+
+<h2>Reporting the flow</h2>
+
+<p>The second acceptance criterion is about tools, not emulation. After every <code>step()</code> the core
+records what kind of control transfer just happened, as a value of this enum:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">enum class Flow : std::uint8_t {
+    Sequential,  // fell through to the next instruction (including a not-taken branch)
+    Branch,      // taken Bcc/BRA/DBcc
+    Jump,        // JMP
+    Call,        // BSR/JSR
+    Return,      // RTS/RTR/RTE
+    Exception,   // trap, interrupt, reset or fault: entered a handler
+    Stopped,     // idle while STOPped or halted
+};</code></pre><figcaption><code>M68k::lastFlow()</code> returns one of these after each step.</figcaption></figure>
+
+<p>The debugger's <em>step over</em> needs to know when an instruction was a call, so it can run until the
+matching return. A call-stack view needs calls and returns. Coverage maps want to tell branch targets from
+fall-through code. Working this out after the fact from the opcode bytes would duplicate decode logic and
+miss dynamic cases such as a not-taken branch, so the handler that already knows simply says so. A unit
+test steps through <code>BSR</code>, <code>RTS</code> and a <code>NOP</code> and checks Call, Return and
+Sequential in turn.</p>
+
+<h2>Verified</h2>
+
+<p>Bcc, BSR, DBcc, JMP, JSR, RTS, RTR, RTE and NOP pass 100% of 72,585 vectors, including odd-target address
+errors and exact cycle counts. JMP and JSR accept only the "control" addressing modes, which the decode
+table enforces at build time, so an invalid form such as <code>jmp d0</code> falls through to the
+illegal-instruction handler as it should.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-08-program-control.md">Story M01-08</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/ops_flow.cpp"><code>src/core/m68k/ops_flow.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/m68k.hpp"><code>src/core/m68k/m68k.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/m68k_test.cpp"><code>tests/unit/m68k_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M01-07-bcd-instructions.html"><span class="label">&larr; Previous</span><span class="title">M01-07 · Decimal arithmetic on a binary chip</span></a>
+<a class="next" href="M01-09-system-instructions.html"><span class="label">Next &rarr;</span><span class="title">M01-09 · Supervisor mode and the status register</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>
