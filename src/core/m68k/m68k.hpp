@@ -112,6 +112,9 @@ public:
     // Interrupt priority level input (0 = none, 7 = NMI). Sampled between instructions.
     void setIrqLevel(int level);
     int irqLevel() const;
+    // Save states: the latched level-7 edge and the IPL input, restored without edge detection.
+    bool nmiPending() const;
+    void restoreIrq(int level, bool nmiPending);
 
     State& state();
     const State& state() const;

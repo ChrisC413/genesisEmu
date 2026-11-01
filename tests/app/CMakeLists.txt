@@ -23,3 +23,13 @@ set_tests_properties(app.smoke_layout_restored PROPERTIES
   FIXTURES_REQUIRED "app_layout;cli_roms"
   SKIP_RETURN_CODE 77
   LABELS gui)
+
+# M06-00a: boot straight into the save state cli.run_save_state writes (frame 10 of the boot ROM).
+add_test(NAME app.smoke_state
+  COMMAND gen_app --smoke-test=10 "--state=${CMAKE_BINARY_DIR}/tests/cli/boot10.gst"
+          "${CMAKE_BINARY_DIR}/tests/cli/roms/boot.bin")
+set_tests_properties(app.smoke_state PROPERTIES
+  ENVIRONMENT "GENESISEMU_HOME=${home}"
+  FIXTURES_REQUIRED "app_home;cli_roms;cli_state"
+  SKIP_RETURN_CODE 77
+  LABELS gui)

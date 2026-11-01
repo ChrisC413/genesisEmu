@@ -242,6 +242,15 @@ int M68k::irqLevel() const {
     return core_->irqLevel;
 }
 
+bool M68k::nmiPending() const {
+    return core_->nmiPending;
+}
+
+void M68k::restoreIrq(int level, bool nmiPending) {
+    core_->irqLevel = level & 7;
+    core_->nmiPending = nmiPending;
+}
+
 State& M68k::state() {
     return core_->s;
 }

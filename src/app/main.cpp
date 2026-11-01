@@ -18,6 +18,7 @@ constexpr const char* kUsage =
     "  --expect-restored-layout  smoke check: fail unless a saved dock layout was loaded\n"
     "  --screenshot=<file>       smoke test: save the last frame as PNG\n"
     "  --lock-on=<file>          cartridge locked onto the ROM (Sonic & Knuckles + Sonic 3)\n"
+    "  --state=<file>            load a save state (from the same ROM) right after the ROM\n"
     "  --fast-forward            start in fast-forward (unthrottled)\n"
     "  -h, --help                show this help\n"
     "\n"
@@ -54,6 +55,8 @@ int main(int argc, char** argv) {
             options.screenshot = gen::common::fromUtf8(arg.substr(13));
         } else if (arg.starts_with("--lock-on=")) {
             options.lockOn = gen::common::fromUtf8(arg.substr(10));
+        } else if (arg.starts_with("--state=")) {
+            options.state = gen::common::fromUtf8(arg.substr(8));
         } else if (arg == "--fast-forward") {
             options.fastForward = true;
         } else if (arg == "--expect-restored-layout") {

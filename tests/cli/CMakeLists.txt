@@ -67,3 +67,24 @@ genesis_cli_test(run_dump_frames 0
 genesis_cli_test(run_check_unknown_rom 3
   "run|--rom|${rom_dir}/boot.bin|--check|${PROJECT_SOURCE_DIR}/tests/golden/m03_frames.json" EXPECT "no checkpoints")
 genesis_cli_test(run_bad_dump_frames 1 "run|--rom|${rom_dir}/boot.bin|--dump-frames|x" EXPECT "--dump-frames expects")
+
+# M06-00a: save states from the command line. run_save_state writes a state at frame 10 and checks that loading
+# it and running 20 frames gives the state hash of 30 frames from power on.
+set(state_file "${CMAKE_CURRENT_BINARY_DIR}/boot10.gst")
+genesis_cli_test(run_save_state 0
+  "run|--rom|${rom_dir}/boot.bin|--frames|30|--save-state-at=10:${state_file}|--json"
+  EXPECT "state: saved frame 10 to .*boot10.gst.*\"frames\": 30"
+  COMPARE "run|--rom|${rom_dir}/boot.bin|--load-state=${state_file}|--frames|20|--json"
+  COMPARE_MATCH "\"stateHash\": \"[0-9a-f]+\"")
+set_tests_properties(cli.run_save_state PROPERTIES FIXTURES_SETUP cli_state)
+genesis_cli_test(run_load_state_other_rom 2 "run|--rom|${rom_dir}/synthetic.bin|--load-state|${state_file}"
+  EXPECT "another ROM")
+set_tests_properties(cli.run_load_state_other_rom PROPERTIES FIXTURES_REQUIRED "cli_roms;cli_state")
+genesis_cli_test(trace_load_state 0
+  "trace|--rom|${rom_dir}/boot.bin|--load-state|${state_file}|--frames|1|--max-records|5"
+  EXPECT "state: loaded .*[(]frame 10[)].*# genesisEmu trace v1.*10 +0 +[0-9]+ M68K 0002")
+set_tests_properties(cli.trace_load_state PROPERTIES FIXTURES_REQUIRED "cli_roms;cli_state")
+genesis_cli_test(run_load_state_missing 2 "run|--rom|${rom_dir}/boot.bin|--load-state|${rom_dir}/missing.gst"
+  EXPECT "missing or empty")
+genesis_cli_test(run_bad_save_state_at 1 "run|--rom|${rom_dir}/boot.bin|--save-state-at|later" EXPECT "<frame>:<file>")
+genesis_cli_test(flag_takes_no_value 1 "run|--json=yes" EXPECT "takes no value")

@@ -74,6 +74,9 @@ public:
     IFmSynth& fm() { return *fm_; }
     Psg& psg() { return psg_; }
     void hashState(state::StateHasher& h);
+    // Save states: both chips, the catch-up clocks, the output filters and the running audio hash. Pending
+    // samples() are dropped on load; mutes and mix settings are frontend settings and are not saved.
+    void serialize(state::Archive& ar);
 
 private:
     void sync();

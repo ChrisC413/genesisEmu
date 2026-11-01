@@ -4,6 +4,8 @@
 #include <cmath>
 #include <numbers>
 
+#include "core/state/archive.hpp"
+
 namespace gen::audio {
 
 namespace {
@@ -140,6 +142,40 @@ void SoundSystem::hashState(state::StateHasher& h) {
     h.u64(mclk_);
     h.u64(psgNext_);
     h.u64(audioHash());
+}
+
+void SoundSystem::serialize(state::Archive& ar) {
+    std::vector<std::uint8_t> fm = ar.loading() ? std::vector<std::uint8_t>{} : fm_->serialize();
+    ar.blob(fm);
+    PsgState& p = psg_.state();
+    ar.u16s(p.period);
+    ar.bytes(p.attenuation);
+    ar.u8(p.noiseControl);
+    ar.u8(p.latch);
+    ar.u16s(p.counter);
+    for (auto& o : p.output) {
+        ar.i8(o);
+    }
+    ar.u16(p.lfsr);
+    ar.boolean(p.noiseFlip);
+    ar.boolean(pal_);
+    ar.u64(mclk_);
+    ar.u64(psgNext_);
+    ar.f32(lpL_);
+    ar.f32(lpR_);
+    for (float* f : {&dcIn_[0], &dcIn_[1], &dcOut_[0], &dcOut_[1]}) {
+        ar.f32(*f);
+    }
+    hasher_->serialize(ar);
+    if (ar.loading() && ar.ok()) {
+        fm_ = makeYmfmSynth();
+        if (fm.size() != fm_->serialize().size()) {
+            ar.fail("YM2612 state has the wrong size");
+            return;
+        }
+        fm_->deserialize(fm);
+        out_.clear();
+    }
 }
 
 }  // namespace gen::audio

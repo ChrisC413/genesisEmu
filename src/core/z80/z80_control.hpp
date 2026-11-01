@@ -89,6 +89,9 @@ public:
         m68kStall_ = 0;
         return s;
     }
+    // Save states: the stall not yet charged to the 68k (non-zero only after a lone Z80 step).
+    int pendingM68kStall() const { return m68kStall_; }
+    void setPendingM68kStall(int cycles) { m68kStall_ = cycles; }
 
     audio::RegisterLog& log() { return log_; }
     const audio::RegisterLog& log() const { return log_; }

@@ -2,11 +2,12 @@
 // Cartridge device chain (spec 04 "Cartridge device chain", M04-08). A cartridge is its ROM plus an ordered
 // list of devices that can claim /TIME registers ($A130xx), overlay part of the cartridge address space
 // (SRAM) and snoop writes to ROM space. The first device that answers wins. Devices are part of the machine
-// state (hash now, save states in M06).
+// state (hashed and saved in save states).
 
 #include <cstdint>
 #include <string_view>
 
+#include "core/state/archive.hpp"
 #include "core/state/state_hash.hpp"
 
 namespace gen::cart {
@@ -49,6 +50,8 @@ public:
     // Console reset. Non-volatile contents survive.
     virtual void reset() {}
     virtual void hashState(state::StateHasher& h) const { (void)h; }
+    // Save states (M06-00a): everything hashState() covers, saved and loaded through the same function.
+    virtual void serialize(state::Archive& ar) { (void)ar; }
 };
 
 }  // namespace gen::cart

@@ -31,7 +31,7 @@ bool isFaultVector(int vector) {
 }
 
 Machine::Machine(std::vector<std::uint8_t> rom, std::uint8_t headerRegions, const MachineConfig& config)
-    : rom_(std::move(rom)), config_(config) {
+    : rom_(std::move(rom)), romSha1_(sha1(rom_)), config_(config) {
     // Pad to whole 64 KB pages so every ROM page can be a direct fast page.
     rom_.resize(std::min<std::size_t>((rom_.size() + 0xFFFF) & ~std::size_t{0xFFFF}, 0x400000), 0xFF);
     region_ = config.region.value_or(bus::regionFromHeader(headerRegions));

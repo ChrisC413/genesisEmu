@@ -34,6 +34,8 @@ public:
     void push(std::span<const std::int16_t> samples);
     // Paused / fast-forward / normal.
     void setPaused(bool paused);
+    // Drops queued audio and the resampler history (after loading a save state).
+    void flush();
     void setMuted(bool muted) { muted_ = muted; }
     void setVolume(float v) { volume_ = v; }
 

@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ctime>
 #include <format>
+#include <fstream>
+#include <iterator>
 
 #include <SDL3/SDL.h>
 #include <imgui.h>
@@ -12,6 +15,7 @@
 #include "app/panels/panels.hpp"
 #include "common/logging.hpp"
 #include "common/sram_file.hpp"
+#include "core/state/save_state.hpp"
 #include "core/state/state_hash.hpp"
 #include "core/util/hash.hpp"
 #include "core/version.hpp"
@@ -74,6 +78,18 @@ int App::run(const AppOptions& options) {
     if (options.rom && !openRom(*options.rom) && options.smokeFrames > 0) {
         log::shutdown();
         return kAppRomLoadFailed;
+    }
+    if (options.state) {
+        if (!machine_) {
+            logger().error("--state needs a ROM");
+            stateLoadFailed_ = true;
+        } else if (!loadState(*options.state, common::toUtf8(options.state->filename()))) {
+            stateLoadFailed_ = true;
+        }
+        if (stateLoadFailed_ && options.smokeFrames > 0) {
+            log::shutdown();
+            return kAppRomLoadFailed;
+        }
     }
 
     int frame = 0;
@@ -241,8 +257,33 @@ void App::drawMenuBar() {
         ImGui::MenuItem("Open Project...", nullptr, false, false);
         ImGui::MenuItem("Save Project", nullptr, false, false);
         ImGui::Separator();
-        ImGui::MenuItem("Save State", "Shift+F1", false, false);
-        ImGui::MenuItem("Load State", "F1", false, false);
+        const auto& hotkeys = input_.config().hotkeys;
+        const auto shortcut = [&](const std::string& action) {
+            const auto it = hotkeys.find(action);
+            return it != hotkeys.end() ? it->second.c_str() : nullptr;
+        };
+        if (ImGui::BeginMenu("Save State", machine_ != nullptr)) {
+            for (int slot = 1; slot <= kStateSlots; ++slot) {
+                if (ImGui::MenuItem(std::format("Slot {}", slot).c_str(),
+                                    shortcut(std::format("save-state-{}", slot)))) {
+                    saveState(slotPath(slot), std::format("slot {}", slot));
+                }
+            }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Load State", machine_ != nullptr)) {
+            for (int slot = 1; slot <= kStateSlots; ++slot) {
+                std::error_code ec;
+                const bool exists = std::filesystem::exists(slotPath(slot), ec);
+                const std::string label =
+                    exists ? std::format("Slot {}", slot) : std::format("Slot {} (empty)", slot);
+                if (ImGui::MenuItem(label.c_str(), shortcut(std::format("load-state-{}", slot)), false,
+                                    exists)) {
+                    loadState(slotPath(slot), std::format("slot {}", slot));
+                }
+            }
+            ImGui::EndMenu();
+        }
         ImGui::Separator();
         if (ImGui::MenuItem("Exit")) {
             quit_ = true;
@@ -364,6 +405,9 @@ int App::smokeCheck(const AppOptions& options) const {
     }
     if (options.rom && !rom_) {
         fail("ROM not loaded");
+    }
+    if (options.state && stateLoadFailed_) {
+        fail("save state not loaded");
     }
     if (rom_) {
         logger().info("smoke test: ROM info shows '{}' sha1={}", rom_->header.overseasTitle, rom_->sha1Hex);
@@ -502,21 +546,84 @@ std::string App::overlayText() const {
     } else if (fastForwardActive_ || fastForwardLatched_) {
         text += std::format(" | fast-forward {:.1f}x", framesPerSecond_ / 59.92);
     }
+    if (!notice_.empty() && SDL_GetPerformanceCounter() < noticeUntil_) {
+        text += " | " + notice_;
+    }
     return text;
 }
 
 void App::handleHotkeys() {
     for (const std::string& action : input_.takeHotkeys()) {
+        int slot = 0;
+        const auto slotOf = [&](std::string_view prefix) {
+            if (!action.starts_with(prefix) || action.size() != prefix.size() + 1) {
+                return false;
+            }
+            slot = action.back() - '0';
+            return slot >= 1 && slot <= kStateSlots;
+        };
         if (action == "pause") {
             running_ = !running_;
         } else if (action == "step-frame") {
             stepFrame_ = !running_;
+        } else if (slotOf("save-state-")) {
+            if (machine_) {
+                saveState(slotPath(slot), std::format("slot {}", slot));
+            }
+        } else if (slotOf("load-state-")) {
+            if (machine_) {
+                loadState(slotPath(slot), std::format("slot {}", slot));
+            }
         } else {
-            // Step instruction / step over / save and load state arrive with the debugger and save states
-            // (M06).
+            // Step instruction / step over arrive with the debugger (M06-02).
             logger().info("hotkey '{}' is not available yet", action);
         }
     }
+}
+
+std::filesystem::path App::slotPath(int slot) const {
+    return paths_.romDataDir(machineSha1_) / "states" /
+           std::format("slot{}{}", slot, std::string_view(state::kStateExtension));
+}
+
+void App::notify(std::string text) {
+    notice_ = std::move(text);
+    noticeUntil_ = SDL_GetPerformanceCounter() + SDL_GetPerformanceFrequency() * 3;
+}
+
+// Called between frames, so the machine is at an instruction boundary (spec 08).
+bool App::saveState(const std::filesystem::path& path, const std::string& label) {
+    const auto bytes = machine_->saveState(static_cast<std::uint64_t>(std::time(nullptr)));
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    std::ofstream f(path, std::ios::binary);
+    f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    if (!f) {
+        logger().error("cannot write save state '{}'", common::toUtf8(path));
+        notify("cannot save " + label);
+        return false;
+    }
+    logger().info("saved frame {} to '{}'", machine_->frame(), common::toUtf8(path));
+    notify("saved " + label);
+    return true;
+}
+
+bool App::loadState(const std::filesystem::path& path, const std::string& label) {
+    std::ifstream in(path, std::ios::binary);
+    const std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                          std::istreambuf_iterator<char>());
+    std::string error = bytes.empty() ? "the file is missing or empty" : "";
+    if (!error.empty() || !machine_->loadState(bytes, error)) {
+        logger().error("cannot load save state '{}': {}", common::toUtf8(path), error);
+        notify("cannot load " + label + ": " + error);
+        return false;
+    }
+    logger().info("loaded '{}' (frame {})", common::toUtf8(path), machine_->frame());
+    notify(std::format("loaded {} (frame {})", label, machine_->frame()));
+    audio_.flush();
+    accumulator_ = 0;
+    gameView_.upload(machine_->vdp());
+    return true;
 }
 
 void App::applyPadTypes() {

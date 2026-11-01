@@ -5,6 +5,7 @@
 #include <charconv>
 #include <chrono>
 #include <cstdio>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -30,6 +31,7 @@
 #include "common/wav.hpp"
 #include "core/cart/rom.hpp"
 #include "core/sched/machine.hpp"
+#include "core/state/save_state.hpp"
 #include "core/state/state_hash.hpp"
 #include "core/util/hash.hpp"
 #include "core/version.hpp"
@@ -79,11 +81,18 @@ Commands:
       --pad <3|6>       controller type of both ports (default 3)
       --wav <file>      record the mixed audio (16-bit stereo at the native
                         ~53,267 Hz rate) of the whole run
+      --load-state <file>  start from a save state (spec 08) instead of power
+                        on; the state must come from the same ROM image
+      --save-state-at <frame>:<file>  after <frame> frames, write a save
+                        state to <file> (repeatable); e.g. record once with
+                        --input and start later runs right before a level
 
-  trace --rom <file> [--lock-on <file>] [--frames <N>] [--start-frame <S>]
-        [--pc <lo>-<hi>] [--first] [--max-records <N>] [--out <file>]
+  trace --rom <file> [--lock-on <file>] [--load-state <file>] [--frames <N>]
+        [--start-frame <S>] [--pc <lo>-<hi>] [--first] [--max-records <N>]
+        [--out <file>]
       Run N frames (default 1) and write a text instruction trace (format in
-      docs/specs/08-debugger.md) of frames S..N-1 to --out (default stdout).
+      docs/specs/08-debugger.md) of the frames from S on to --out (default
+      stdout).
       --pc           only log instructions whose PC is in [lo, hi] (hex)
       --first        log each PC only the first time it executes
       --max-records  stop logging after N records
@@ -92,6 +101,11 @@ Commands:
       Show this help.
 
 Planned: coverage, export.
+
+Frame numbers: --frames is how many frames to run (from power on, or from the
+frame a --load-state state was saved at); every other frame number
+(--dump-frames, --check, --input, --save-state-at, --start-frame) counts from
+power on. Options can also be written --name=value.
 
 Global options:
   -h, --help      show help
@@ -121,6 +135,8 @@ struct Args {
     std::optional<std::string_view> sram;
     std::optional<std::string_view> pad;
     std::optional<std::string_view> wav;
+    std::optional<std::string_view> loadState;
+    std::vector<std::string_view> saveStateAt;
     bool checkScript = false;
     bool updateScript = false;
     bool help = false;
@@ -131,8 +147,22 @@ struct Args {
 Args parseArgs(int argc, char** argv) {
     Args a;
     for (int i = 1; i < argc; ++i) {
-        const std::string_view arg = argv[i];
+        std::string_view arg = argv[i];
+        // --name=value is the same as --name value.
+        std::optional<std::string_view> inlineValue;
+        if (arg.starts_with("--")) {
+            if (const auto eq = arg.find('='); eq != std::string_view::npos) {
+                inlineValue = arg.substr(eq + 1);
+                arg = arg.substr(0, eq);
+            }
+        }
+        bool tookValue = false;
         const auto value = [&](std::optional<std::string_view>& out) {
+            tookValue = true;
+            if (inlineValue) {
+                out = *inlineValue;
+                return;
+            }
             if (i + 1 >= argc) {
                 a.error = "missing value for " + std::string(arg);
                 return;
@@ -162,7 +192,7 @@ Args parseArgs(int argc, char** argv) {
         } else if (arg == "--max-records") {
             value(a.maxRecords);
         } else if (arg == "--check") {
-            if (i + 1 >= argc || std::string_view(argv[i + 1]).starts_with("--")) {
+            if (!inlineValue && (i + 1 >= argc || std::string_view(argv[i + 1]).starts_with("--"))) {
                 a.checkScript = true;  // scripted-input checkpoints
             } else {
                 value(a.check);
@@ -175,6 +205,14 @@ Args parseArgs(int argc, char** argv) {
             value(a.wav);
         } else if (arg == "--pad") {
             value(a.pad);
+        } else if (arg == "--load-state") {
+            value(a.loadState);
+        } else if (arg == "--save-state-at") {
+            std::optional<std::string_view> v;
+            value(v);
+            if (v) {
+                a.saveStateAt.push_back(*v);
+            }
         } else if (arg == "--update-script") {
             a.updateScript = true;
         } else if (arg == "--dump-frames") {
@@ -191,6 +229,9 @@ Args parseArgs(int argc, char** argv) {
             a.error = "unknown option " + std::string(arg);
         } else {
             a.positional.push_back(arg);
+        }
+        if (a.error.empty() && inlineValue && !tookValue) {
+            a.error = "option " + std::string(arg) + " takes no value";
         }
         if (!a.error.empty()) {
             break;
@@ -291,7 +332,62 @@ int loadMachine(const Args& a, LoadedMachine& out) {
     }
     out.sha1 = gen::toHex(gen::sha1(image));
     out.machine = std::make_unique<gen::Machine>(std::move(image), regions, config);
+    if (a.loadState) {
+        std::ifstream in(gen::common::fromUtf8(*a.loadState), std::ios::binary);
+        const std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                              std::istreambuf_iterator<char>());
+        std::string error;
+        if (bytes.empty()) {
+            error = "cannot read the file (missing or empty)";
+        }
+        if (!error.empty() || !out.machine->loadState(bytes, error)) {
+            std::fprintf(stderr, "gen_cli: --load-state %s: %s\n", std::string(*a.loadState).c_str(),
+                         error.c_str());
+            return kExitLoadError;
+        }
+        std::printf("state: loaded %s (frame %llu)\n", std::string(*a.loadState).c_str(),
+                    static_cast<unsigned long long>(out.machine->frame()));
+    }
     return kExitOk;
+}
+
+struct StateSave {
+    std::uint64_t frame = 0;
+    std::filesystem::path path;
+};
+
+// Parses the --save-state-at <frame>:<file> values; frames must lie after `start`.
+bool parseStateSaves(const Args& a, std::uint64_t start, std::vector<StateSave>& out, std::string& error) {
+    for (const std::string_view v : a.saveStateAt) {
+        const auto colon = v.find(':');
+        StateSave save;
+        if (colon == std::string_view::npos || colon + 1 >= v.size() ||
+            !parseU64(v.substr(0, colon), save.frame)) {
+            error = "--save-state-at expects <frame>:<file>, e.g. 1500:cpz.gst";
+            return false;
+        }
+        if (save.frame <= start) {
+            error = "--save-state-at frame " + std::to_string(save.frame) + " is not after the start frame " +
+                    std::to_string(start);
+            return false;
+        }
+        save.path = gen::common::fromUtf8(v.substr(colon + 1));
+        out.push_back(std::move(save));
+    }
+    return true;
+}
+
+bool writeState(gen::Machine& m, const std::filesystem::path& path) {
+    const auto bytes = m.saveState(static_cast<std::uint64_t>(std::time(nullptr)));
+    std::ofstream f(path, std::ios::binary);
+    f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    if (!f) {
+        std::fprintf(stderr, "gen_cli: cannot write %s\n", gen::common::toUtf8(path).c_str());
+        return false;
+    }
+    std::printf("state: saved frame %llu to %s\n", static_cast<unsigned long long>(m.frame()),
+                gen::common::toUtf8(path).c_str());
+    return true;
 }
 
 // Raw VDP memories next to a dumped frame: 24 registers, 64 KB VRAM, CRAM and VSRAM as big-endian words.
@@ -331,20 +427,30 @@ int cmdRun(const Args& a) {
     if (const int rc = loadMachine(a, lm); rc != kExitOk) {
         return rc;
     }
+    const std::uint64_t startFrame = lm.machine->frame();
+    std::uint64_t endFrame = startFrame + frames;
+    std::vector<StateSave> stateSaves;
+    if (std::string error; !parseStateSaves(a, startFrame, stateSaves, error)) {
+        return usageError(error);
+    }
+    for (const auto& s : stateSaves) {
+        endFrame = std::max(endFrame, s.frame);
+    }
     std::vector<std::uint64_t> dumps;
     if (a.dumpFrames) {
         std::string_view rest = *a.dumpFrames;
         while (!rest.empty()) {
             const auto comma = rest.find(',');
             std::uint64_t n = 0;
-            if (!parseU64(rest.substr(0, comma), n) || n == 0) {
-                return usageError("--dump-frames expects comma-separated frame numbers (>= 1)");
+            if (!parseU64(rest.substr(0, comma), n) || n <= startFrame) {
+                return usageError(
+                    "--dump-frames expects comma-separated frame numbers after the start frame");
             }
             dumps.push_back(n);
             rest = comma == std::string_view::npos ? std::string_view{} : rest.substr(comma + 1);
         }
         if (!dumps.empty()) {
-            frames = std::max(frames, *std::max_element(dumps.begin(), dumps.end()));
+            endFrame = std::max(endFrame, *std::max_element(dumps.begin(), dumps.end()));
         }
     }
     const std::filesystem::path outDir = a.out ? gen::common::fromUtf8(*a.out) : std::filesystem::path(".");
@@ -375,7 +481,7 @@ int cmdRun(const Args& a) {
             std::fprintf(stderr, "gen_cli: %s: %s\n", std::string(*a.input).c_str(), error.c_str());
             return kExitUsage;
         }
-        frames = std::max(frames, script->lastFrame());
+        endFrame = std::max(endFrame, script->lastFrame());
         if (!script->romSha1.empty() && script->romSha1 != lm.sha1) {
             std::fprintf(stderr, "gen_cli: warning: the script is for SHA-1 %s, the image is %s\n",
                          script->romSha1.c_str(), lm.sha1.c_str());
@@ -419,12 +525,12 @@ int cmdRun(const Args& a) {
             return kExitCheckFailure;
         }
         for (const auto& c : checks) {
-            frames = std::max(frames, c.frame);
+            endFrame = std::max(endFrame, c.frame);
         }
     }
     int mismatches = 0;
-    if (a.frameLog || !dumps.empty() || !checks.empty() || script || a.wav) {
-        while (m.frame() < frames) {
+    if (a.frameLog || !dumps.empty() || !checks.empty() || script || a.wav || !stateSaves.empty()) {
+        while (m.frame() < endFrame) {
             const std::uint64_t f = m.frame();
             if (player) {
                 player->beforeFrame(m);
@@ -487,6 +593,11 @@ int cmdRun(const Args& a) {
                     std::printf("  wrote %s\n", gen::common::toUtf8(file).c_str());
                 }
             }
+            for (const auto& s : stateSaves) {
+                if (s.frame > f && s.frame <= m.frame() && !writeState(m, s.path)) {
+                    return kExitLoadError;
+                }
+            }
             if (std::any_of(dumps.begin(), dumps.end(),
                             [&](std::uint64_t n) { return n > f && n <= m.frame(); })) {
                 const auto& v = m.vdp();
@@ -502,14 +613,15 @@ int cmdRun(const Args& a) {
             }
         }
     } else {
-        r = m.run(gen::RunLimit::frames(frames));
+        r = m.run(gen::RunLimit::frames(endFrame - startFrame));
     }
+    const std::uint64_t framesRun = m.frame() - startFrame;
     const double ms =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     const auto& st = m.stats();
     const auto& cpu = m.cpu().state();
     const std::string hash = gen::state::hashToHex(m.stateHash());
-    const double msPerFrame = frames != 0 ? ms / static_cast<double>(frames) : 0.0;
+    const double msPerFrame = framesRun != 0 ? ms / static_cast<double>(framesRun) : 0.0;
     if (a.json) {
         nlohmann::json j;
         j["title"] = lm.title;
@@ -617,7 +729,6 @@ int cmdTrace(const Args& a) {
     }
     gen::instrument::TraceConfig config;
     config.startFrame = startFrame;
-    config.endFrame = frames;
     config.firstExecutionOnly = a.firstOnly;
     if (!parseU64(a.maxRecords, config.maxRecords)) {
         return usageError("--max-records expects a non-negative integer");
@@ -636,6 +747,8 @@ int cmdTrace(const Args& a) {
     if (const int rc = loadMachine(a, lm); rc != kExitOk) {
         return rc;
     }
+    const std::uint64_t base = lm.machine->frame();
+    config.endFrame = base + frames;
     std::ofstream file;
     std::ostream* out = &std::cout;
     if (a.out) {
@@ -664,8 +777,9 @@ int cmdTrace(const Args& a) {
     if (a.out) {
         file.close();
         std::printf("trace: %llu records, frames %llu-%llu, state hash %s\n",
-                    static_cast<unsigned long long>(records), static_cast<unsigned long long>(startFrame),
-                    static_cast<unsigned long long>(frames == 0 ? 0 : frames - 1),
+                    static_cast<unsigned long long>(records),
+                    static_cast<unsigned long long>(std::max(startFrame, base)),
+                    static_cast<unsigned long long>(frames == 0 ? base : base + frames - 1),
                     gen::state::hashToHex(lm.machine->stateHash()).c_str());
     }
     return lm.machine->stats().faults != 0 ? kExitCheckFailure : kExitOk;

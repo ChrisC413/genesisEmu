@@ -4,6 +4,7 @@
 #include <bit>
 #include <span>
 
+#include "core/state/archive.hpp"
 #include "core/state/state_hash.hpp"
 
 namespace gen::vdp {
@@ -402,6 +403,54 @@ std::uint64_t Vdp::frameHash() const {
         h.bytes(std::span<const std::uint8_t>(row, static_cast<std::size_t>(frameWidth_) * 4));
     }
     return h.digest();
+}
+
+}  // namespace gen::vdp
+
+namespace gen::vdp {
+
+void Vdp::serialize(state::Archive& ar) {
+    VdpState& v = s_;
+    ar.bytes(v.regs);
+    ar.bytes(v.vram);
+    ar.u16s(v.cram);
+    ar.u16s(v.vsram);
+    ar.bytes(v.satCache);
+    ar.u16(v.address);
+    ar.u16(v.addressHigh);
+    ar.u8(v.code);
+    for (bool* b : {&v.pending, &v.fillPending, &v.vintPending, &v.hintPending, &v.spriteOverflow,
+                    &v.spriteCollision, &v.oddFrame, &v.pal, &v.z80Int}) {
+        ar.boolean(*b);
+    }
+    ar.i32(v.hintCounter);
+    ar.i32(v.line);
+    ar.u16(v.readBuffer);
+    ar.i32(v.fifoUsed);
+    ar.boolean(v.dmaActive);
+    ar.u32(v.dmaRemaining);
+    ar.u32(v.dmaSource);
+    ar.u64(v.dmaCredit);
+    ar.u32(v.dmaBusyBytes);
+    ar.boolean(v.prevLineDotOverflow);
+    // Output side: frame size, the visible pixels and the per-line CRAM write count in progress.
+    ar.i32(frameWidth_);
+    ar.i32(frameHeight_);
+    if (ar.loading() &&
+        (frameWidth_ <= 0 || frameWidth_ > kFbWidth || frameHeight_ <= 0 || frameHeight_ > kFbHeight)) {
+        ar.fail("bad frame size");
+        frameWidth_ = 320;
+        frameHeight_ = 224;
+        return;
+    }
+    for (int y = 0; y < frameHeight_; ++y) {
+        auto* row = reinterpret_cast<std::uint8_t*>(fb_.data() + static_cast<std::size_t>(y) * kFbWidth);
+        ar.bytes(std::span<std::uint8_t>(row, static_cast<std::size_t>(frameWidth_) * 4));
+    }
+    ar.u16(cramWritesThisLine_);
+    if (ar.loading()) {
+        paletteDirty_ = true;
+    }
 }
 
 }  // namespace gen::vdp

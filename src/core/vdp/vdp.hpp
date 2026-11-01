@@ -9,6 +9,10 @@
 
 #include "core/hooks.hpp"
 
+namespace gen::state {
+class Archive;
+}
+
 namespace gen::vdp {
 
 enum class DmaKind : std::uint8_t { MemoryToVdp, Fill, Copy };
@@ -179,6 +183,8 @@ public:
     const VdpState& state() const { return s_; }
     // After restoring state() from outside (save states, tests): rebuild derived caches.
     void invalidateCaches() { paletteDirty_ = true; }
+    // Save states: VdpState plus the visible framebuffer, so a loaded state shows its picture at once.
+    void serialize(state::Archive& ar);
 
 private:
     int autoIncrement() const { return s_.regs[15]; }
