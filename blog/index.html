@@ -21,13 +21,13 @@
 </div></header>
 <main>
 <section class="hero">
-<p class="kicker">Build notes · 37 articles</p>
+<p class="kicker">Build notes · 46 articles</p>
 <h1>How genesisEmu is built</h1>
 <p class="lede">genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering and modding the
 Sonic games. The project is written spec-first: every feature starts as a short story with acceptance
 criteria. This series has one article per finished story. Each one covers what the feature does, why an
 emulator needs it, and how this code base builds and tests it.</p>
-<p class="meta">37 articles · about 3 hours of reading ·
+<p class="meta">46 articles · about 3 hours of reading ·
 <a href="https://github.com/ChrisC413/genesisEmu">source on GitHub</a> · start with <a href="posts/M00-01-repo-and-build-system.html">M00-01</a></p>
 </section>
 <nav class="toc" aria-label="Milestones">
@@ -35,6 +35,7 @@ emulator needs it, and how this code base builds and tests it.</p>
 <a href="#m01">M01 · 68000 CPU</a>
 <a href="#m02">M02 · System bus & boot</a>
 <a href="#m03">M03 · VDP video</a>
+<a href="#m04">M04 · Input, Z80, playable</a>
 </nav>
 <section class="milestone" id="m00">
 <div class="milestone-head"><span class="tag">M00 · 7 stories</span><h2>Foundation</h2><p>Repository, build, CI and an application shell that loads a ROM, on Windows and macOS.</p></div>
@@ -91,6 +92,20 @@ emulator needs it, and how this code base builds and tests it.</p>
 <li><a href="posts/M03-09-interlace-mode-2.html"><span class="pid">M03-09</span><span class="ptitle">Double resolution for two players</span><span class="pblurb">Interlace mode 2: 8×16 tiles, doubled Y coordinates for planes and sprites, an 11-bit vertical scroll, and a 320×448 framebuffer woven from alternating fields.</span><span class="pmeta">4 min read</span></a></li>
 <li><a href="posts/M03-10-frame-presentation.html"><span class="pid">M03-10</span><span class="ptitle">From framebuffer to screen, at 59.92 frames per second</span><span class="pblurb">Showing the emulator in the app: framebuffer to GL texture, fit or integer scaling with 4:3 correction, vsync- or clock-paced 59.92 Hz output, fast-forward, Run/Pause/Reset.</span><span class="pmeta">4 min read</span></a></li>
 <li><a href="posts/M03-11-video-regression-tests.html"><span class="pid">M03-11</span><span class="ptitle">Golden frames without golden images</span><span class="pblurb">Video regression tests: 19 frame-hash checkpoints across the three games, gen_cli run --check, a local frame cache, and expected/actual/diff PNGs written only on mismatch.</span><span class="pmeta">4 min read</span></a></li>
+</ul>
+</section>
+<section class="milestone" id="m04">
+<div class="milestone-head"><span class="tag">M04 · 9 stories</span><h2>Input, Z80, playable</h2><p>Controllers, a hand-written Z80, SRAM and the point where all three games are playable (silently).</p></div>
+<ul class="post-list">
+<li><a href="posts/M04-01-controller-io.html"><span class="pid">M04-01</span><span class="ptitle">Eight buttons through six wires</span><span class="pblurb">The controller port protocol: TH-select multiplexing for 3-button pads, the 6-button identification sequence with its timeout, per-port pad types, and input latched once per frame.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M04-02-input-mapping.html"><span class="pid">M04-02</span><span class="ptitle">Keyboards, gamepads and "press a key"</span><span class="pblurb">Host input: a default keymap from the spec, SDL3 gamepad hot-plug, an Input panel with press-a-key capture for every binding and hotkey, and bindings persisted in the JSON config.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M04-03-scripted-input-for-tests.html"><span class="pid">M04-03</span><span class="ptitle">Teaching the test suite to play Sonic</span><span class="pblurb">A line-based scripted-input format for regression tests: button events per frame, frame/state/audio hash checkpoints, gen_cli --input/--check/--update-script, and three recorded runs.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M04-04-z80-core-and-harness.html"><span class="pid">M04-04</span><span class="ptitle">A second CPU, and two ways to check it</span><span class="pblurb">The Z80 core's framework (Z80State, BusZ80, prefix decoding, T-state counting, hooks) and its two test harnesses: SingleStepTests vectors and ZEXDOC/ZEXALL through a tiny CP/M shim.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M04-05-z80-instruction-set.html"><span class="pid">M04-05</span><span class="ptitle">Every Z80 opcode, including the ones Zilog never documented</span><span class="pblurb">The full Z80 instruction set, documented and undocumented: X/Y flags, WZ/MEMPTR, the Q latch for SCF/CCF, block-instruction repeat flags, interrupt modes and HALT, verified 100% by SingleStepTests and ZEXALL.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M04-06-z80-disassembler.html"><span class="pid">M04-06</span><span class="ptitle">Reading the sound driver: a Z80 disassembler</span><span class="pblurb">A Z80 disassembler in AS syntax that shares the 68000 disassembler's Instruction and FlowType types, handles undocumented opcodes, and round-trips every prefix group through AS.</span><span class="pmeta">3 min read</span></a></li>
+<li><a href="posts/M04-07-z80-system-integration.html"><span class="pid">M04-07</span><span class="ptitle">Two CPUs sharing one machine</span><span class="pblurb">Running the Z80 inside the machine: per-line catch-up, BUSREQ/RESET arbitration tightened, the bank window with stall costs and an onZ80Window hook, the V-blank interrupt, and a log of sound-chip writes.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M04-08-sram-and-cart-devices.html"><span class="pid">M04-08</span><span class="ptitle">Battery saves and a socket for custom hardware</span><span class="pblurb">A pluggable cartridge-device chain on /TIME and cartridge space, the SRAM controller with byte lanes and $A130F1 switching, and .srm persistence keyed by ROM SHA-1.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M04-09-playability-milestone.html"><span class="pid">M04-09</span><span class="ptitle">Playable, at 14% of one core</span><span class="pblurb">The M04 exit check: scripted stand-ins for GHZ1, EHZ1 and AIZ1, performance of 0.55-0.75 ms per frame and about 14% of a core for the whole app, a bug triage, and an honest open box.</span><span class="pmeta">3 min read</span></a></li>
 </ul>
 </section>
 </main>

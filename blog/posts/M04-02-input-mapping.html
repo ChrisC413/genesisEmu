@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keyboards, gamepads and &quot;press a key&quot; | genesisEmu</title>
+<meta name="description" content="The emulated pad needs a physical counterpart. M04-02 maps keyboards and SDL3 gamepads onto it, lets you rebind everything, and saves your choices in the config.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Keyboards, gamepads and &quot;press a key&quot; | genesisEmu">
+<meta property="og:description" content="The emulated pad needs a physical counterpart. M04-02 maps keyboards and SDL3 gamepads onto it, lets you rebind everything, and saves your choices in the config.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m04">M04 · Input, Z80, playable</a> · Story 2 of 9</p>
+<h1>Keyboards, gamepads and "press a key"</h1>
+<p class="subtitle">The emulated pad needs a physical counterpart. M04-02 maps keyboards and SDL3 gamepads onto it, lets you rebind everything, and saves your choices in the config.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-02-input-mapping.md">Story M04-02</a></div>
+<div class="prose">
+<p>M04-01 taught the emulated console to read a pad. M04-02 is the other half: turning a keyboard or a modern
+gamepad into button presses on that pad, in a way the player can configure. It lives entirely in the app
+layer, in <code>app::InputManager</code>. The core only ever sees a 16-bit button mask per port.</p>
+
+<h2>Defaults that make sense</h2>
+
+<p>Spec 07 defines a default keymap, and <code>common::defaultInputConfig()</code> encodes it: arrow keys
+for the D-pad, A/S/D for the A, B and C buttons, Q/W/E for X/Y/Z, Return for Start and Right Shift for Mode.
+On a gamepad the Genesis's A-B-C row maps onto the west, south and east face buttons, a left-to-right row
+as on the original pad, and X/Y/Z use the shoulders and the top face button:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">c.gamepad = {{"UP", "dpup"},     {"DOWN", "dpdown"},
+             {"LEFT", "dpleft"}, {"RIGHT", "dpright"},
+             {"A", "x"},         {"B", "a"},
+             {"C", "b"},         {"X", "leftshoulder"},</code></pre><figcaption>Part of <code>defaultInputConfig()</code> in <code>src/common/config.cpp</code>. Names are SDL's.</figcaption></figure>
+
+<p>The left analogue stick doubles as the D-pad, with a threshold at about half deflection, because many
+modern controllers have a mushy D-pad and a good stick.</p>
+
+<h2>Hot-plug</h2>
+
+<p>SDL3 reports gamepads as they're connected and disconnected. The input manager opens each new gamepad and
+closes it on removal; the first gamepad drives port 1, the second port 2. Nothing has to be configured
+before plugging in.</p>
+
+<h2>Rebinding by capture</h2>
+
+<p>The <strong>Input</strong> panel (Emulation &gt; Input...) lists every pad button for each port, the
+gamepad binding for each button, and every hotkey. Clicking a binding enters <em>capture</em> mode: the panel
+says "Press a key... (Esc cancels)", and the next key press (or gamepad button) becomes the new binding.
+Capture state is a tiny struct that remembers what's being rebound:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">struct Capture {
+    int port = -1;  // keyboard binding of pad button `button` on `port`
+    int button = -1;
+    bool gamepad = false;  // gamepad binding of pad button `button`
+    std::string hotkey;    // hotkey action
+    bool active() const { return port &gt;= 0 || gamepad || !hotkey.empty(); }
+};</code></pre><figcaption>The capture state in <code>InputManager</code>. Exactly one kind of binding is captured at a time.</figcaption></figure>
+
+<p>While capture is active, keys go to the capture and not to the game, so binding "A" to a pad button
+doesn't also press it. Likewise, when an ImGui text field has focus, keys reach neither the game nor the
+hotkeys.</p>
+
+<blockquote class="pull"><p>Bindings are stored by name, like "Return" or "leftshoulder", so the config
+file stays readable and editable by hand.</p></blockquote>
+
+<h2>Hotkeys for the future debugger</h2>
+
+<p>The same panel binds the emulator's own actions: pause (F5), step one frame (F6, while paused),
+fast-forward (hold Tab), step instruction (F11), step over (F10), and save or load state (Shift+F1–F4 and
+F1–F4). Pause, frame step and fast-forward worked straight away. The instruction-level and save-state
+actions belong to the debugger milestone, M06, so for now they log "not available yet". Defining the
+table early means the debugger only needs to add handlers, and users' custom bindings will already be in
+place.</p>
+
+<h2>Persisted, and forward-compatible</h2>
+
+<p>All of this goes into the JSON config from M00-03, in new <code>input</code> and <code>view</code>
+sections. Bindings are stored by name, which keeps the file readable and editable by hand. The
+<code>view</code> section holds the game-view settings from M03-10 (scale, aspect correction, filtering,
+overlay), which had been left unsaved there. Because hotkeys are read <em>over</em> the defaults, a new
+action added in a later version gets its default key even in an old config file:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if (const json* hot = r.object(*input, "hotkeys", "input.")) {
+    readStringMap(*hot, c.input.hotkeys);  // over the defaults: new actions keep their default key
+}</code></pre><figcaption>Hotkeys merge over the defaults; pad bindings replace them wholesale.</figcaption></figure>
+
+<p>A unit test, <em>View settings and input bindings round-trip (M04-02)</em>, writes a config with
+non-default bindings and view settings, reads it back and compares.</p>
+
+<h2>What wasn't verified</h2>
+
+<p>The story is marked "Implemented; gamepad hot-plug needs a manual check", and both of its gaps are
+spelled out. No controller was attached to the build machine, so plugging and unplugging a gamepad while
+running, and the manual test with Xbox and PlayStation pads, were left for a person to do. The persistence
+criterion is checked by the unit test. Real-world input was exercised indirectly through the scripted tests
+of M04-03, which drive the same emulated pad.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-02-input-mapping.md">Story M04-02</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/app/input.hpp"><code>src/app/input.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/app/input.cpp"><code>src/app/input.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/common/config.cpp"><code>src/common/config.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/config_test.cpp"><code>tests/unit/config_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M04-01-controller-io.html"><span class="label">&larr; Previous</span><span class="title">M04-01 · Eight buttons through six wires</span></a>
+<a class="next" href="M04-03-scripted-input-for-tests.html"><span class="label">Next &rarr;</span><span class="title">M04-03 · Teaching the test suite to play Sonic</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

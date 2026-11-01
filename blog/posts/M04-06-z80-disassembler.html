@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reading the sound driver: a Z80 disassembler | genesisEmu</title>
+<meta name="description" content="The Z80 code in a Genesis cartridge is a small program that matters a lot for modding. Its disassembler shares its structure with the 68000&#x27;s and passes the same reassembly test.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Reading the sound driver: a Z80 disassembler | genesisEmu">
+<meta property="og:description" content="The Z80 code in a Genesis cartridge is a small program that matters a lot for modding. Its disassembler shares its structure with the 68000&#x27;s and passes the same reassembly test.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m04">M04 · Input, Z80, playable</a> · Story 6 of 9</p>
+<h1>Reading the sound driver: a Z80 disassembler</h1>
+<p class="subtitle">The Z80 code in a Genesis cartridge is a small program that matters a lot for modding. Its disassembler shares its structure with the 68000's and passes the same reassembly test.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>3 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-06-z80-disassembler.md">Story M04-06</a></div>
+<div class="prose">
+<p>Every Sonic game ships a Z80 sound driver inside its ROM, copied into the Z80's RAM at boot (the
+68000's side of that was M02-03). For the project's modding goals, that driver matters. A spliced special
+stage has to play its music through it, and understanding what the driver expects means reading its code.
+M04-06 built the Z80 disassembler, the counterpart of the 68000 one from M01-12.</p>
+
+<h2>One output structure for both CPUs</h2>
+
+<p>The Z80 disassembler doesn't define its own result type. It reuses the 68000 disassembler's
+<code>Instruction</code>, <code>FlowType</code> and <code>SymbolResolver</code>:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">using FlowType = disasm68k::FlowType;
+using Instruction = disasm68k::Instruction;
+using SymbolResolver = disasm68k::SymbolResolver;</code></pre><figcaption><code>src/analysis/disasmz80/disasmz80.hpp</code>: the same types as the 68000 disassembler.</figcaption></figure>
+
+<p>Tools built on top, such as the planned debugger views and code discovery for the ROM map, can handle
+both CPUs with one code path. An instruction has a mnemonic and operands, a length, a flow type, a
+static target when known, and the addresses it references. Some flow mappings are Z80-specific: a conditional
+<code>RET</code> is a conditional branch with no target, <code>RST n</code> is a call to its fixed vector,
+and <code>HALT</code> is a stop.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">CHECK(dis({0xC8}).flow == dz::FlowType::ConditionalBranch);
+CHECK(dis({0xE9}).flow == dz::FlowType::JumpIndirect);
+CHECK(dis({0xFF}).target == std::optional&lt;std::uint32_t&gt;(0x38));
+CHECK(dis({0x76}).flow == dz::FlowType::Stop);</code></pre><figcaption>Flow information in the unit tests: <code>RST 38h</code> (<code>$FF</code>) is a call to <code>$38</code>; HALT is a stop.</figcaption></figure>
+
+<h2>Syntax for the undocumented</h2>
+
+<p>The output targets The Macro Assembler AS with <code>cpu z80undoc</code> and <code>relaxed on</code>, the
+same assembler used for the 68000 code (D-010). Undocumented instructions need names, and AS has
+conventions for them: <code>ixh</code> and <code>ixl</code> for the halves of IX, <code>sli</code> for the
+undocumented shift, <code>in f,(c)</code> for the input that only sets flags, and the
+<code>rlc (ix+$03),b</code> form for the indexed bit operations that also copy the result into a register:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">CHECK(dis({0xDD, 0x67}).text() == "ld\tixh,a");
+CHECK(dis({0xDD, 0x66, 0x02}).text() == "ld\th,(ix+$02)");  // H stays H next to (IX+d)
+CHECK(dis({0xCB, 0x30}).text() == "sli\tb");
+CHECK(dis({0xDD, 0xCB, 0x03, 0x00}).text() == "rlc\t(ix+$03),b");
+CHECK(dis({0xED, 0x70}).text() == "in\tf,(c)");</code></pre><figcaption>Golden text for undocumented forms, from <code>tests/unit/disasmz80_test.cpp</code>.</figcaption></figure>
+
+<p>The second line is the same subtlety the CPU core had to handle (M04-05). With an index prefix, a plain
+register next to <code>(IX+d)</code> stays the real H or L, not the half of IX.</p>
+
+<blockquote class="pull"><p>When an encoding has no text form that assembles back to the same bytes, the
+honest output is the bytes themselves.</p></blockquote>
+
+<h2>When text can't round-trip</h2>
+
+<p>As with the 68000, some encodings can't be reproduced by an assembler. A <code>DD</code> prefix in front
+of an instruction that doesn't use HL changes nothing, so the assembler would never emit it. Several
+<code>ED</code> opcodes are mirrors of <code>NEG</code>, <code>RETN</code> or <code>IM</code>. <code>ED 63</code>
+is a longer duplicate encoding of <code>LD (nn),HL</code>. Undefined <code>ED</code> opcodes do nothing. All
+of these become <code>db</code> lines with the raw bytes, and their flow is marked invalid:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">CHECK(dis({0xED, 0x4C}).text() == "db\t$ED,$4C");                      // NEG mirror
+CHECK(dis({0xED, 0x63, 0x00, 0x10}).text() == "db\t$ED,$63,$00,$10");  // long LD (nn),HL</code></pre><figcaption>Encodings AS can't reproduce are emitted as data.</figcaption></figure>
+
+<h2>The round trip</h2>
+
+<p>The acceptance criterion was the same as for the 68000: disassemble everything, reassemble with AS,
+compare bytes. <code>gen_disasmz80_roundtrip</code> builds a corpus of all 256 opcodes in each of the seven
+prefix groups (unprefixed, <code>CB</code>, <code>ED</code>, <code>DD</code>, <code>FD</code>,
+<code>DDCB</code>, <code>FDCB</code>), each with two sets of operand bytes. That's 3,584 items and 8,358 bytes.
+The listing goes through AS, and the result must match the corpus byte for byte. It does, and the test runs
+in CI as <code>analysis.disasmz80_roundtrip</code>, using the same pinned copy of AS as the 68000 test.</p>
+
+<p>Relative jumps (<code>JR</code>, <code>DJNZ</code>) print their target address rather than the offset, the
+same convention as the 68000 branches, so the listing stays readable and AS computes the displacement.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-06-z80-disassembler.md">Story M04-06</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/analysis/disasmz80/disasmz80.hpp"><code>src/analysis/disasmz80/disasmz80.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/analysis/disasmz80/disasmz80.cpp"><code>src/analysis/disasmz80/disasmz80.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/disasmz80_test.cpp"><code>tests/unit/disasmz80_test.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/analysis/disasmz80_roundtrip.cpp"><code>tests/analysis/disasmz80_roundtrip.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M04-05-z80-instruction-set.html"><span class="label">&larr; Previous</span><span class="title">M04-05 · Every Z80 opcode, including the ones Zilog never documented</span></a>
+<a class="next" href="M04-07-z80-system-integration.html"><span class="label">Next &rarr;</span><span class="title">M04-07 · Two CPUs sharing one machine</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

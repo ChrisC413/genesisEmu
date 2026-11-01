@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eight buttons through six wires | genesisEmu</title>
+<meta name="description" content="A Genesis pad has more buttons than data lines. Games read it in phases by toggling one select line, and the six-button pad adds a secret handshake on top.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Eight buttons through six wires | genesisEmu">
+<meta property="og:description" content="A Genesis pad has more buttons than data lines. Games read it in phases by toggling one select line, and the six-button pad adds a secret handshake on top.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m04">M04 · Input, Z80, playable</a> · Story 1 of 9</p>
+<h1>Eight buttons through six wires</h1>
+<p class="subtitle">A Genesis pad has more buttons than data lines. Games read it in phases by toggling one select line, and the six-button pad adds a secret handshake on top.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-01-controller-io.md">Story M04-01</a></div>
+<div class="prose">
+<p>M02 gave genesisEmu controller ports that always reported "nothing pressed". M04's goal was to make the
+three games playable, and that starts with buttons. The Genesis controller connector has only six
+data lines for the pad to drive, plus one select line, <strong>TH</strong>, that the console drives. A
+3-button pad has eight inputs (four directions, A, B, C and Start), so it multiplexes. A 6-button pad has
+twelve, and multiplexes more cleverly still.</p>
+
+<h2>The 3-button protocol</h2>
+
+<p>The game writes TH high or low through the port's data register, then reads the other bits back. The pad
+answers differently for each level. Buttons are active-low: 0 means pressed.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>TH</th><th>bit 5</th><th>bit 4</th><th>bit 3</th><th>bit 2</th><th>bit 1</th><th>bit 0</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>C</td><td>B</td><td>Right</td><td>Left</td><td>Down</td><td>Up</td></tr>
+<tr><td>0</td><td>Start</td><td>A</td><td>0</td><td>0</td><td>Down</td><td>Up</td></tr>
+</tbody></table></div>
+
+<p>The two forced zeros in the TH-low phase are how a game tells a pad from an empty port, whose pulled-up
+lines read all ones. Sonic 1 and 2 read the pad in exactly two phases, and the first unit test replays that
+sequence:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">// Sonic 1/2 (ReadJoypads): TH=0 read -&gt; Start/A, TH=1 read -&gt; C/B/directions. Active low.
+CHECK(readTh(io, false, 100) == 0x13);  // S pressed (bit 5 low), A released, bits 3-2 low, D U released
+CHECK(readTh(io, true, 200) == 0x17);   // C pressed (bit 5 low), B released, Right pressed (bit 3 low)</code></pre><figcaption><code>tests/unit/io_test.cpp</code>, with Right, C and Start held.</figcaption></figure>
+
+<h2>The 6-button handshake</h2>
+
+<p>The 6-button pad, released later, had to stay compatible with games that only know the 3-button
+protocol. It works by counting TH pulses. The first two cycles return normal 3-button data. On the third
+TH-low read, bits 0–3 all read 0, which a 3-button pad can never produce, and that identifies the pad.
+The fourth TH-high read returns the extra buttons: X, Y, Z and Mode. Then the cycle starts again.</p>
+
+<figure class="figure">
+<svg viewBox="0 0 640 150" role="img" aria-labelledby="m0401t">
+<title id="m0401t">Six-button read sequence: phases 1 and 2 are normal data; phase 3 low identifies the pad; phase 4 high returns X, Y, Z and Mode; a pause of about 1.5 ms resets the count.</title>
+<path class="dg-accent-line" d="M20 40 H70 V90 H120 V40 H170 V90 H220 V40 H270 V90 H320 V40 H370 V90 H420 V40 H470"/>
+<text class="dg-small" x="20" y="28">TH</text>
+<text class="dg-small" x="95" y="112" text-anchor="middle">1: normal</text>
+<text class="dg-small" x="195" y="112" text-anchor="middle">2: normal</text>
+<text class="dg-small" x="295" y="112" text-anchor="middle">3: ID (0000)</text>
+<text class="dg-small" x="345" y="30" text-anchor="middle">4: X Y Z Mode</text>
+<rect class="dg-warm" x="270" y="92" width="50" height="6"/>
+<rect class="dg-warm" x="320" y="34" width="50" height="6"/>
+<path class="dg-line" d="M480 65 H620"/>
+<text class="dg-small" x="550" y="56" text-anchor="middle">~1.5 ms idle</text>
+<text class="dg-small" x="550" y="84" text-anchor="middle">count resets</text>
+</svg>
+<figcaption>Counting TH falling edges. A 3-button pad ignores the count; a 6-button pad changes its answer on the third and fourth cycles.</figcaption>
+</figure>
+
+<p>If TH doesn't change for about 1.5 ms, the pad resets its counter. That's what keeps a game that reads
+once per frame in the "normal" phases. The emulator measures the timeout in master clocks, so it's
+deterministic:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if (mclk - s_.thChangedAt[p] &gt; kSixButtonTimeoutMclk) {
+    s_.thCount[p] = 0;
+}
+if (th != s_.th[p]) {
+    if (!th &amp;&amp; s_.thCount[p] &lt; 4) {
+        ++s_.thCount[p];
+    }
+    s_.th[p] = th;
+    s_.thChangedAt[p] = mclk;
+}</code></pre><figcaption><code>Io::updateTh</code>: the counter resets after the timeout and advances on each falling edge of TH.</figcaption></figure>
+
+<p>The second unit test walks the whole sequence, checks the identification and extra-button phases, waits
+past the timeout and confirms the next read is phase 1 again rather than the identification pattern.</p>
+
+<blockquote class="pull"><p>A pad reports buttons when the console asks, not when the player presses them.
+So the emulator samples the host's input once per frame, at a fixed point.</p></blockquote>
+
+<h2>Input and determinism</h2>
+
+<p>Where host input enters the machine matters for determinism. If a key press reached the emulated pad at
+whatever moment the host's event arrived, two runs with "the same" input could diverge depending on
+timing. genesisEmu latches input <strong>once per frame</strong>, at the frame boundary.
+<code>Machine::setInput</code> only records the buttons for a port; the scheduler copies them into the I/O
+chip when the next frame starts:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">// Controller input (M04-01): the buttons (bus::PadButton mask) of pad `port` (0 or 1). Latched into the
+// I/O chip once per frame, at the start of the next frame, so a run is deterministic (spec 07).
+void setInput(int port, std::uint16_t buttons) {
+    pendingInput_[static_cast&lt;std::size_t&gt;(port &amp; 1)] = buttons;
+}</code></pre><figcaption><code>Machine::setInput</code>. The comment states the rule.</figcaption></figure>
+
+<p>A Genesis game samples its pad once per frame anyway, so players notice no difference. But a recording
+of "button X held from frame N to frame M" now reproduces a run exactly, and that's what the scripted-input
+tests in M04-03 are built on.</p>
+
+<p>Each port has a pad type (3-button, 6-button or none), set from the config in the app or with
+<code>--pad</code> on the command line. A port with no pad reads as pulled-up inputs.</p>
+
+<h2>Verified with the games</h2>
+
+<p>The second criterion, that Sonic games detect a 3-button pad, was checked with scripted input. Sonic 1
+and 2 start a game when Start is pressed, and Sonic runs and jumps on command. Sonic 3 &amp; Knuckles
+navigates its data-select screen. All three runs are recorded as scripts in <code>tests/scripts/</code>
+with hash checkpoints, so this behaviour is regression-tested from then on.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-01-controller-io.md">Story M04-01</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/bus/io.cpp"><code>src/core/bus/io.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/bus/io.hpp"><code>src/core/bus/io.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/sched/machine.hpp"><code>src/core/sched/machine.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/io_test.cpp"><code>tests/unit/io_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M03-11-video-regression-tests.html"><span class="label">&larr; Previous</span><span class="title">M03-11 · Golden frames without golden images</span></a>
+<a class="next" href="M04-02-input-mapping.html"><span class="label">Next &rarr;</span><span class="title">M04-02 · Keyboards, gamepads and "press a key"</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

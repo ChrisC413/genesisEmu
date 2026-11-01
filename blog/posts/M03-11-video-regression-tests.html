@@ -108,8 +108,10 @@ wrote the <code>_actual</code>, <code>_expected</code> and <code>_diff</code> PN
 <p>When emulation changes on purpose, say a more accurate sprite rule changes one frame, the golden hash has
 to change too. Spec 13 requires that to happen in its own commit, tagged <code>[golden-update]</code>, with a
 reason. A changed hash is never buried in an unrelated change, and the history records each time the
-"correct" picture changed and why. The M04 and M05 milestones added more golden data, for scripted input and
-audio, using the same rule.</p>
+"correct" picture changed and why. When the Z80 started running in M04 and shifted attract-mode timing by a few frames,
+most of these hashes were updated that way, after the changed frames were compared with the cached ones:
+same scenes, small position shifts. M04 and M05 also added scripted-input checkpoints with frame, state and
+audio hashes, under the same rule.</p>
 </div>
 <p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
 <aside class="sources"><h2>Where to look in the repo</h2><ul>
@@ -123,6 +125,7 @@ audio, using the same rule.</p>
 </article>
 <nav class="postnav" aria-label="More articles">
 <a class="prev" href="M03-10-frame-presentation.html"><span class="label">&larr; Previous</span><span class="title">M03-10 · From framebuffer to screen, at 59.92 frames per second</span></a>
+<a class="next" href="M04-01-controller-io.html"><span class="label">Next &rarr;</span><span class="title">M04-01 · Eight buttons through six wires</span></a>
 <a class="index-link" href="../index.html">All articles in the series</a>
 </nav>
 </main>
