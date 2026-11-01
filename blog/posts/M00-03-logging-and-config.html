@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where settings live, and how they survive upgrades | genesisEmu</title>
+<meta name="description" content="A JSON config that writes its own defaults, keeps keys it doesn&#x27;t understand, and never leaves a half-written file behind.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Where settings live, and how they survive upgrades | genesisEmu">
+<meta property="og:description" content="A JSON config that writes its own defaults, keeps keys it doesn&#x27;t understand, and never leaves a half-written file behind.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m00">M00 · Foundation</a> · Story 3 of 7</p>
+<h1>Where settings live, and how they survive upgrades</h1>
+<p class="subtitle">A JSON config that writes its own defaults, keeps keys it doesn't understand, and never leaves a half-written file behind.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M00-foundation/M00-03-logging-and-config.md">Story M00-03</a></div>
+<div class="prose">
+<p>Configuration and logging rarely get articles. They're plumbing. But every later feature uses
+them. The debugger saves window layouts, the input system saves key bindings, the CPU core logs illegal
+instructions, and the analysis tools store per-game data. If each of those invents its own storage, the
+result is a mess. M00-03 built that shared plumbing once.</p>
+
+<p>Its code lives in <code>gen_common</code>, not in the emulator core. The core stays a pure,
+deterministic library. The app and the command-line runner each own a config file and a logger, and pass
+whatever the core needs into it.</p>
+
+<h2>Three folders, one rule</h2>
+
+<p>Settings belong where the operating system expects them. On Windows that is
+<code>%APPDATA%\genesisEmu</code>. On macOS it is <code>~/Library/Application Support/genesisEmu</code>.
+Linux follows the XDG convention. The resolver is a pure function of the platform and an environment
+lookup, which makes it easy to test:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">std::optional&lt;std::filesystem::path&gt; userDataRootFor(Platform platform, const EnvLookup&amp; env) {
+    if (auto overridden = env(kHomeOverrideEnv)) {
+        return *overridden;
+    }
+    switch (platform) {
+        case Platform::Windows:
+            if (auto appData = env("APPDATA")) {
+                return *appData / kAppDirName;
+            }
+            return std::nullopt;
+        case Platform::MacOS:
+            if (auto home = env("HOME")) {
+                return *home / "Library" / "Application Support" / kAppDirName;
+            }
+            return std::nullopt;</code></pre><figcaption><code>src/common/paths.cpp</code>. Passing the environment in as a function means the macOS rule can be unit-tested on Windows.</figcaption></figure>
+
+<p>The override, <code>GENESISEMU_HOME</code>, matters more than it looks. Tests point it at a fresh
+temporary folder, so the app's first-run smoke test really is a first run, without touching the
+developer's own settings.</p>
+
+<p>Every ROM also gets its own data folder: <code>roms/&lt;sha1&gt;</code> under the root. It's keyed by the
+SHA-1 of the de-interleaved ROM image, not by file name, so renaming <code>sonic2.bin</code> doesn't orphan
+its analysis data, and two different revisions of the same game never share a folder.</p>
+
+<h2>A config file that respects the future</h2>
+
+<p>The config is plain JSON, read with nlohmann-json and allowed to contain comments. Its behaviour
+follows three acceptance criteria.</p>
+
+<p><strong>Missing config writes defaults on first run.</strong> If there's no file, the loader writes one.
+New users get a file they can open and edit, and they don't have to guess which keys exist.</p>
+
+<p><strong>Unknown keys are preserved on save.</strong> This is the subtle one. Suppose a newer build adds a
+setting, and you then open an older build. A naive loader parses the file into a struct and writes the
+struct back, deleting the newer setting. genesisEmu keeps the parsed JSON document alongside the typed
+struct, and on save it only overwrites the keys it owns:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">bool ConfigFile::save() {
+    configToJson(config, doc_);
+    std::string error;
+    if (!writeFile(path_, doc_, error)) {
+        warnings.push_back(std::move(error));
+        return false;
+    }
+    return true;
+}</code></pre><figcaption><code>ConfigFile::save</code> merges the typed settings into the original document, so foreign keys survive.</figcaption></figure>
+
+<p><strong>Old files are migrated.</strong> Every file carries a <code>schemaVersion</code>. A table of
+migration functions upgrades a version-N document to version N+1, applied in sequence. A file from a
+<em>newer</em> schema is left alone, with a warning that unknown settings will be preserved.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">// kMigrations[N] upgrades a version-N document to version N+1.
+using Migration = void (*)(json&amp;);
+static constexpr std::array&lt;Migration, kConfigSchemaVersion&gt; kMigrations{
+    [](json&amp;) {},  // 0 -&gt; 1: unversioned files already have the version-1 shape
+};</code></pre><figcaption>The migration table. Version 1 needed no transformation; the structure is there for the day one does.</figcaption></figure>
+
+<blockquote class="pull"><p>A bad value costs you that one setting. A corrupt file is moved aside, never
+silently overwritten.</p></blockquote>
+
+<h2>Failing softly</h2>
+
+<p>Config files get hand-edited, and hand edits contain mistakes. The reader checks the type of every
+field. A string where a number belongs falls back to that field's default and adds a warning such as
+<code>'ui.windowWidth' has the wrong type; using the default</code>, while every other setting still loads.
+If the whole file fails to parse, it's renamed to <code>config.json.bad</code> before defaults are
+written, so the user's work is never destroyed without a trace.</p>
+
+<p>Writes are atomic in the everyday sense. The document goes to <code>config.json.tmp</code> first and is
+renamed over the real file only after the write succeeded, so a crash halfway through a save can't leave a
+truncated config behind.</p>
+
+<h2>Logging per subsystem</h2>
+
+<p>An emulator produces a lot of potential log output. You might want every VDP register write while
+debugging a rendering bug, and nothing from the CPU. genesisEmu creates one spdlog logger per subsystem:
+<code>app</code>, <code>cpu</code>, <code>vdp</code>, <code>bus</code>, <code>audio</code>,
+<code>analysis</code>, <code>llm</code>, <code>config</code> and <code>cli</code>. They all share the same
+sinks: coloured output on stderr and a rotating file, <code>genesisEmu.log</code>, whose size and count are
+configurable.</p>
+
+<p>Levels come from the config: a default level plus a <code>log.subsystems</code> map, for example
+<code>{"vdp": "trace"}</code>. Unknown subsystem or level names produce warnings rather than errors. Each
+logger flushes on warnings and above, so the last lines before a crash reach the file.</p>
+
+<h2>How it is tested</h2>
+
+<p>The <code>[config]</code> tests cover first-run defaults, a disk round trip, unknown-key preservation,
+migration of unversioned files, newer-schema files keeping their version, wrong-typed fields, and corrupt
+files being moved aside. The <code>[paths]</code> tests run the Windows, macOS and Linux rules against fake
+environments, plus one test against the real environment of whichever machine runs it. The
+<code>[logging]</code> tests check level parsing, per-subsystem levels from the config, and that messages
+actually reach the rotating file.</p>
+
+<p>One box stays unchecked: <em>paths resolve correctly on both platforms</em>. The macOS rule is
+unit-tested, but on Windows. Until it has run on a Mac, the story says so.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M00-foundation/M00-03-logging-and-config.md">Story M00-03</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/common/config.cpp"><code>src/common/config.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/common/logging.cpp"><code>src/common/logging.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/common/paths.cpp"><code>src/common/paths.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/config_test.cpp"><code>tests/unit/config_test.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/paths_test.cpp"><code>tests/unit/paths_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M00-02-ci-pipeline.html"><span class="label">&larr; Previous</span><span class="title">M00-02 · Continuous integration on a zero-dollar budget</span></a>
+<a class="next" href="M00-04-rom-loading-and-header.html"><span class="label">Next &rarr;</span><span class="title">M00-04 · Knowing exactly which ROM you're holding</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

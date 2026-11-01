@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A second CPU, and two ways to check it | genesisEmu</title>
+<meta name="description" content="The Z80 got the same treatment as the 68000: a skeleton first, then harnesses for 1.6 million recorded test vectors and a pair of 1980s CP/M exerciser programs.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="A second CPU, and two ways to check it | genesisEmu">
+<meta property="og:description" content="The Z80 got the same treatment as the 68000: a skeleton first, then harnesses for 1.6 million recorded test vectors and a pair of 1980s CP/M exerciser programs.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m04">M04 · Input, Z80, playable</a> · Story 4 of 9</p>
+<h1>A second CPU, and two ways to check it</h1>
+<p class="subtitle">The Z80 got the same treatment as the 68000: a skeleton first, then harnesses for 1.6 million recorded test vectors and a pair of 1980s CP/M exerciser programs.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-04-z80-core-and-harness.md">Story M04-04</a></div>
+<div class="prose">
+<p>The Genesis's second processor is a Zilog Z80, the same chip at the heart of the Master System, the
+ZX Spectrum and many arcade boards. On the Genesis it runs the sound driver: reading music data, feeding
+the FM synthesizer and streaming drum samples. Like the 68000, the project requires it to be hand-written.
+M04-04 built its skeleton and, more importantly, the means of proving it correct.</p>
+
+<h2>The skeleton</h2>
+
+<p>The structure mirrors the 68000 core from M01. <code>Z80State</code> holds every register in a plain
+struct, including several that only matter for exactness:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">std::uint16_t wz = 0;  // MEMPTR
+std::uint8_t i = 0;
+std::uint8_t r = 0;  // bits 0-6 count M1 cycles; bit 7 only changes through LD R,A
+std::uint8_t im = 0;
+bool iff1 = false;
+bool iff2 = false;
+bool halted = false;   // HALT executed: NOPs until an interrupt (PC already points past the HALT)
+bool eiDelay = false;  // the previous instruction was EI: no maskable interrupt before the next one
+bool ldAir = false;    // the previous instruction was LD A,I / LD A,R (interrupt clears P/V; NMOS bug)
+std::uint8_t q = 0;    // F if the previous instruction wrote the flags, else 0 (SCF/CCF X/Y source)</code></pre><figcaption>Part of <code>Z80State</code>. These fields exist because the test suites check them.</figcaption></figure>
+
+<p><strong>WZ</strong> (also called MEMPTR) is an internal register that programs can't read directly, yet it
+leaks into two undocumented flag bits after certain instructions. <strong>Q</strong> records whether the
+previous instruction wrote the flags, which a pair of instructions depends on. These are the kind of details
+M04-05 has to get right, and the skeleton had to have room for them.</p>
+
+<p><code>BusZ80</code> is the Z80's view of the world: memory reads and writes, I/O ports (unconnected on the
+Genesis, reading <code>$FF</code>), the byte on the data bus during an interrupt acknowledge, and a wait-state
+counter, the same pattern as the 68000's bus. <code>step()</code> executes one instruction and returns
+<strong>T-states</strong>, the Z80's clock cycles. The same <code>Hooks</code> struct reports instructions,
+accesses and interrupts, tagged <code>CpuId::Z80</code> with Z80-local addresses.</p>
+
+<p>Unlike the 68000's 65,536-entry table, the Z80 decodes with a <code>switch</code> on the opcode byte,
+split by <em>prefix</em>: unprefixed, <code>CB</code> (bit operations), <code>ED</code> (extended),
+<code>DD</code>/<code>FD</code> (which redirect HL to the IX or IY index registers) and the doubly prefixed
+<code>DDCB</code>/<code>FDCB</code>. An 8-bit opcode space is small enough that a switch is clear and fast.</p>
+
+<h2>Harness 1: SingleStepTests</h2>
+
+<p>The SingleStepTests project has a Z80 suite in the same spirit as the 68000 one: for each opcode, a file of
+recorded vectors with initial state, final state, memory, port activity and cycle count. The fetch script
+downloads 1,604 opcode files (pinned to a commit) and converts them to a compact binary format.
+<code>gen_z80_sst</code> runs each vector on a flat 64 KB bus and compares <em>everything</em>:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">// Streams each converted .ssz file (tools/fetch-test-data.py), runs one instruction per vector against a flat
+// 64 KB bus and compares every register (including WZ, R, Q, the EI/LD A,I latches), RAM, port writes and
+// the T-state count. Prints one line per opcode file that has failures, plus a total. Exit codes: 0 all
+// pass, 1 failures, 2 usage error, 4 no test data (CTest reports "skipped").</code></pre><figcaption>From the header of <code>tests/z80/ssz_runner.cpp</code>.</figcaption></figure>
+
+<p>As with the 68000 harness, there's a self-test: <code>--inject-fault</code> corrupts the result and
+<code>--expect-fail</code> requires the runner to notice. The story notes that the 68000 runner's code
+wasn't shared after all. The formats differ enough that a common reader would only share the header
+check.</p>
+
+<blockquote class="pull"><p>ZEXALL is a 1980s CP/M program that tests a Z80 against itself. To run it, the
+emulator pretends to be a CP/M computer for long enough to print its results.</p></blockquote>
+
+<h2>Harness 2: ZEXDOC and ZEXALL</h2>
+
+<p>Long before recorded test vectors existed, Z80 emulator authors used <strong>ZEXDOC</strong> and
+<strong>ZEXALL</strong>, instruction exercisers written for the CP/M operating system. They run each group
+of instructions through many operand combinations, hash the resulting CPU states with a CRC, and compare
+with CRCs recorded on real hardware. ZEXDOC checks documented flags only; ZEXALL includes the undocumented
+ones.</p>
+
+<p>They expect to run under CP/M, but they only use two services: print a character and print a string.
+<code>gen_z80_zex</code> fakes just enough of CP/M. It loads the program at <code>$0100</code>, points the
+system-call entry at <code>$0005</code> to a <code>RET</code>, and watches the program counter. When it reaches
+<code>$0005</code>, the runner looks at register C and prints:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if (s.pc == 0x0005) {
+    if (s.c == 2) {
+        emit(static_cast&lt;char&gt;(s.e));
+    } else if (s.c == 9) {
+        for (std::uint16_t a = s.de(); bus.mem[a] != '$'; ++a) {
+            emit(static_cast&lt;char&gt;(bus.mem[a]));
+        }
+    }
+} else if (s.pc == 0x0000) {
+    finished = true;
+    break;
+}</code></pre><figcaption>The whole CP/M BDOS shim: function 2 prints E, function 9 prints the '$'-terminated string at DE.</figcaption></figure>
+
+<p>A jump to <code>$0000</code>, CP/M's warm boot, ends the run. The runner counts "OK" and "ERROR" lines in
+the output and exits accordingly.</p>
+
+<h2>Where they run</h2>
+
+<p>The SingleStepTests suite takes about 2 seconds in Release, so the Release CI job runs all of it on every
+push, and Debug runs 100 vectors per file. ZEX is different: each program executes about 5.76 billion
+instructions, roughly 80 seconds. M04 added a nightly workflow, <code>nightly.yml</code>, on the free tier's
+standard runner, that runs both under the CTest label <code>z80-zex</code>, which the normal presets exclude.
+The results of running these harnesses against the finished core are in the next article.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-04-z80-core-and-harness.md">Story M04-04</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/z80/z80.hpp"><code>src/core/z80/z80.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/z80/z80.cpp"><code>src/core/z80/z80.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/z80/ssz_runner.cpp"><code>tests/z80/ssz_runner.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/z80/zex_runner.cpp"><code>tests/z80/zex_runner.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/.github/workflows/nightly.yml"><code>.github/workflows/nightly.yml</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M04-03-scripted-input-for-tests.html"><span class="label">&larr; Previous</span><span class="title">M04-03 · Teaching the test suite to play Sonic</span></a>
+<a class="next" href="M04-05-z80-instruction-set.html"><span class="label">Next &rarr;</span><span class="title">M04-05 · Every Z80 opcode, including the ones Zilog never documented</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

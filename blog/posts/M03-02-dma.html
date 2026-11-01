@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DMA, and the cost of a free copy | genesisEmu</title>
+<meta name="description" content="The VDP can copy memory into video RAM by itself, but while it does, the 68000 stops. M03-02 made that pause take as long as it does on hardware.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="DMA, and the cost of a free copy | genesisEmu">
+<meta property="og:description" content="The VDP can copy memory into video RAM by itself, but while it does, the 68000 stops. M03-02 made that pause take as long as it does on hardware.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m03">M03 · VDP video</a> · Story 2 of 11</p>
+<h1>DMA, and the cost of a free copy</h1>
+<p class="subtitle">The VDP can copy memory into video RAM by itself, but while it does, the 68000 stops. M03-02 made that pause take as long as it does on hardware.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-02-dma.md">Story M03-02</a></div>
+<div class="prose">
+<p>Copying graphics into VRAM one word at a time through the data port is slow: the 68000 has to read every
+word and write it again. So the VDP offers <strong>DMA</strong> (direct memory access). The program sets a
+source, a length and a destination, and the VDP does the copying itself. Sonic games use it constantly. In
+its first 600 frames, Sonic 1 issues 891 DMA transfers from 68000 memory to the VDP, moving 247,104 words,
+plus 8 fills. That covers palettes, the sprite table, scroll tables and animated art.</p>
+
+<p>There are three modes:</p>
+
+<ul>
+<li><strong>68000 to VDP</strong>: copy from ROM or RAM into VRAM, CRAM or VSRAM;</li>
+<li><strong>Fill</strong>: write one byte value over a range of VRAM, for clearing;</li>
+<li><strong>Copy</strong>: VRAM to VRAM.</li>
+</ul>
+
+<p>M02 had already implemented all three as instant operations. M03-02 made them take time.</p>
+
+<h2>Why the timing matters</h2>
+
+<p>A 68000-to-VDP transfer uses the 68000's own bus, so the CPU is <strong>frozen</strong> until the transfer
+finishes. How long that takes depends on where the beam is. During active display the VDP is busy fetching
+pixels and can spare only a few slots per line. During vertical blank it can move much more. A game that
+starts a big DMA late in the frame finishes it in the next one, and the frame's timing changes: interrupts
+arrive at a different point in the code. To reproduce timing,
+the emulator has to freeze the CPU for the right amount of time.</p>
+
+<h2>A bandwidth table</h2>
+
+<p>The spec gives an approximate number of bytes per scanline the VDP can move, depending on the display
+width and whether the line is active or blank:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">struct DmaRates {
+    int h40Active = 18;
+    int h40Blank = 205;
+    int h32Active = 16;
+    int h32Blank = 167;
+};</code></pre><figcaption><code>DmaRates</code> in <code>vdp.hpp</code>. One word costs 2 bytes, whatever the target.</figcaption></figure>
+
+<p>During active display in the 320-pixel mode, that's 9 words per line. During vertical blank it's about
+a hundred. The rates are configurable, so they can be refined if a game turns out to need it.</p>
+
+<h2>Freezing the CPU, line by line</h2>
+
+<p>When a transfer starts, the VDP sets <code>dmaActive</code> and the scheduler stops running the 68000.
+Instead it hands the VDP the remaining time of the current line, lets it move as many words as fit, then
+moves on to the next line and repeats:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">while (vdp_.dmaFreezesCpu()) {
+    const auto avail = static_cast&lt;int&gt;(clock_.lineStart + kMclkPerLine - clock_.cpuMclk);
+    clock_.cpuMclk += static_cast&lt;std::uint64_t&gt;(vdp_.runDma(avail));
+    while (clock_.cpuMclk &gt;= clock_.lineStart + kMclkPerLine) {
+        endLine();
+    }
+}</code></pre><figcaption>From <code>Machine::stepCpu</code>: while the DMA is active, time goes to the VDP instead of the CPU.</figcaption></figure>
+
+<p>Lines are rendered as they end, so a DMA that spans active lines lands part-way through a frame. The
+top of the screen may still show old data while the bottom shows new data, as it would on hardware.</p>
+
+<p>Inside <code>runDma</code>, partial words carry over between calls as a "credit" of byte × master-clock
+products. No fractional time is lost, and the transfer finishes exactly when the bandwidth says it should.
+As it runs, the length registers count down and the source registers count up, so a game that reads them
+mid-transfer sees plausible values.</p>
+
+<blockquote class="pull"><p>A DMA that starts late in the frame finishes in the next one. The emulator
+has to know that, or the game's timing drifts.</p></blockquote>
+
+<h2>The 128 KB wrap</h2>
+
+<p>The VDP's DMA source address is split across three registers, and only the low 17 bits count up. A
+transfer that crosses a 128 KB boundary wraps back to the start of the same 128 KB block instead of
+continuing. The core reproduces it:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">// The source wraps inside a 128 KB window (A23-A17 stay fixed).
+s_.dmaSource = (s_.dmaSource &amp; 0xFE0000) | ((s_.dmaSource + 2) &amp; 0x1FFFF);</code></pre><figcaption>A23-A17 stay fixed; only the low 17 bits advance.</figcaption></figure>
+
+<p>A unit test starts a CRAM DMA at <code>$01FFFC</code> and checks that it continues at
+<code>$000000</code>.</p>
+
+<h2>Fill and copy</h2>
+
+<p>Fill and copy don't use the 68000's bus, so they don't freeze it. They still execute instantly in
+genesisEmu, but the status register's <em>DMA busy</em> bit stays set for their approximate duration (a
+fill moves one byte per slot, a copy two, since it reads and writes). A fill also waits for its data word:
+the transfer is armed by the command and starts on the next data-port write, which supplies the fill
+value.</p>
+
+<h2>Events for analysis</h2>
+
+<p>Every DMA raises the <code>onDma</code> hook with its kind, target, source, destination and length. That
+isn't needed to play a game. It's for the ROM map planned in M07, which will classify ROM regions by how
+they're used. A block that's the source of a DMA into VRAM is graphics; one that goes into CRAM is a
+palette. Unit tests check every field of the events for all three kinds, and <code>gen_cli run</code> prints
+per-kind counts.</p>
+
+<h2>What changed when timing arrived</h2>
+
+<p>Making DMA take time changes when everything else happens, so the boot-test state hashes from M02-07 all
+changed. They were updated in a dedicated <code>[golden-update]</code> commit, with the reason recorded in
+the M03 pull request: DMA timing shifts CPU timing, and the VDP state gained fields. Wait loops and fault
+counts were unchanged. The story also lists what isn't modelled yet: DMA and FIFO interaction, a separate
+rate for CRAM and VSRAM, and a known quirk with the last word of a DMA from RAM.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-02-dma.md">Story M03-02</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/vdp/vdp.cpp"><code>src/core/vdp/vdp.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/sched/machine.cpp"><code>src/core/sched/machine.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/vdp_test.cpp"><code>tests/unit/vdp_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M03-01-vdp-ports-registers-memories.html"><span class="label">&larr; Previous</span><span class="title">M03-01 · Talking to the video chip, exactly</span></a>
+<a class="next" href="M03-03-interrupts-and-counters.html"><span class="label">Next &rarr;</span><span class="title">M03-03 · Interrupts on the right line</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

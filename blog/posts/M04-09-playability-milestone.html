@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Playable, at 14% of one core | genesisEmu</title>
+<meta name="description" content="The milestone that proves the emulator core: run the first act of each game at full speed. The automated parts passed easily. The human part is still waiting for a human.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Playable, at 14% of one core | genesisEmu">
+<meta property="og:description" content="The milestone that proves the emulator core: run the first act of each game at full speed. The automated parts passed easily. The human part is still waiting for a human.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m04">M04 · Input, Z80, playable</a> · Story 9 of 9</p>
+<h1>Playable, at 14% of one core</h1>
+<p class="subtitle">The milestone that proves the emulator core: run the first act of each game at full speed. The automated parts passed easily. The human part is still waiting for a human.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>3 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-09-playability-milestone.md">Story M04-09</a></div>
+<div class="prose">
+<p>M00 to M04 build the emulator, and M06 onward builds the reverse-engineering workbench on top of it.
+M04-09 is the checkpoint between the two: before investing in debuggers and ROM maps, show that the core
+actually runs the target games well. Concretely, the first act of each game, Green Hill Zone 1, Emerald Hill
+Zone 1 and Angel Island Zone 1, playable at full speed (without sound, which was M05's job).</p>
+
+<p>The story has three acceptance criteria. Two are checked. One is honestly open.</p>
+
+<h2>Scripted stand-ins for a player</h2>
+
+<p>The agent that implemented the milestone couldn't hold a controller, so it played the games through the
+scripted-input format from M04-03, and checked dumped frames by eye at chosen points:</p>
+
+<ul>
+<li><strong>Sonic 1</strong>: Start on the title at frame 620, then run right with jumps. Frame 1,150 shows
+Sonic running in Green Hill act 1 at 0:05 on the game clock, next to a Motobug. At frame 1,300 he's knocked
+back on the bridge in the hurt pose, with rings scattered. Collision and damage work.</li>
+<li><strong>Sonic 2</strong>: Start at frame 950, because earlier presses during the title animation are
+ignored by the game. Frame 1,500 shows one-player Emerald Hill act 1 at 0:06, Sonic mid-jump, Tails
+following.</li>
+<li><strong>Sonic 3 &amp; Knuckles</strong>: Start on the title, "no save" on the data-select screen, then
+right and jumps after the Angel Island intro. Frame 2,400 shows Sonic in act 1 at 0:06 with a score of 100
+and 7 rings.</li>
+</ul>
+
+<p>Those runs are the third criterion, a scripted-input regression for each act start. Their checkpoints
+hold frame and state hashes, and the <code>[rom]</code> test replays them.</p>
+
+<blockquote class="pull"><p>The whole app, emulation, UI and video upload together, used about 14% of one
+core at 60 frames per second.</p></blockquote>
+
+<h2>Performance: no optimisation needed</h2>
+
+<p>The second criterion was a budget: at most 25% of one CPU core at 60 fps on the reference machine, without
+instrumentation. The numbers (Windows 11, Intel i7-11700KF, Release build):</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Measurement</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>Core, per emulated frame</td><td>0.55–0.75 ms</td></tr>
+<tr><td>Scripted runs via <code>gen_cli</code> (S1 / S2 / S3K)</td><td>0.69 / 0.63 / 0.72 ms per frame</td></tr>
+<tr><td>Whole app: emulation + ImGui + OpenGL upload, including start-up</td><td>2.4 ms CPU per frame, about 14% of one core</td></tr>
+</tbody></table></div>
+
+<p>A frame at 60 Hz lasts 16.7 ms. The core uses well under a millisecond of it, which leaves a lot of
+room for the instrumentation that M06 and M07 will add on every memory access. That headroom is why M01-11
+pushed for a fast CPU core in the first place. The story's scope included "performance profiling and fixes";
+the profiling showed no fixes were needed.</p>
+
+<h2>Bug triage</h2>
+
+<p>The scope also asked for a list of visual issues found while playing. From the sampled frames, the list is
+empty. One item was noted as worth a look by eye. During the Sonic 3 &amp; Knuckles data-select fade-in (around
+frame 820 of the script), a frame or two shows a half-built screen. The story's judgement is that this is
+probably what the hardware shows while the screen is loading, but it's written down rather than
+dismissed.</p>
+
+<h2>The open box</h2>
+
+<p>The first criterion reads: <em>GHZ1, EHZ1 and AIZ1 completed by a human without visible glitches</em>. A
+script that runs right and jumps isn't a human finishing an act. It doesn't chase rings, take alternate paths
+or reach the boss, so it can't stand in for one. The box stays unchecked and the story says "Implemented;
+human playtest pending (Chris)". The pull request lists it under verification gaps, together with the gamepad
+hot-plug test from M04-02 and the macOS build.</p>
+
+<p>That's consistent with how the project works throughout. A criterion is checked only when it has actually
+been verified, and a near-substitute is recorded as a near-substitute. Two milestones of automated evidence
+say the games run correctly. Whether they <em>play</em> correctly needs someone to pick up a pad.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-09-playability-milestone.md">Story M04-09</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/scripts/sonic1_ghz1.txt"><code>tests/scripts/sonic1_ghz1.txt</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/scripts/sonic2_ehz1.txt"><code>tests/scripts/sonic2_ehz1.txt</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/scripts/s3k_aiz1.txt"><code>tests/scripts/s3k_aiz1.txt</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/roms/script_test.cpp"><code>tests/roms/script_test.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/app/app.cpp"><code>src/app/app.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M04-08-sram-and-cart-devices.html"><span class="label">&larr; Previous</span><span class="title">M04-08 · Battery saves and a socket for custom hardware</span></a>
+<a class="next" href="M05-01-audio-output-and-sync.html"><span class="label">Next &rarr;</span><span class="title">M05-01 · 53,267 samples in, 48,000 out</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

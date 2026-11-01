@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The first pixels: tiles, name tables and planes | genesisEmu</title>
+<meta name="description" content="The Genesis has no framebuffer. It builds every line from 8×8 tiles arranged by tables in video memory. M03-04 taught genesisEmu to do the same, and the SEGA logo appeared.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="The first pixels: tiles, name tables and planes | genesisEmu">
+<meta property="og:description" content="The Genesis has no framebuffer. It builds every line from 8×8 tiles arranged by tables in video memory. M03-04 taught genesisEmu to do the same, and the SEGA logo appeared.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m03">M03 · VDP video</a> · Story 4 of 11</p>
+<h1>The first pixels: tiles, name tables and planes</h1>
+<p class="subtitle">The Genesis has no framebuffer. It builds every line from 8×8 tiles arranged by tables in video memory. M03-04 taught genesisEmu to do the same, and the SEGA logo appeared.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-04-plane-rendering.md">Story M03-04</a></div>
+<div class="prose">
+<p>Modern graphics hardware draws into a framebuffer: a block of memory with one entry per pixel. The
+Genesis doesn't have one. Its VDP generates the picture on the fly, line by line, from compact
+descriptions in VRAM. There are two scrolling background planes, A and B, built from 8×8-pixel tiles,
+plus sprites on top. M03-04 implemented the planes, the foundation every other rendering story builds
+on.</p>
+
+<h2>Tiles</h2>
+
+<p>A tile is 8×8 pixels at 4 bits per pixel, so 32 bytes. Each pixel is an index from 0 to 15 into one of
+the four 16-colour palette lines in CRAM. Index 0 is transparent. Pixels are packed two per byte, with the
+leftmost pixel in the high nibble:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">inline int tilePixel(const std::uint8_t* row, int x) {
+    const std::uint8_t b = row[x &gt;&gt; 1];
+    return (x &amp; 1) != 0 ? (b &amp; 0x0F) : (b &gt;&gt; 4);
+}</code></pre><figcaption>Reading one pixel from a row of four bytes.</figcaption></figure>
+
+<h2>Name tables</h2>
+
+<p>A plane is a grid of tiles, described by a <strong>name table</strong> in VRAM with one 16-bit entry per
+cell:</p>
+
+<figure class="figure">
+<svg viewBox="0 0 640 120" role="img" aria-labelledby="m0304t">
+<title id="m0304t">Name table entry bits: priority, palette (2 bits), vertical flip, horizontal flip, tile index (11 bits).</title>
+<rect class="dg-warm" x="20" y="30" width="36" height="36"/><text class="dg-mono" x="38" y="53" text-anchor="middle">P</text>
+<rect class="dg-green" x="56" y="30" width="72" height="36"/><text class="dg-mono" x="92" y="53" text-anchor="middle">pal</text>
+<rect class="dg-box" x="128" y="30" width="36" height="36"/><text class="dg-mono" x="146" y="53" text-anchor="middle">V</text>
+<rect class="dg-box" x="164" y="30" width="36" height="36"/><text class="dg-mono" x="182" y="53" text-anchor="middle">H</text>
+<rect class="dg-alt" x="200" y="30" width="396" height="36"/><text class="dg-mono" x="398" y="53" text-anchor="middle">tile index (11 bits)</text>
+<text class="dg-small" x="20" y="22">bit 15</text>
+<text class="dg-small" x="596" y="22" text-anchor="end">bit 0</text>
+<text class="dg-small" x="38" y="88" text-anchor="middle">priority</text>
+<text class="dg-small" x="92" y="88" text-anchor="middle">palette line</text>
+<text class="dg-small" x="164" y="88" text-anchor="middle">V / H flip</text>
+<text class="dg-small" x="398" y="88" text-anchor="middle">which of 2,048 tiles in VRAM</text>
+</svg>
+<figcaption>One name-table entry. The same tile can appear many times, flipped and in different palettes, at the cost of two bytes per cell.</figcaption>
+</figure>
+
+<p>Planes can be 32, 64 or 128 cells wide and tall, set by register 16. That's larger than the screen, which
+is what makes scrolling possible (M03-05). The size code 2 is prohibited by the documentation; the emulator
+treats it as 32 cells, and name-table addresses wrap inside 8 KB, which reproduces how the hardware mirrors
+invalid size combinations.</p>
+
+<h2>Rendering a line</h2>
+
+<p>The renderer runs once per line, at the line's end (see M03-03). For each plane it works out which row of
+the plane this screen line shows, walks along the line, fetches each name-table entry, applies the flips,
+and reads tile pixels:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">const int entry = (s_.vram[ea] &lt;&lt; 8) | s_.vram[static_cast&lt;std::uint16_t&gt;(ea + 1)];
+int row = py &amp; (tileH - 1);
+if ((entry &amp; 0x1000) != 0) {
+    row = tileH - 1 - row;
+}
+const auto rowAddr = static_cast&lt;std::uint16_t&gt;((entry &amp; 0x7FF) * tileBytes + row * 4);
+const std::uint8_t* data = &amp;s_.vram[rowAddr &amp; 0xFFFC];
+const bool hflip = (entry &amp; 0x0800) != 0;
+const auto attr = static_cast&lt;std::uint8_t&gt;(((entry &gt;&gt; 8) &amp; 0x80) | ((entry &gt;&gt; 9) &amp; 0x30));</code></pre><figcaption>The inner fetch in <code>Vdp::renderPlane</code>: name-table entry, vertical flip, tile row address, then each pixel with its attributes.</figcaption></figure>
+
+<blockquote class="pull"><p>The renderer doesn't produce colours straight away. It produces "pixel codes"
+and decides colours only after all the layers have been compared.</p></blockquote>
+
+<h2>Pixel codes, then colours</h2>
+
+<p>A key design decision: the plane renderer doesn't write colours. It writes one byte per pixel into a line
+buffer, a <strong>pixel code</strong> holding the priority bit, the palette line and the colour index:</p>
+
+<figure class="codefig"><pre><code class="language-text">// Scanline renderer (spec 05 "Rendering", M03-04..M03-09). Each layer is drawn into a line buffer of
+// "pixel codes" (bit 7 priority, bits 5-4 palette, bits 3-0 color; color 0 is transparent but keeps the
+// priority bit, which shadow / highlight needs), then the layers are composed and looked up in CRAM.</code></pre><figcaption>The pixel-code layout, from the header comment of <code>vdp_render.cpp</code>.</figcaption></figure>
+
+<p>Plane B, plane A and the sprites each get their own buffer. Only once all three exist does the composer
+pick a winner for each pixel and look its colour up. That separation is what makes priorities (M03-08) and
+shadow/highlight possible later without rewriting this code. It also keeps the priority bit of
+<em>transparent</em> pixels, which the shadow logic turns out to need.</p>
+
+<h2>From CRAM to RGB</h2>
+
+<p>A CRAM colour has 3 bits per channel. Converting to 8-bit RGB isn't a simple multiplication, because the
+console's video DAC isn't linear. genesisEmu uses a 15-step ramp: normal colours use the even steps,
+and shadow and highlight (M03-08) use the lower and upper halves. The story labels the values as
+approximate measurements, not exact.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">constexpr std::array&lt;std::uint8_t, 15&gt; kLevels = {0,   29,  52,  70,  87,  101, 116, 130,
+                                                  144, 158, 172, 187, 206, 228, 255};</code></pre><figcaption>The ramp. Normal intensity <code>n</code> uses step <code>2n</code>.</figcaption></figure>
+
+<p>The 64 CRAM colours are converted into a cached table of RGBA values in all three intensities, rebuilt
+only when CRAM changes. Because the cache is checked at the start of every line, a palette change made
+mid-frame lands on exactly the line it should.</p>
+
+<h2>Odds and ends</h2>
+
+<p>The output is an RGBA framebuffer 320 pixels wide (256 in H32 mode) and 224 or 240 lines tall. When
+display is disabled, a line shows only the backdrop colour (register 7). Register 0 can blank the leftmost
+8 pixels, which games use to hide scrolling artefacts at the screen edge. <code>Vdp::frameHash()</code>
+hashes the visible part of the framebuffer, which the golden-frame tests in M03-11 use.</p>
+
+<h2>Verified</h2>
+
+<p>Unit tests in <code>tests/unit/vdp_render_test.cpp</code> build synthetic VRAM contents and check pixel
+order, palettes, both flips, plane sizes, wrapping, the backdrop, display disable and left-column blanking.
+For the real games, <code>gen_cli run --dump-frames</code> wrote PNGs that were checked by eye: the SEGA
+logo at frame 150 and Sonic 1's title screen at frame 600, with its sky, clouds, mountains, emblem, banner
+and water. Both frames' hashes became golden checkpoints. The images themselves stayed on the developer's
+machine.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-04-plane-rendering.md">Story M03-04</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/vdp/vdp_render.cpp"><code>src/core/vdp/vdp_render.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/vdp/vdp.hpp"><code>src/core/vdp/vdp.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/vdp_render_test.cpp"><code>tests/unit/vdp_render_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M03-03-interrupts-and-counters.html"><span class="label">&larr; Previous</span><span class="title">M03-03 · Interrupts on the right line</span></a>
+<a class="next" href="M03-05-scrolling.html"><span class="label">Next &rarr;</span><span class="title">M03-05 · Parallax: scrolling every line differently</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Supervisor mode and the status register | genesisEmu</title>
+<meta name="description" content="Interrupt masks, privilege, two stack pointers and an instruction that halts the CPU until something happens. This is the part of the 68000 an operating system would use, and Genesis games use it too.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Supervisor mode and the status register | genesisEmu">
+<meta property="og:description" content="Interrupt masks, privilege, two stack pointers and an instruction that halts the CPU until something happens. This is the part of the 68000 an operating system would use, and Genesis games use it too.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m01">M01 · 68000 CPU</a> · Story 9 of 12</p>
+<h1>Supervisor mode and the status register</h1>
+<p class="subtitle">Interrupt masks, privilege, two stack pointers and an instruction that halts the CPU until something happens. This is the part of the 68000 an operating system would use, and Genesis games use it too.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-09-system-instructions.md">Story M01-09</a></div>
+<div class="prose">
+<p>The 68000 was designed for multi-user systems, so it has two privilege levels. In <strong>supervisor
+mode</strong> code can do anything. In <strong>user mode</strong> some instructions are forbidden and
+trap instead. Genesis games mostly run in supervisor mode the whole time, but they still use this
+machinery constantly. Every game masks and unmasks interrupts while it updates video memory, and that
+goes through the status register.</p>
+
+<p>M01-09 implemented the instructions that touch it: MOVE to and from SR and CCR, MOVE to and from USP,
+ANDI/ORI/EORI to CCR and SR, STOP and RESET.</p>
+
+<h2>The status register</h2>
+
+<figure class="figure">
+<svg viewBox="0 0 640 130" role="img" aria-labelledby="m0109t">
+<title id="m0109t">The 68000 status register: system byte with T, S and the interrupt mask; user byte (CCR) with X, N, Z, V, C.</title>
+<g>
+<rect class="dg-warm" x="20" y="30" width="36" height="36"/><text class="dg-mono" x="38" y="53" text-anchor="middle">T</text>
+<rect class="dg-box" x="56" y="30" width="36" height="36"/>
+<rect class="dg-warm" x="92" y="30" width="36" height="36"/><text class="dg-mono" x="110" y="53" text-anchor="middle">S</text>
+<rect class="dg-box" x="128" y="30" width="36" height="36"/>
+<rect class="dg-box" x="164" y="30" width="36" height="36"/>
+<rect class="dg-warm" x="200" y="30" width="36" height="36"/><text class="dg-mono" x="218" y="53" text-anchor="middle">I2</text>
+<rect class="dg-warm" x="236" y="30" width="36" height="36"/><text class="dg-mono" x="254" y="53" text-anchor="middle">I1</text>
+<rect class="dg-warm" x="272" y="30" width="36" height="36"/><text class="dg-mono" x="290" y="53" text-anchor="middle">I0</text>
+<rect class="dg-box" x="308" y="30" width="36" height="36"/>
+<rect class="dg-box" x="344" y="30" width="36" height="36"/>
+<rect class="dg-box" x="380" y="30" width="36" height="36"/>
+<rect class="dg-alt" x="416" y="30" width="36" height="36"/><text class="dg-mono" x="434" y="53" text-anchor="middle">X</text>
+<rect class="dg-alt" x="452" y="30" width="36" height="36"/><text class="dg-mono" x="470" y="53" text-anchor="middle">N</text>
+<rect class="dg-alt" x="488" y="30" width="36" height="36"/><text class="dg-mono" x="506" y="53" text-anchor="middle">Z</text>
+<rect class="dg-alt" x="524" y="30" width="36" height="36"/><text class="dg-mono" x="542" y="53" text-anchor="middle">V</text>
+<rect class="dg-alt" x="560" y="30" width="36" height="36"/><text class="dg-mono" x="578" y="53" text-anchor="middle">C</text>
+</g>
+<text class="dg-small" x="20" y="22">bit 15</text>
+<text class="dg-small" x="596" y="22" text-anchor="end">bit 0</text>
+<text class="dg-text" x="164" y="92" text-anchor="middle">system byte (privileged)</text>
+<text class="dg-small" x="164" y="110" text-anchor="middle">trace · supervisor · interrupt mask</text>
+<text class="dg-text" x="452" y="92" text-anchor="middle">user byte = CCR</text>
+<text class="dg-small" x="452" y="110" text-anchor="middle">condition codes</text>
+</svg>
+<figcaption>Only ten of the sixteen bits exist. The core masks writes with <code>kSrValidBits = 0xA71F</code>, so unused bits always read as zero.</figcaption>
+</figure>
+
+<p>The low byte, the <strong>CCR</strong>, holds the condition codes and anyone may change it. The high
+byte holds the trace bit, the supervisor bit and the three-bit <strong>interrupt mask</strong>, and only
+supervisor code may change it. A game typically writes <code>move.w #$2700,sr</code> to block every
+interrupt, does something timing-sensitive, then lowers the mask again.</p>
+
+<h2>Flipping S swaps stacks</h2>
+
+<p>The 68000 has two stack pointers, the user stack pointer (USP) and the supervisor stack pointer (SSP),
+and A7 always shows whichever is active. Changing the S bit by any means (MOVE to SR, ANDI, RTE, an
+exception) must swap them. The core puts this in one place, the <code>setSr</code> helper, so no
+instruction can forget it:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">void setSr(std::uint16_t v) {
+    v &amp;= kSrValidBits;
+    if (((v ^ s.sr) &amp; kSrSupervisor) != 0) {
+        if ((v &amp; kSrSupervisor) != 0) {
+            s.usp = s.a[7];
+            s.a[7] = s.ssp;
+        } else {
+            s.ssp = s.a[7];
+            s.a[7] = s.usp;
+        }
+    }
+    s.sr = v;
+}</code></pre><figcaption><code>CpuCore::setSr</code>. The inactive stack pointer is parked in <code>usp</code> or <code>ssp</code>.</figcaption></figure>
+
+<h2>Privilege violations</h2>
+
+<p>In user mode, any attempt to write the whole SR, touch the USP, STOP or RESET raises a privilege
+violation (vector 8) instead. Each privileged handler starts with the same check:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if constexpr (WholeSr) {
+    if (!c.s.supervisor()) {
+        c.privilegeViolation();
+        return;
+    }
+}
+const std::uint32_t v = c.readEa&lt;2, M&gt;(op &amp; 7);
+if constexpr (WholeSr) {
+    c.setSr(static_cast&lt;std::uint16_t&gt;(v));
+} else {
+    c.setCcr(v);
+}
+c.idle(4);
+c.jump(c.s.pc);  // the queue is refilled after a status register write</code></pre><figcaption>MOVE to SR. Writing just the CCR is allowed in any mode; writing the whole register isn't.</figcaption></figure>
+
+<p>The last line is another hardware detail. After writing the status register the 68000 discards and
+refills its prefetch queue, which costs time, and the suite's cycle counts show it.</p>
+
+<blockquote class="pull"><p>The test suite never leaves supervisor mode, so everything about user mode
+had to be tested by hand.</p></blockquote>
+
+<h2>STOP: sleep until an interrupt</h2>
+
+<p><code>STOP #imm</code> loads the status register from its operand and halts the CPU until an interrupt
+arrives that the new mask allows. The core sets a <code>stopped</code> flag. While it's set,
+<code>step()</code> returns 4 idle cycles per call and reports <code>Flow::Stopped</code>, so the machine
+around the CPU keeps running and the debugger can tell the CPU is waiting rather than executing. When an
+interrupt above the mask arrives, the interrupt path clears the flag.</p>
+
+<h2>RESET: a pulse on a wire</h2>
+
+<p>The RESET <em>instruction</em> doesn't reset the CPU. It pulses the external reset line so that the
+other chips on the board reset. In the core it calls <code>Bus68k::resetDevices()</code>,
+leaving the system bus to decide what that means for the Genesis, and costs 132 cycles in total.</p>
+
+<h2>Testing what the suite can't reach</h2>
+
+<p>The story notes record a gap. SingleStepTests has no STOP file, and every vector starts in supervisor
+mode. Everything about user mode therefore needed hand-written unit tests in
+<code>tests/unit/m68k_test.cpp</code>:</p>
+
+<ul>
+<li><em>Privileged instructions trap in user mode and stacks switch</em>: <code>MOVE #$0000,SR</code>
+drops to user mode, and A7 must now show the USP. The next <code>MOVE #$2700,SR</code> must trap through
+vector 8, with a six-byte frame on the supervisor stack whose PC is the privileged instruction.</li>
+<li><em>STOP waits for an interrupt above the mask</em>: <code>STOP #$2300</code> sets mask 3. A level-2
+interrupt leaves the CPU stopped; level 4 wakes it, it vectors to the level-4 handler, and the stacked PC
+points after the STOP.</li>
+<li><em>RESET pulses the external reset line</em>: the test bus counts <code>resetDevices()</code> calls and
+the step must take 132 cycles.</li>
+</ul>
+
+<p>For everything the suite does cover (MOVE from SR, MOVE to SR and CCR, MOVE to and from USP, the
+immediate logic ops on CCR and SR, and RESET) the core passes 100% of 96,780 vectors with exact cycles.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-09-system-instructions.md">Story M01-09</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/ops_system.cpp"><code>src/core/m68k/ops_system.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/cpu_core.hpp"><code>src/core/m68k/cpu_core.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/m68k_test.cpp"><code>tests/unit/m68k_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M01-08-program-control.html"><span class="label">&larr; Previous</span><span class="title">M01-08 · Branches, calls and knowing where you went</span></a>
+<a class="next" href="M01-10-exceptions-and-interrupts.html"><span class="label">Next &rarr;</span><span class="title">M01-10 · When things go wrong, and when the screen wants attention</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

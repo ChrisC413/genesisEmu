@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A disassembler that proves itself with an assembler | genesisEmu</title>
+<meta name="description" content="Turning machine code back into text is easy to get almost right. genesisEmu&#x27;s disassembler is checked by reassembling 196,608 instructions and comparing every byte.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="A disassembler that proves itself with an assembler | genesisEmu">
+<meta property="og:description" content="Turning machine code back into text is easy to get almost right. genesisEmu&#x27;s disassembler is checked by reassembling 196,608 instructions and comparing every byte.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m01">M01 · 68000 CPU</a> · Story 12 of 12</p>
+<h1>A disassembler that proves itself with an assembler</h1>
+<p class="subtitle">Turning machine code back into text is easy to get almost right. genesisEmu's disassembler is checked by reassembling 196,608 instructions and comparing every byte.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-12-m68k-disassembler.md">Story M01-12</a></div>
+<div class="prose">
+<p>A disassembler turns machine code bytes back into readable assembly. For a reverse-engineering tool
+it's the main way of seeing code. The debugger shows it at the program counter, the tracer writes it into
+logs, and the later analysis milestones aim to produce a full disassembly of each Sonic game that
+reassembles <em>bit-identically</em> to the original ROM (decision D-005).</p>
+
+<p>That last goal set the bar for M01-12. "Looks right" isn't enough. The output must be text that a real
+assembler turns back into exactly the same bytes, for every instruction.</p>
+
+<h2>Speaking AS</h2>
+
+<p>The project targets <strong>The Macro Assembler AS</strong> (D-010), the open-source cross-assembler
+used by the community Sonic 2 and Sonic 3 &amp; Knuckles disassemblies. The disassembler therefore emits
+AS's dialect of Motorola syntax, with a few deliberate conventions spelled out in its header:</p>
+
+<ul>
+<li><strong>Explicit sizes wherever AS accepts them</strong>: <code>move.w</code>, <code>lea.l</code>,
+<code>bra.s</code>, <code>dbf.w</code>. Without a size, an assembler picks its own, perhaps a shorter
+branch than the original, and the bytes change. AS rejects a suffix on a few instructions (such as
+<code>swap</code>, <code>jmp</code>, <code>jsr</code>, <code>trap</code>, <code>stop</code>), and those are
+emitted without one.</li>
+<li><strong>PC-relative operands print the target address</strong>, not the raw displacement:
+<code>lea.l $00001004(pc),a0</code>. AS computes the displacement itself, and the text stays meaningful
+when code is moved.</li>
+<li><strong>abs.W prints sign-extended</strong>: <code>($FFFF8000).w</code>, because that is the address the
+CPU actually uses.</li>
+</ul>
+
+<figure class="codefig"><pre><code class="language-cpp">CHECK(dis({0x3038, 0x8000}) == "move.w\t($FFFF8000).w,d0");
+CHECK(dis({0x48E7, 0xFFFE}) == "movem.l\td0-d7/a0-a6,-(sp)");  // -(An) uses the reversed mask
+CHECK(dis({0x41FA, 0x0002}, 0x1000) == "lea.l\t$00001004(pc),a0");
+CHECK(dis({0x51C8, 0xFFFC}, 0x1000) == "dbf.w\td0,$00000FFE");</code></pre><figcaption>A few of the golden-text unit tests (<code>tests/unit/disasm68k_test.cpp</code>). <code>\t</code> separates mnemonic and operands.</figcaption></figure>
+
+<h2>More than text</h2>
+
+<p>Each call returns an <code>Instruction</code> with the text, the length in bytes, a <strong>flow
+type</strong> (fallthrough, branch, conditional branch, call, return, indirect jump or call, trap, stop or
+invalid), the static <strong>target</strong> when one is known, and a list of every absolute address the
+instruction <strong>references</strong>. Code-discovery tools need exactly these to follow execution paths
+through a ROM and to find the data tables code points at.</p>
+
+<p>An optional <strong>symbol resolver</strong> lets callers name addresses. One test teaches it two names
+and checks the output:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">CHECK(disassemble(words({0x1038, 0xF600}), 0, symbols).text() == "move.b\t(Game_Mode).w,d0");
+CHECK(disassemble(words({0x4EB9, 0x0000, 0x1234}), 0, symbols).text() == "jsr\t(Sonic_Jump).l");</code></pre><figcaption>Symbol resolution: the same bytes, now readable.</figcaption></figure>
+
+<blockquote class="pull"><p>If an encoding can't be reproduced byte for byte by the assembler, it's emitted
+as data. The round trip always wins over readability.</p></blockquote>
+
+<h2>When the honest answer is <code>dc.w</code></h2>
+
+<p>Some valid machine code has no faithful text form. A 68000 ignores certain bits in an index extension
+word that the 68020 later used, so two different byte sequences can mean the same instruction, and an
+assembler can only produce one of them. Byte immediates are stored in a word with an ignored high byte.
+A MOVEM can have an empty register list, which has no syntax at all. For every such case the disassembler
+emits the raw word as data, for example <code>dc.w $0000</code>, and marks the instruction invalid. The
+reassembled ROM stays identical, which matters more than prettier output.</p>
+
+<h2>Decoding separately from the CPU, on purpose</h2>
+
+<p>The disassembler could have reused the CPU core's decode table. It doesn't. It lives in
+<code>gen_analysis</code> with its own decoder, so that a bug in one isn't automatically copied into the
+other. A unit test keeps the two in agreement over all 65,536 possible first words:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">for (std::uint32_t op = 0; op &lt; 65536; ++op) {
+    const bool core = gen::m68k::isValidOpcode(static_cast&lt;std::uint16_t&gt;(op)) || op == 0x4AFC;
+    if (core != isValidFirstWord(static_cast&lt;std::uint16_t&gt;(op)) &amp;&amp; mismatches++ &lt; 10) {
+        UNSCOPED_INFO("opcode " &lt;&lt; op &lt;&lt; " core=" &lt;&lt; core);
+    }
+}</code></pre><figcaption>Core and disassembler must agree on every opcode (ILLEGAL, <code>$4AFC</code>, is valid text but takes the illegal vector in the core).</figcaption></figure>
+
+<h2>The round trip</h2>
+
+<p>The strongest test is <code>gen_disasm_roundtrip</code>, run by CTest as
+<code>analysis.disasm_roundtrip</code>:</p>
+
+<ol>
+<li>Build a corpus from <em>every</em> 65,536 first words, each followed by three different sets of
+extension words: small positive values, negative displacements and high addresses, and byte-sized values.
+That's 196,608 instructions.</li>
+<li>Disassemble each one at its address in the corpus and write the text into one big assembly file.</li>
+<li>Assemble the file with AS, convert the output to a flat binary with AS's <code>p2bin</code>, and
+compare every byte with the corpus.</li>
+<li>Check that every valid first word came out as a real instruction, not <code>dc.w</code>, in at least
+one of the three sets.</li>
+</ol>
+
+<p>The result: 196,608 instructions (136,765 decoded, 59,843 emitted as <code>dc.w</code>), 505,282 bytes,
+<strong>zero mismatches</strong>. AS itself (version 1.42, build 315) is downloaded and SHA-256-pinned by the
+same <code>fetch-test-data.py</code> script as the CPU test vectors. A Windows binary is fetched; on other
+platforms you point <code>GENESIS_ASL</code> at your own build, and without AS the test reports skipped
+rather than passing.</p>
+
+<h2>Where it's used</h2>
+
+<p>The disassembler went into service in the next milestone. M02's instruction tracer prints every executed
+instruction through it. The planned debugger disassembly view and ROM-map analysis will build on the same
+library. The Z80 got a matching disassembler in M04, also checked by a round trip through AS.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-12-m68k-disassembler.md">Story M01-12</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/analysis/disasm68k/disasm68k.hpp"><code>src/analysis/disasm68k/disasm68k.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/analysis/disasm68k/disasm68k.cpp"><code>src/analysis/disasm68k/disasm68k.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/disasm68k_test.cpp"><code>tests/unit/disasm68k_test.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/analysis/disasm_roundtrip.cpp"><code>tests/analysis/disasm_roundtrip.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M01-11-cycle-timing-audit.html"><span class="label">&larr; Previous</span><span class="title">M01-11 · Counting every cycle, then counting how fast</span></a>
+<a class="next" href="M02-01-memory-map-and-bus.html"><span class="label">Next &rarr;</span><span class="title">M02-01 · Sixteen megabytes, 256 pages</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

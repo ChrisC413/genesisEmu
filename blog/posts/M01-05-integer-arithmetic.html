@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arithmetic, flags and the price of a division | genesisEmu</title>
+<meta name="description" content="Adding two numbers is easy. Producing the same five condition flags as the 68000, and taking exactly as long to divide, is the hard part.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Arithmetic, flags and the price of a division | genesisEmu">
+<meta property="og:description" content="Adding two numbers is easy. Producing the same five condition flags as the 68000, and taking exactly as long to divide, is the hard part.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m01">M01 · 68000 CPU</a> · Story 5 of 12</p>
+<h1>Arithmetic, flags and the price of a division</h1>
+<p class="subtitle">Adding two numbers is easy. Producing the same five condition flags as the 68000, and taking exactly as long to divide, is the hard part.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>5 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-05-integer-arithmetic.md">Story M01-05</a></div>
+<div class="prose">
+<p>Game code is full of arithmetic. Positions plus velocities, health minus damage, a compare and a branch
+in every <code>if</code>. M01-05 covers the 68000's integer arithmetic: the ADD and SUB families with
+their address, extended and quick variants, CMP and CMPA, NEG and NEGX, EXT, and the multiply and divide
+instructions MULU, MULS, DIVU and DIVS.</p>
+
+<p>The result was 100% of 266,145 SingleStepTests vectors across 33 files, including the cycle counts of
+multiply and divide, which depend on the values being processed.</p>
+
+<h2>One function for every add and subtract</h2>
+
+<p>After an add or subtract the 68000 sets five condition flags: <strong>C</strong> (carry or borrow),
+<strong>V</strong> (signed overflow), <strong>Z</strong> (zero), <strong>N</strong> (negative) and
+<strong>X</strong> (extend, a copy of carry kept for multi-precision maths). Rather than computing them
+separately in each handler, genesisEmu uses a single templated function, <code>arith&lt;S, O&gt;</code>,
+for every add, subtract and compare at every size.</p>
+
+<p>It widens the operation to 64 bits, so the carry is simply the bit just above the operand size. Signed
+overflow uses the textbook trick: an add overflows when both inputs have the same sign and the result's sign
+differs.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if constexpr (O == Op::Add) {
+    wide = static_cast&lt;std::uint64_t&gt;(dst) + src + x;
+    r = static_cast&lt;std::uint32_t&gt;(wide) &amp; mask;
+    overflow = (((src ^ r) &amp; (dst ^ r)) &amp; msb) != 0;
+} else {
+    wide = static_cast&lt;std::uint64_t&gt;(dst) - src - x;
+    r = static_cast&lt;std::uint32_t&gt;(wide) &amp; mask;
+    overflow = (((src ^ dst) &amp; (r ^ dst)) &amp; msb) != 0;
+}
+const bool carry = ((wide &gt;&gt; (8 * S)) &amp; 1) != 0;</code></pre><figcaption>The heart of <code>arith</code>: compute wide, mask to size, derive overflow from the sign bits.</figcaption></figure>
+
+<p>CMP is a subtract that throws its result away. In the same function it simply skips updating X, which
+compares never touch.</p>
+
+<h2>The sticky Z flag</h2>
+
+<p>ADDX, SUBX and NEGX exist for arithmetic wider than 32 bits: you add the low longs, then the high longs
+with the carry from X. For the Z flag to mean "the whole 64-bit result is zero", these instructions
+<em>never set</em> Z. They only clear it when a part is non-zero. The programmer sets Z before the
+chain, and any non-zero part clears it for good.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if (extend) {
+    if (r != 0) {
+        sr &amp;= static_cast&lt;std::uint16_t&gt;(~kSrZero);
+    }
+} else {
+    sr = static_cast&lt;std::uint16_t&gt;((sr &amp; ~kSrZero) | (r == 0 ? kSrZero : 0));
+}</code></pre><figcaption>Extended operations can only clear Z; ordinary ones set it from the result.</figcaption></figure>
+
+<blockquote class="pull"><p>On a 68000, how long a multiply takes depends on the bits of the number you
+multiply by.</p></blockquote>
+
+<h2>Multiplication timing depends on the data</h2>
+
+<p>The 68000 multiplies with a shift-and-add loop in microcode. Each step that adds costs extra time, so
+the cycle count depends on the bits of the source operand. For MULU it's 38 cycles plus 2 per set bit. For
+MULS it's 38 plus 2 per change between adjacent bits of the source, with a zero appended below bit 0:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if constexpr (Signed) {
+    r = static_cast&lt;std::uint32_t&gt;(static_cast&lt;std::int32_t&gt;(static_cast&lt;std::int16_t&gt;(src)) *
+                                   static_cast&lt;std::int16_t&gt;(d &amp; 0xFFFF));
+    const std::uint32_t pattern = (src &lt;&lt; 1) &amp; 0x1FFFF;
+    n = std::popcount((pattern ^ (pattern &gt;&gt; 1)) &amp; 0xFFFF);
+} else {
+    r = src * (d &amp; 0xFFFF);
+    n = std::popcount(src);
+}</code></pre><figcaption>MULU counts ones; MULS counts 0-to-1 and 1-to-0 transitions. <code>34 + 2n</code> plus the prefetch's 4 gives 38 + 2n.</figcaption></figure>
+
+<p>Multiplying by <code>$FFFF</code> is therefore 32 cycles slower than multiplying by 0. Over a frame
+those differences add up and shift where interrupts land, which is why the project insists on exact
+counts.</p>
+
+<h2>Division: simulate the microcode loop</h2>
+
+<p>Division is worse: 76 to 136 cycles for DIVU, 120 to 158 for DIVS, depending on the bits of the
+quotient as it's produced. No closed formula captures it neatly, so the core simulates the hardware's
+restoring-division loop just to count the cycles, then computes the actual result with ordinary C++
+division.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">for (int i = 0; i &lt; 15; ++i) {
+    const std::uint32_t before = dividend;
+    dividend &lt;&lt;= 1;
+    if ((before &amp; 0x80000000u) != 0) {
+        dividend -= hdivisor;
+    } else {
+        cycles += 4;
+        if (dividend &gt;= hdivisor) {
+            dividend -= hdivisor;
+            cycles -= 2;
+        }
+    }
+}</code></pre><figcaption><code>divuCycles</code>: 15 iterations of shift and compare, each one adding or refunding a few cycles.</figcaption></figure>
+
+<h2>Where the manual is silent</h2>
+
+<p>Motorola's manual leaves some flag results "undefined". Real chips still produce <em>something</em>,
+and the test suite records it. The story notes list the behaviour adopted from the suite:</p>
+
+<ul>
+<li>When a division overflows (the quotient doesn't fit in 16 bits), V is set, C is cleared, and N and Z
+keep their previous values. The destination register is left unchanged.</li>
+<li>DIVS detects overflow <em>before</em> its loop when the absolute quotient is at least
+<code>$8000</code>, so a quotient of exactly −32,768, which would fit in a signed word, still reports
+overflow, after (8 or 9) × 2 cycles.</li>
+<li>Division by zero raises the zero-divide exception. The suite has a single such vector
+(<code>DIVU (d16, A7)</code>). It stacks the address of the DIV instruction itself and takes 38 cycles
+plus EA time, and the core follows it.</li>
+<li><code>ADDQ.L</code>/<code>SUBQ.L #,An</code> takes 6 cycles, per the suite, not the 8 that some tables
+list.</li>
+</ul>
+
+<h2>Verified</h2>
+
+<p>The 33 files cover ADD, ADDA, ADDX, SUB, SUBA, SUBX, CMP, CMPA, NEG and NEGX in all sizes (the suite
+files them together with their immediate, quick and memory forms), plus EXT.w/l, MULU, MULS, DIVU and DIVS.
+All 266,145 vectors pass with exact cycles. The arithmetic Sonic does every frame, such as adding
+sub-pixel velocities and comparing positions against level boundaries, now runs on a core that matches the
+reference in both result and timing.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-05-integer-arithmetic.md">Story M01-05</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/ops_arith.cpp"><code>src/core/m68k/ops_arith.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M01-04-data-movement.html"><span class="label">&larr; Previous</span><span class="title">M01-04 · Moving data, in exactly the right order</span></a>
+<a class="next" href="M01-06-logic-shift-bit.html"><span class="label">Next &rarr;</span><span class="title">M01-06 · Bit twiddling, and a disagreement with the reference</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

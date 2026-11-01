@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The skeleton of a 68000 | genesisEmu</title>
+<meta name="description" content="A register file, a bus interface and a 65,536-entry table of function pointers. Every instruction added later plugs into this structure.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="The skeleton of a 68000 | genesisEmu">
+<meta property="og:description" content="A register file, a bus interface and a 65,536-entry table of function pointers. Every instruction added later plugs into this structure.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m01">M01 · 68000 CPU</a> · Story 1 of 12</p>
+<h1>The skeleton of a 68000</h1>
+<p class="subtitle">A register file, a bus interface and a 65,536-entry table of function pointers. Every instruction added later plugs into this structure.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>5 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-01-cpu-core-framework.md">Story M01-01</a></div>
+<div class="prose">
+<p>The Sega Genesis has two processors. The main one, which runs the game logic, is a Motorola 68000
+clocked at about 7.67 MHz. It's a 16/32-bit chip from 1979 with eight data registers, eight address
+registers and a reputation for being pleasant to program. Every Sonic game is mostly 68000 code, so the
+whole project depends on this core. The project's rules require it to be hand-written rather than borrowed
+from another emulator.</p>
+
+<p>M01-01 doesn't execute any real instructions. It builds the structure that all twelve stories of the
+milestone fill in.</p>
+
+<h2>Machine state as a plain struct</h2>
+
+<p>Everything a program can observe about the CPU lives in one struct, <code>State</code>: eight data
+registers, eight address registers, the two stack pointers, the program counter, the status register, and
+two less obvious fields, <code>ir</code> and <code>irc</code>.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">struct State {
+    std::array&lt;std::uint32_t, 8&gt; d{};
+    std::array&lt;std::uint32_t, 8&gt; a{};
+    std::uint32_t usp = 0;  // valid while in supervisor mode (otherwise A7 holds it)
+    std::uint32_t ssp = 0;  // valid while in user mode (otherwise A7 holds it)
+    std::uint32_t pc = 0;   // address of the instruction in IR (the next one to execute)
+    std::uint16_t sr = kSrSupervisor | kSrIntMask;
+    std::uint16_t ir = 0;   // prefetch queue: the opcode at pc
+    std::uint16_t irc = 0;  // prefetch queue: the word at pc + 2</code></pre><figcaption>From <code>src/core/m68k/m68k.hpp</code>. A7 is always the <em>active</em> stack pointer; the inactive one is parked in <code>usp</code> or <code>ssp</code>.</figcaption></figure>
+
+<p><code>ir</code> and <code>irc</code> model the 68000's <strong>prefetch queue</strong>. The real chip
+reads the next instruction words while it executes the current one, so at any moment it holds two words
+it has already fetched. That sounds like an implementation detail, but it's visible to software. Code
+that modifies the instruction right after the current one will find that the old version still runs.
+And when the CPU faults, the stacked state depends on what was in the queue. Modelling the queue
+explicitly is what later lets this core match the reference test suite bit for bit.</p>
+
+<p>A plain struct also helps the later debugger milestones. Save states, register views and test harnesses
+can all read and write it directly.</p>
+
+<h2>The bus is an interface</h2>
+
+<p>The CPU doesn't know what's at any address. It talks to a <code>Bus68k</code>, an abstract class
+with <code>read8</code>, <code>read16</code>, <code>write8</code>, <code>write16</code> and an interrupt
+acknowledge. The real Genesis memory map plugs in later (M02). In the tests it's a flat 16 MB array.</p>
+
+<p>Two additions to the spec came from measurement. First, wait states, such as the extra time the 68000
+loses when it touches the Z80's memory, are reported through a counter the bus increments, not a virtual
+call per instruction. Second, the bus can offer <em>direct pages</em>: 256 pointers, one per 64 KB of
+address space. If a page is plain memory with no side effects, like ROM or work RAM, the CPU reads it
+directly instead of making a virtual call. That made a measurable difference in the throughput benchmark
+(see M01-11).</p>
+
+<h2>One handler per opcode</h2>
+
+<p>A 68000 instruction starts with a 16-bit word, so there are exactly 65,536 possible first words. The
+core decodes them all up front into a table of function pointers:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">for (std::uint32_t op = 0; op &lt; 65536; ++op) {
+    const std::uint32_t line = op &gt;&gt; 12;
+    table-&gt;handlers[op] = line == 0xA ? &amp;opLineA : line == 0xF ? &amp;opLineF : &amp;opIllegal;
+}
+TableBuilder b{*table};
+registerDataMovement(b);
+registerArithmetic(b);</code></pre><figcaption>Every entry starts as an illegal-instruction handler (line A and line F get their own vectors), then each instruction family registers the opcodes it owns.</figcaption></figure>
+
+<p>Each family registers its opcodes with a mask-and-match helper: "every opcode where
+<code>(op &amp; 0xF100) == 0x7000</code> is MOVEQ". Handlers are C++ templates specialised on operand size
+and addressing mode, so <code>MOVE.W (A0)+,D1</code> and <code>MOVE.L -(A2),(A3)</code> are separate,
+fully specialised functions with no mode dispatch left at run time. Executing an instruction is one array
+lookup and one indirect call.</p>
+
+<p>The table is built once and shared. An acceptance criterion caps construction at 50 ms. The unit test
+asserts that in Release builds, and only checks under a second in Debug, where template-heavy code runs
+much slower.</p>
+
+<blockquote class="pull"><p>Executing an instruction is one array lookup and one indirect call. All the
+mode decoding happened when the table was built.</p></blockquote>
+
+<h2>Timing as a side effect of bus access</h2>
+
+<p>The design decision with the largest consequences was how to count cycles. Many emulators look cycle
+counts up in a per-instruction table. This core instead adds 4 cycles <em>at the moment</em> each word
+access happens, and adds internal delays explicitly with <code>idle(n)</code>.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">std::uint16_t readWord(std::uint32_t addr, bool program = false) {
+    if ((addr &amp; 1) != 0) {
+        throwAddressError(addr, true, program);
+    }
+    cycles += 4;</code></pre><figcaption><code>readWord</code> in <code>cpu_core.hpp</code>: an odd address faults <em>before</em> the cycles are charged; otherwise 4 cycles, the access, and the hook.</figcaption></figure>
+
+<p>The story notes give the reason. When a word access hits an odd address, the 68000 aborts with an
+<em>address error</em>, and both the stacked information and the cycle count depend on how far the
+instruction had got. In the reference test suite, address errors make up 35–58% of the vectors in the word
+and long files. Charging time per access in the right order reproduces them exactly. A lookup table
+can't.</p>
+
+<h2>Hooks that cost nothing when unused</h2>
+
+<p>genesisEmu is a reverse-engineering tool, so the CPU must be observable. <code>core/hooks.hpp</code>
+defines a <code>Hooks</code> struct of plain function pointers plus a context pointer, deliberately not
+<code>std::function</code> or virtual calls. When a pointer is null, the cost is one well-predicted
+branch.</p>
+
+<ul>
+<li><code>onInstr</code> fires before each instruction and can return <code>Action::Break</code>. The
+debugger's breakpoints will use this.</li>
+<li><code>onAccess</code> fires for every memory access with its kind (fetch, read, write), address, size,
+value and the PC of the instruction responsible. Coverage maps and watchpoints will use this.</li>
+<li><code>onIrq</code> reports accepted interrupts.</li>
+</ul>
+
+<p>A unit test runs <code>MOVE.L D0,(A0)+</code> and checks that it reports exactly three accesses, two
+word writes and one prefetch, each tagged with the instruction's own PC. A second step with
+<code>onInstr</code> returning Break must execute nothing and return 0 cycles. Stepping again runs the
+instruction without asking the hook a second time, which the debugger needs to resume from a breakpoint.</p>
+
+<h2>Illegal from day one</h2>
+
+<p>The last criterion was that an unimplemented opcode raises the illegal-instruction exception. It isn't
+stubbed. The unit test checks vector 4 for ILLEGAL, 10 for line A and 11 for line F, that the stacked PC
+points at the offending opcode, and the 34-cycle cost. Every later story only has to replace table entries.
+Anything still missing fails safely and visibly.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-01-cpu-core-framework.md">Story M01-01</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/m68k.hpp"><code>src/core/m68k/m68k.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/cpu_core.hpp"><code>src/core/m68k/cpu_core.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/m68k.cpp"><code>src/core/m68k/m68k.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/hooks.hpp"><code>src/core/hooks.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/m68k_test.cpp"><code>tests/unit/m68k_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M00-07-local-mac-validation.html"><span class="label">&larr; Previous</span><span class="title">M00-07 · Testing on macOS without paying for macOS CI</span></a>
+<a class="next" href="M01-02-singlesteptests-harness.html"><span class="label">Next &rarr;</span><span class="title">M01-02 · A million tests before breakfast</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

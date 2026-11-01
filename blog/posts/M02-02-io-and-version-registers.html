@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Which console am I running on? | genesisEmu</title>
+<meta name="description" content="Every Genesis game starts by asking the hardware about itself: region, video standard, and whether it has to unlock the video chip. The I/O registers answer.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Which console am I running on? | genesisEmu">
+<meta property="og:description" content="Every Genesis game starts by asking the hardware about itself: region, video standard, and whether it has to unlock the video chip. The I/O registers answer.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m02">M02 · System bus & boot</a> · Story 2 of 7</p>
+<h1>Which console am I running on?</h1>
+<p class="subtitle">Every Genesis game starts by asking the hardware about itself: region, video standard, and whether it has to unlock the video chip. The I/O registers answer.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M02-system-bus-boot/M02-02-io-and-version-registers.md">Story M02-02</a></div>
+<div class="prose">
+<p>Power on a Genesis and the first thing most games do is read a single byte at <code>$A10001</code>, the
+<strong>version register</strong>. It tells the software whether the console is Japanese or overseas, NTSC
+or PAL, and which hardware revision it is. Some games refuse to run on the wrong region. Others adjust
+their speed for 50 Hz PAL televisions. Sonic 1 checks it at boot. M02-02 implemented this register, the
+controller ports next to it, and TMSS, the lock-out mechanism added to later consoles.</p>
+
+<h2>One byte of identity</h2>
+
+<p>The version register packs its information into bits. Bit 7 means overseas (Americas or Europe), bit 6
+means PAL timing, bit 5 is always set (no expansion unit attached), and the low bits hold the hardware
+version, with 0 meaning a console without TMSS:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">// Bit 7 overseas, bit 6 PAL, bit 5 = 1 (no expansion unit), bits 0-3 hardware version (0 = no TMSS).
+s_.version = static_cast&lt;std::uint8_t&gt;((region != Region::Japan ? 0x80 : 0) | (pal ? 0x40 : 0) | 0x20 |
+                                       (tmss ? 0x01 : 0x00));</code></pre><figcaption><code>Io::reset</code> builds the register from the configured region.</figcaption></figure>
+
+<p>The region comes from configuration if the user sets one, and otherwise from the cartridge header that
+M00-04 already parses. When a header lists several regions, the emulator prefers Americas, then Japan, then
+Europe. That follows decision D-020, <em>NTSC first</em>: the project is tuned for 60 Hz timing, and PAL is
+implemented but only lightly tested.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">Region regionFromHeader(std::uint8_t headerRegions) {
+    if ((headerRegions &amp; cart::kRegionAmericas) != 0 || headerRegions == cart::kRegionNone) {
+        return Region::Americas;
+    }
+    if ((headerRegions &amp; cart::kRegionJapan) != 0) {
+        return Region::Japan;
+    }
+    return Region::Europe;
+}</code></pre><figcaption>Picking a console region from the header's region mask.</figcaption></figure>
+
+<p>The unit test reads it back for each case: <code>$A0</code> for an NTSC Americas console, <code>$20</code>
+for Japan, <code>$E0</code> for Europe (with the machine switching to 313-line PAL frames), and
+<code>$A1</code> when TMSS is enabled. The region also decides the video timing, so a European setting
+changes more than one byte.</p>
+
+<h2>Controllers that aren't there yet</h2>
+
+<p>Next to the version register sit the data and control registers of the three controller ports. Input
+wasn't due until M04, but boot code initialises the ports and reads them, so they had to return sensible
+"nothing pressed" values.</p>
+
+<p>The Genesis pad has more buttons than data lines, so it multiplexes. The console drives a select line,
+<strong>TH</strong>, and the pad answers with a different set of buttons for each level. With TH high you
+read Up, Down, Left, Right, B and C. With TH low you read Up, Down, A and Start, and two bits forced low,
+which is how a game recognises that a pad is connected. Buttons are active-low, so "released" reads as
+1.</p>
+
+<p>Rather than hard-coding idle values, M02-02 implemented the protocol properly with an all-released button
+mask. M04 only had to supply real buttons (and add the 6-button pad). The test checks the classic values:
+<code>$7F</code> with TH high, <code>$33</code> with TH low, and <code>$7F</code> for the third port where
+nothing is connected.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">} else {  // TH = 0: 0 S A 0 0 D U
+    pins = static_cast&lt;std::uint8_t&gt;(bit(kPadStart, 5) | bit(kPadA, 4) | bit(kPadDown, 1) |
+                                     bit(kPadUp, 0));
+}</code></pre><figcaption>The TH-low branch: bits 3 and 2 always read 0, the signature of a connected pad.</figcaption></figure>
+
+<blockquote class="pull"><p>Later consoles refuse to let a game touch the video chip until it writes the
+word SEGA to a register. That's TMSS.</p></blockquote>
+
+<h2>TMSS: the 'SEGA' handshake</h2>
+
+<p>Later Genesis models include the <strong>Trademark Security System</strong>. Until software writes the
+four ASCII bytes <code>'SEGA'</code> to <code>$A14000</code>, the video chip is locked. The idea was legal
+rather than technical: a game had to display Sega's trademark to run. Games handle it in their start-up
+code, typically writing the value only when the version register reports a non-zero hardware version.</p>
+
+<p>genesisEmu models TMSS as an option, <code>MachineConfig::tmss</code>, which is off by default. When
+enabled, the bus checks the register on every VDP access, drops the access and records a
+<code>VdpLocked</code> issue until the magic value appears:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">bool vdpLocked() const { return tmss_ &amp;&amp; state_.tmssRegister != 0x53454741; }  // 'SEGA'</code></pre><figcaption><code>0x53454741</code> is 'SEGA' in ASCII.</figcaption></figure>
+
+<p>A unit test enables TMSS, checks that a VDP status read is refused and counted, writes
+<code>$5345</code> and <code>$4741</code> as two words, and checks that the VDP now answers. A second test
+runs the synthetic boot ROM with TMSS on and checks that it unlocks the VDP itself.</p>
+
+<h2>The real check: three regions, one game</h2>
+
+<p>The acceptance criterion was that Sonic 1's region check passes for its native region. The
+<code>[rom]</code> test went further: it boots Sonic 1 REV01 for 600 frames with each of the Japan, Americas
+and Europe version registers. All three reach the main loop without a single fault exception. That test
+needs the user's own ROM, so it runs locally with <code>GENESIS_ROM_DIR</code> set and reports skipped in
+CI.</p>
+
+<p>The remaining I/O registers, such as serial ports and the memory-mode register at <code>$A11000</code>
+(DRAM refresh for development cartridges), are stored or ignored as the spec describes. They do nothing
+useful on a retail console, but writing to them mustn't crash the emulator or trigger an unmapped-access
+report.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M02-system-bus-boot/M02-02-io-and-version-registers.md">Story M02-02</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/bus/io.hpp"><code>src/core/bus/io.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/bus/io.cpp"><code>src/core/bus/io.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/bus/system_bus.cpp"><code>src/core/bus/system_bus.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/bus_test.cpp"><code>tests/unit/bus_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M02-01-memory-map-and-bus.html"><span class="label">&larr; Previous</span><span class="title">M02-01 · Sixteen megabytes, 256 pages</span></a>
+<a class="next" href="M02-03-z80-bus-control-stub.html"><span class="label">Next &rarr;</span><span class="title">M02-03 · Borrowing the sound CPU's memory</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

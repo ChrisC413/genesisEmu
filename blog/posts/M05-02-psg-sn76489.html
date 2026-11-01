@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Square waves and a shift register: the PSG | genesisEmu</title>
+<meta name="description" content="Next to its FM synthesizer, the Genesis has a simple sound chip inherited from the Master System. Three square waves and a noise generator, written in-house in under a hundred lines.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Square waves and a shift register: the PSG | genesisEmu">
+<meta property="og:description" content="Next to its FM synthesizer, the Genesis has a simple sound chip inherited from the Master System. Three square waves and a noise generator, written in-house in under a hundred lines.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m05">M05 · Audio</a> · Story 2 of 6</p>
+<h1>Square waves and a shift register: the PSG</h1>
+<p class="subtitle">Next to its FM synthesizer, the Genesis has a simple sound chip inherited from the Master System. Three square waves and a noise generator, written in-house in under a hundred lines.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M05-audio/M05-02-psg-sn76489.md">Story M05-02</a></div>
+<div class="prose">
+<p>The Genesis has two sound chips. The famous one is the Yamaha YM2612, an FM synthesizer. The other is a
+<strong>PSG</strong> (programmable sound generator), a Texas Instruments SN76489-compatible block built into
+the VDP. It's the same kind of chip as in the Master System. It's simple: three channels of square waves and
+one of noise, each with a volume control. Sonic games use it for some sound effects and for parts of the
+music.</p>
+
+<p>Decision D-013 required the CPUs to be hand-written but allowed a library for the YM2612. The PSG is simple
+enough that the project wrote it in-house anyway: the whole implementation is under a hundred lines.</p>
+
+<h2>Registers through a single port</h2>
+
+<p>The PSG has eight registers (a tone period and an attenuation for each of three channels, plus noise
+control and noise attenuation) but only one write port. A byte with bit 7 set <em>latches</em> a register and
+writes its low four bits. A byte with bit 7 clear writes the upper six bits of a tone period to the latched
+register. That's how a 10-bit period fits through an 8-bit port in two writes:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if ((value &amp; 0x80) != 0) {
+    s_.period[ch] = static_cast&lt;std::uint16_t&gt;((s_.period[ch] &amp; 0x3F0) | (value &amp; 0x0F));
+} else {
+    s_.period[ch] = static_cast&lt;std::uint16_t&gt;((s_.period[ch] &amp; 0x00F) | ((value &amp; 0x3F) &lt;&lt; 4));
+}</code></pre><figcaption><code>Psg::write</code>: latch-and-data bytes, then data-only bytes for the high bits of a period.</figcaption></figure>
+
+<p>Both CPUs can write it: the 68000 at <code>$C00011</code> and the Z80 through its window at
+<code>$7F11</code>. Writes go through the shared sound system, which first brings the chip up to the writing
+CPU's current time.</p>
+
+<h2>Tones</h2>
+
+<p>Each tone channel has a down-counter. The PSG clock is the Z80's (master clock ÷ 15), and the counters
+step once every 16 PSG clocks. When a counter reaches zero it reloads from the period register and the
+channel's output flips between +1 and −1, giving a square wave. One quirk is implemented explicitly: periods of
+0 and 1 hold the output high instead of producing an inaudible ultrasonic tone. Software can then play
+samples by changing the <em>volume</em> register quickly.</p>
+
+<h2>Noise and the Sega taps</h2>
+
+<p>The noise channel shifts a 16-bit <strong>linear-feedback shift register</strong> (LFSR) and outputs its low
+bit. In "periodic" mode it just rotates a single bit, giving a buzzy tone. In "white" mode it feeds back
+the XOR of two bits, giving pseudo-random noise. Which bits are tapped differs between chip variants, and it
+changes the sound. Sega's version taps bits 0 and 3:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">const bool white = (s_.noiseControl &amp; 4) != 0;
+const unsigned in = white ? ((s_.lfsr ^ (s_.lfsr &gt;&gt; 3)) &amp; 1) : (s_.lfsr &amp; 1);
+s_.lfsr = static_cast&lt;std::uint16_t&gt;((s_.lfsr &gt;&gt; 1) | (in &lt;&lt; 15));</code></pre><figcaption>The noise LFSR. Any write to the noise control register resets it to <code>$8000</code>.</figcaption></figure>
+
+<p>The noise rate is one of three fixed dividers, or it follows tone channel 3's period, which lets software
+set the noise pitch freely.</p>
+
+<blockquote class="pull"><p>Which bits feed back into the noise generator differs between chip versions.
+Using the wrong taps gives a different-sounding hiss.</p></blockquote>
+
+<h2>Volume in decibels</h2>
+
+<p>Each channel's 4-bit attenuation is in steps of 2 dB, with 15 meaning off. The table is computed once at
+start-up from the definition rather than typed in:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">t[static_cast&lt;std::size_t&gt;(i)] =
+    static_cast&lt;int&gt;(std::lround(kPsgMaxLevel * std::pow(10.0, -2.0 * i / 20.0)));</code></pre><figcaption>2 dB per step: each step multiplies the amplitude by 10<sup>-0.1</sup>, about 0.794.</figcaption></figure>
+
+<h2>Mixing at the native rate</h2>
+
+<p>The PSG ticks about 223,700 times per second, much faster than the 53,267 Hz native audio rate. Each native
+sample covers four or five PSG ticks, and the mixer averages them (a box filter), which removes the worst
+aliasing from sharp square-wave edges before the resampler from M05-01 takes over.</p>
+
+<h2>Tests, and a listening check</h2>
+
+<p>Unit tests check the arithmetic that's easy to get subtly wrong:</p>
+
+<ul>
+<li><strong>Tone period</strong>: a period of <code>$100</code> flips the output exactly 10 times in
+10 × <code>$100</code> ticks.</li>
+<li><strong>Attenuation</strong>: each step is a ratio of 0.794, and 15 is silent.</li>
+<li><strong>Noise</strong>: periodic noise repeats every 16 shifts, and white noise with Sega's taps repeats
+after 57,337 shifts, a value that would come out differently with other taps.</li>
+</ul>
+
+<p>The remaining criterion, <em>Sonic 1's ring sound effect PSG component sounds right</em>, needs a human
+ear, and the story records it as open for Chris.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M05-audio/M05-02-psg-sn76489.md">Story M05-02</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/audio/psg.cpp"><code>src/core/audio/psg.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/audio/psg.hpp"><code>src/core/audio/psg.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/audio/sound.cpp"><code>src/core/audio/sound.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/audio_test.cpp"><code>tests/unit/audio_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M05-01-audio-output-and-sync.html"><span class="label">&larr; Previous</span><span class="title">M05-01 · 53,267 samples in, 48,000 out</span></a>
+<a class="next" href="M05-03-ym2612-fm.html"><span class="label">Next &rarr;</span><span class="title">M05-03 · FM synthesis, borrowed on purpose</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

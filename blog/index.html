@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>genesisEmu: How it&#x27;s built</title>
+<meta name="description" content="One article per completed story: how a hand-written Sega Genesis emulator is built.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="genesisEmu: How it&#x27;s built">
+<meta property="og:description" content="One article per completed story: how a hand-written Sega Genesis emulator is built.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<section class="hero">
+<p class="kicker">Build notes · 52 articles</p>
+<h1>How genesisEmu is built</h1>
+<p class="lede">genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering and modding the
+Sonic games. The project is written spec-first: every feature starts as a short story with acceptance
+criteria. This series has one article per finished story. Each one covers what the feature does, why an
+emulator needs it, and how this code base builds and tests it.</p>
+<p class="meta">52 articles · about 4 hours of reading ·
+<a href="https://github.com/ChrisC413/genesisEmu">source on GitHub</a> · start with <a href="posts/M00-01-repo-and-build-system.html">M00-01</a></p>
+</section>
+<nav class="toc" aria-label="Milestones">
+<a href="#m00">M00 · Foundation</a>
+<a href="#m01">M01 · 68000 CPU</a>
+<a href="#m02">M02 · System bus & boot</a>
+<a href="#m03">M03 · VDP video</a>
+<a href="#m04">M04 · Input, Z80, playable</a>
+<a href="#m05">M05 · Audio</a>
+</nav>
+<section class="milestone" id="m00">
+<div class="milestone-head"><span class="tag">M00 · 7 stories</span><h2>Foundation</h2><p>Repository, build, CI and an application shell that loads a ROM, on Windows and macOS.</p></div>
+<ul class="post-list">
+<li><a href="posts/M00-01-repo-and-build-system.html"><span class="pid">M00-01</span><span class="ptitle">A build that works the same from every clean clone</span><span class="pblurb">CMake presets, a pinned vcpkg manifest and a module layout that keeps the emulated machine a headless library, separate from the UI.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M00-02-ci-pipeline.html"><span class="pid">M00-02</span><span class="ptitle">Continuous integration on a zero-dollar budget</span><span class="pblurb">A GitHub Actions workflow that uses only free-tier features: a formatting gate, Debug and Release builds, vcpkg binary caching and pinned test data.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M00-03-logging-and-config.html"><span class="pid">M00-03</span><span class="ptitle">Where settings live, and how they survive upgrades</span><span class="pblurb">Per-subsystem logging with spdlog, a forward-compatible JSON config with schema migrations, and platform-correct data folders keyed by ROM SHA-1.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M00-04-rom-loading-and-header.html"><span class="pid">M00-04</span><span class="ptitle">Knowing exactly which ROM you're holding</span><span class="pblurb">BIN and interleaved SMD loading, the $100-$1FF cartridge header, header checksums, in-house SHA-1/CRC32 and a known-ROM table for the Sonic revisions.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M00-05-app-shell-window.html"><span class="pid">M00-05</span><span class="ptitle">A window with room for a workbench</span><span class="pblurb">The desktop shell: an SDL3 window with an OpenGL 3.3 context, Dear ImGui docking with the layout saved in the JSON config, native file dialogs and a self-checking smoke test.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M00-06-headless-cli-skeleton.html"><span class="pid">M00-06</span><span class="ptitle">An emulator you can drive from a script</span><span class="pblurb">The headless gen_cli runner: info, run and help subcommands, stable exit codes, JSON output, and CTest cases that check both exit code and output.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M00-07-local-mac-validation.html"><span class="pid">M00-07</span><span class="ptitle">Testing on macOS without paying for macOS CI</span><span class="pblurb">tools/validate-mac.sh builds and tests the release and sanitizer configurations, signs the .app bundle, and prints a summary block for the pull request.</span><span class="pmeta">4 min read</span></a></li>
+</ul>
+</section>
+<section class="milestone" id="m01">
+<div class="milestone-head"><span class="tag">M01 · 12 stories</span><h2>68000 CPU</h2><p>A hand-written Motorola 68000 core that passes the SingleStepTests suite, plus a disassembler.</p></div>
+<ul class="post-list">
+<li><a href="posts/M01-01-cpu-core-framework.html"><span class="pid">M01-01</span><span class="ptitle">The skeleton of a 68000</span><span class="pblurb">The 68000 core's skeleton: the State struct, the Bus68k interface, a decode table with one handler per opcode, per-access timing and zero-cost instrumentation hooks.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M01-02-singlesteptests-harness.html"><span class="pid">M01-02</span><span class="ptitle">A million tests before breakfast</span><span class="pblurb">A harness for the SingleStepTests 68000 suite: pinned and checksummed downloads, a compact binary format, full state comparison and an exclusion list with reasons.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M01-03-effective-address-modes.html"><span class="pid">M01-03</span><span class="ptitle">Every way to find an operand</span><span class="pblurb">All 68000 addressing modes as compile-time templates: register side effects, sign-extended index registers, the A7 byte quirk and EA timing verified by every MOVE vector.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M01-04-data-movement.html"><span class="pid">M01-04</span><span class="ptitle">Moving data, in exactly the right order</span><span class="pblurb">MOVE, MOVEM, MOVEP, LEA, PEA, LINK and friends: write ordering revealed by address errors, MOVEM's reversed register mask and the read-before-clear of CLR.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M01-05-integer-arithmetic.html"><span class="pid">M01-05</span><span class="ptitle">Arithmetic, flags and the price of a division</span><span class="pblurb">ADD/SUB/CMP families, NEG/NEGX, EXT and the multiply and divide instructions, with the X flag's sticky-zero rule and data-dependent MUL/DIV timing.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M01-06-logic-shift-bit.html"><span class="pid">M01-06</span><span class="ptitle">Bit twiddling, and a disagreement with the reference</span><span class="pblurb">AND/OR/EOR/NOT, every shift and rotate, the bit instructions, Scc and TAS, including the Genesis TAS quirk and the ASR vectors where the project sided with the manual.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M01-07-bcd-instructions.html"><span class="pid">M01-07</span><span class="ptitle">Decimal arithmetic on a binary chip</span><span class="pblurb">ABCD, SBCD and NBCD: how the 68000 adds in binary and then corrects to decimal, and how the 'undefined' N and V flags were matched against real silicon.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M01-08-program-control.html"><span class="pid">M01-08</span><span class="ptitle">Branches, calls and knowing where you went</span><span class="pblurb">Bcc, BSR, DBcc, JMP, JSR, RTS, RTR and RTE, with taken/not-taken timing, the DBcc wrap at -1, odd-target faults and a Flow value reported for every step.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M01-09-system-instructions.html"><span class="pid">M01-09</span><span class="ptitle">Supervisor mode and the status register</span><span class="pblurb">MOVE to/from SR and CCR, MOVE USP, ANDI/ORI/EORI to SR, STOP and RESET, with privilege violations and stack pointer swaps tested where the suite can't reach.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M01-10-exceptions-and-interrupts.html"><span class="pid">M01-10</span><span class="ptitle">When things go wrong, and when the screen wants attention</span><span class="pblurb">The full 68000 exception model: reset, the 14-byte address-error frame, traps, autovectored interrupts with a level-7 edge, trace, and the onIrq hook.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M01-11-cycle-timing-audit.html"><span class="pid">M01-11</span><span class="ptitle">Counting every cycle, then counting how fast</span><span class="pblurb">The audit that closed the 68000 milestone: exact cycle counts across the whole suite, every exclusion explained, and a 98-100 MIPS benchmark left honestly open.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M01-12-m68k-disassembler.html"><span class="pid">M01-12</span><span class="ptitle">A disassembler that proves itself with an assembler</span><span class="pblurb">An AS-syntax 68000 disassembler with flow types, targets and symbol hooks, verified by a round trip through the AS assembler with zero byte mismatches.</span><span class="pmeta">4 min read</span></a></li>
+</ul>
+</section>
+<section class="milestone" id="m02">
+<div class="milestone-head"><span class="tag">M02 · 7 stories</span><h2>System bus & boot</h2><p>The memory map, I/O, scheduler and tracing that let Sonic 1, 2 and 3K boot headless, deterministically.</p></div>
+<ul class="post-list">
+<li><a href="posts/M02-01-memory-map-and-bus.html"><span class="pid">M02-01</span><span class="ptitle">Sixteen megabytes, 256 pages</span><span class="pblurb">The 68000 memory map as a 256-entry page table: direct pages for ROM and RAM, mirrors, open bus from the prefetch word, and an issue log that records the PC of every stray access.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M02-02-io-and-version-registers.html"><span class="pid">M02-02</span><span class="ptitle">Which console am I running on?</span><span class="pblurb">The version register, idle controller ports with the TH select protocol already in place, and an optional TMSS model that locks the video chip until the game writes 'SEGA'.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M02-03-z80-bus-control-stub.html"><span class="pid">M02-03</span><span class="ptitle">Borrowing the sound CPU's memory</span><span class="pblurb">BUSREQ and RESET at $A11100/$A11200, 8 KB of Z80 RAM reachable from the 68000, the serial bank register and sound-chip write stubs, all before the Z80 executes anything.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M02-04-vdp-port-stub.html"><span class="pid">M02-04</span><span class="ptitle">A video chip that draws nothing</span><span class="pblurb">A first VDP: the two-word command latch, registers and memories, a status register driven by the beam position, HV counters with the hardware's jumps, and V-int at line 224.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M02-05-master-clock-scheduler.html"><span class="pid">M02-05</span><span class="ptitle">One clock to rule them all</span><span class="pblurb">The scanline scheduler: a 64-bit master-clock counter, 3,420 clocks per line, 68000 overshoot carried across lines, catch-up hooks for the Z80 and audio, and a run API with stop reasons.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M02-06-instruction-trace-logger.html"><span class="pid">M02-06</span><span class="ptitle">A line of text for every instruction</span><span class="pblurb">gen_cli trace writes one line per 68000 instruction with register deltas and memory writes, in a documented format, plus a trace-diff tool that finds the first divergence.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M02-07-boot-smoke-tests.html"><span class="pid">M02-07</span><span class="ptitle">Three games boot, with nothing on screen</span><span class="pblurb">Boot tests for all three games that never mention a game-specific address: a generic V-int wait-loop detector, fault counting, and XXH3 state hashes checked for determinism.</span><span class="pmeta">4 min read</span></a></li>
+</ul>
+</section>
+<section class="milestone" id="m03">
+<div class="milestone-head"><span class="tag">M03 · 11 stories</span><h2>VDP video</h2><p>The Video Display Processor: planes, sprites, scrolling, DMA, interrupts and golden-frame tests.</p></div>
+<ul class="post-list">
+<li><a href="posts/M03-01-vdp-ports-registers-memories.html"><span class="pid">M03-01</span><span class="ptitle">Talking to the video chip, exactly</span><span class="pblurb">The full VDP command interface: 24 registers, the two-word command latch and its edge cases, read-ahead buffers, CRAM/VSRAM wraparound, a FIFO model and the internal sprite cache.</span><span class="pmeta">5 min read</span></a></li>
+<li><a href="posts/M03-02-dma.html"><span class="pid">M03-02</span><span class="ptitle">DMA, and the cost of a free copy</span><span class="pblurb">All three VDP DMA modes: 68000-to-VDP transfers that freeze the CPU and run line by line at a bandwidth table, fills, copies, the 128 KB source wrap and onDma events.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M03-03-interrupts-and-counters.html"><span class="pid">M03-03</span><span class="ptitle">Interrupts on the right line</span><span class="pblurb">Per-line H-int and V-int timing, the Z80's one-line interrupt, HV counter jump tables for every mode, and why a palette change during line N shows from line N.</span><span class="pmeta">3 min read</span></a></li>
+<li><a href="posts/M03-04-plane-rendering.html"><span class="pid">M03-04</span><span class="ptitle">The first pixels: tiles, name tables and planes</span><span class="pblurb">The scanline renderer's foundation: 4-bit tiles, name-table entries with flips, palettes and priority, plane sizes and wrapping, the 'pixel code' line buffers and the colour ramp.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M03-05-scrolling.html"><span class="pid">M03-05</span><span class="ptitle">Parallax: scrolling every line differently</span><span class="pblurb">Horizontal scroll per screen, per 8-line cell or per line; vertical scroll per screen or per 2-cell column; the prohibited mode and an approximated hardware quirk at the left edge.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M03-06-window-plane.html"><span class="pid">M03-06</span><span class="ptitle">The window: a plane that doesn't scroll</span><span class="pblurb">The window plane: a fixed, unscrolled replacement for plane A in a region set by registers 17 and 18, implemented in a few lines and verified with synthetic VRAM.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M03-07-sprites.html"><span class="pid">M03-07</span><span class="ptitle">Eighty sprites, twenty per line</span><span class="pblurb">Sprite rendering: the link-list walk through the cached attribute table, sizes up to 4×4 cells, per-line sprite and pixel limits, the x = 0 masking rule, and overflow and collision flags.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M03-08-priority-and-shadow-highlight.html"><span class="pid">M03-08</span><span class="ptitle">Who's in front: priority and shadow/highlight</span><span class="pblurb">Per-pixel composition across six priority levels plus the backdrop, and the shadow/highlight mode where low-priority planes darken and two special sprite colours act as light operators.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M03-09-interlace-mode-2.html"><span class="pid">M03-09</span><span class="ptitle">Double resolution for two players</span><span class="pblurb">Interlace mode 2: 8×16 tiles, doubled Y coordinates for planes and sprites, an 11-bit vertical scroll, and a 320×448 framebuffer woven from alternating fields.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M03-10-frame-presentation.html"><span class="pid">M03-10</span><span class="ptitle">From framebuffer to screen, at 59.92 frames per second</span><span class="pblurb">Showing the emulator in the app: framebuffer to GL texture, fit or integer scaling with 4:3 correction, vsync- or clock-paced 59.92 Hz output, fast-forward, Run/Pause/Reset.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M03-11-video-regression-tests.html"><span class="pid">M03-11</span><span class="ptitle">Golden frames without golden images</span><span class="pblurb">Video regression tests: 19 frame-hash checkpoints across the three games, gen_cli run --check, a local frame cache, and expected/actual/diff PNGs written only on mismatch.</span><span class="pmeta">4 min read</span></a></li>
+</ul>
+</section>
+<section class="milestone" id="m04">
+<div class="milestone-head"><span class="tag">M04 · 9 stories</span><h2>Input, Z80, playable</h2><p>Controllers, a hand-written Z80, SRAM and the point where all three games are playable (silently).</p></div>
+<ul class="post-list">
+<li><a href="posts/M04-01-controller-io.html"><span class="pid">M04-01</span><span class="ptitle">Eight buttons through six wires</span><span class="pblurb">The controller port protocol: TH-select multiplexing for 3-button pads, the 6-button identification sequence with its timeout, per-port pad types, and input latched once per frame.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M04-02-input-mapping.html"><span class="pid">M04-02</span><span class="ptitle">Keyboards, gamepads and "press a key"</span><span class="pblurb">Host input: a default keymap from the spec, SDL3 gamepad hot-plug, an Input panel with press-a-key capture for every binding and hotkey, and bindings persisted in the JSON config.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M04-03-scripted-input-for-tests.html"><span class="pid">M04-03</span><span class="ptitle">Teaching the test suite to play Sonic</span><span class="pblurb">A line-based scripted-input format for regression tests: button events per frame, frame/state/audio hash checkpoints, gen_cli --input/--check/--update-script, and three recorded runs.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M04-04-z80-core-and-harness.html"><span class="pid">M04-04</span><span class="ptitle">A second CPU, and two ways to check it</span><span class="pblurb">The Z80 core's framework (Z80State, BusZ80, prefix decoding, T-state counting, hooks) and its two test harnesses: SingleStepTests vectors and ZEXDOC/ZEXALL through a tiny CP/M shim.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M04-05-z80-instruction-set.html"><span class="pid">M04-05</span><span class="ptitle">Every Z80 opcode, including the ones Zilog never documented</span><span class="pblurb">The full Z80 instruction set, documented and undocumented: X/Y flags, WZ/MEMPTR, the Q latch for SCF/CCF, block-instruction repeat flags, interrupt modes and HALT, verified 100% by SingleStepTests and ZEXALL.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M04-06-z80-disassembler.html"><span class="pid">M04-06</span><span class="ptitle">Reading the sound driver: a Z80 disassembler</span><span class="pblurb">A Z80 disassembler in AS syntax that shares the 68000 disassembler's Instruction and FlowType types, handles undocumented opcodes, and round-trips every prefix group through AS.</span><span class="pmeta">3 min read</span></a></li>
+<li><a href="posts/M04-07-z80-system-integration.html"><span class="pid">M04-07</span><span class="ptitle">Two CPUs sharing one machine</span><span class="pblurb">Running the Z80 inside the machine: per-line catch-up, BUSREQ/RESET arbitration tightened, the bank window with stall costs and an onZ80Window hook, the V-blank interrupt, and a log of sound-chip writes.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M04-08-sram-and-cart-devices.html"><span class="pid">M04-08</span><span class="ptitle">Battery saves and a socket for custom hardware</span><span class="pblurb">A pluggable cartridge-device chain on /TIME and cartridge space, the SRAM controller with byte lanes and $A130F1 switching, and .srm persistence keyed by ROM SHA-1.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M04-09-playability-milestone.html"><span class="pid">M04-09</span><span class="ptitle">Playable, at 14% of one core</span><span class="pblurb">The M04 exit check: scripted stand-ins for GHZ1, EHZ1 and AIZ1, performance of 0.55-0.75 ms per frame and about 14% of a core for the whole app, a bug triage, and an honest open box.</span><span class="pmeta">3 min read</span></a></li>
+</ul>
+</section>
+<section class="milestone" id="m05">
+<div class="milestone-head"><span class="tag">M05 · 6 stories</span><h2>Audio</h2><p>PSG and YM2612 sound, the DAC, a mixer, register logging and audio regression tests.</p></div>
+<ul class="post-list">
+<li><a href="posts/M05-01-audio-output-and-sync.html"><span class="pid">M05-01</span><span class="ptitle">53,267 samples in, 48,000 out</span><span class="pblurb">Getting emulated sound to the speakers: a 32-tap windowed-sinc resampler from the native ~53,267 Hz to 48 kHz, an SDL3 audio stream, and ±0.5% dynamic rate control around a two-frame buffer.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M05-02-psg-sn76489.html"><span class="pid">M05-02</span><span class="ptitle">Square waves and a shift register: the PSG</span><span class="pblurb">An in-house SN76489-style PSG: three 10-bit tone channels, a noise channel with Sega's 16-bit LFSR taps, a 2 dB attenuation table, and box-filtered mixing at the native rate.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M05-03-ym2612-fm.html"><span class="pid">M05-03</span><span class="ptitle">FM synthesis, borrowed on purpose</span><span class="pblurb">The YM2612 via the vendored ymfm library behind an IFmSynth interface: register ports, catch-up generation, per-channel muting through a small subclass, and save-state serialisation.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M05-04-ym2612-dac-and-timers.html"><span class="pid">M05-04</span><span class="ptitle">"SEGA!": the DAC and the timers</span><span class="pblurb">YM2612 channel 6 as an 8-bit DAC, a DC blocker for silent silence, timers A/B and the busy flag clocked per sample, status reads that sync to the reading CPU, and objective checks on the SEGA chant.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M05-05-mixer-mute-and-register-log.html"><span class="pid">M05-05</span><span class="ptitle">A mixing desk for reverse engineers</span><span class="pblurb">The mixer and Sound panel: FM/PSG levels, an optional model-1 low-pass, mute/solo for eleven channels, and a ring-buffer log of every YM2612/PSG write with frame, line, CPU and PC, exported as CSV.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M05-06-audio-regression-tests.html"><span class="pid">M05-06</span><span class="ptitle">Testing sound without listening to it</span><span class="pblurb">WAV recording of the native-rate mix and an audio_hash checkpoint in scripted input: an XXH3 hash over every sample since power-on, recorded at the title screen and end of each script.</span><span class="pmeta">4 min read</span></a></li>
+</ul>
+</section>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

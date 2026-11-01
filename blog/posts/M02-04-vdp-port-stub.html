@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A video chip that draws nothing | genesisEmu</title>
+<meta name="description" content="Games wait on the video chip constantly. A stub that stores data, reports its status and raises the vertical interrupt on time is enough to boot three games without any graphics.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="A video chip that draws nothing | genesisEmu">
+<meta property="og:description" content="Games wait on the video chip constantly. A stub that stores data, reports its status and raises the vertical interrupt on time is enough to boot three games without any graphics.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m02">M02 · System bus & boot</a> · Story 4 of 7</p>
+<h1>A video chip that draws nothing</h1>
+<p class="subtitle">Games wait on the video chip constantly. A stub that stores data, reports its status and raises the vertical interrupt on time is enough to boot three games without any graphics.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M02-system-bus-boot/M02-04-vdp-port-stub.md">Story M02-04</a></div>
+<div class="prose">
+<p>The Genesis's <strong>Video Display Processor</strong> (VDP) is the most complex chip in the console,
+and rendering its output is a whole milestone (M03). But games interact with it from their first
+instructions. They configure its registers, upload graphics, poll its status register in tight loops, and
+organise their main loop around its <em>vertical interrupt</em>. If the VDP doesn't respond correctly, boot
+code hangs waiting for a bit that never changes, or runs the game loop at the wrong rate.</p>
+
+<p>M02-04 built a VDP that does everything <em>except</em> draw. It turned out to be the larger half of the
+chip's interface.</p>
+
+<h2>Talking to the VDP</h2>
+
+<p>The 68000 talks to the VDP through two ports: a <strong>data port</strong> at <code>$C00000</code> and
+a <strong>control port</strong> at <code>$C00004</code>, mirrored throughout <code>$C00000–$DFFFFF</code>.
+A write to the control port is either a register write (one word, with <code>100</code> in its top bits)
+or the first half of a two-word <strong>command</strong> that sets an address and a target: VRAM (64 KB of
+tiles and tables), CRAM (the 64-colour palette) or VSRAM (vertical scroll values), for reading or writing.
+After that, data-port accesses stream to or from that memory, with the address advancing by a programmable
+increment.</p>
+
+<p>The stub implements the command latch, all registers, the three memories and auto-increment. Nothing
+was rendered, but by the end of boot VRAM was full of exactly what the game had uploaded. The acceptance
+test checks more than 4,096 non-zero VRAM bytes after 600 frames of Sonic 1. The finer details of the port
+protocol were completed in M03-01.</p>
+
+<h2>Status: where is the beam?</h2>
+
+<p>Much of the status register describes <em>timing</em>: are we in vertical blank, in horizontal blank, is
+this an odd frame, is the FIFO empty? Those bits depend on where the electron beam would be, which the VDP
+works out from the scanline number and the master-clock position within the line, both supplied by the
+scheduler (M02-05).</p>
+
+<p>The <strong>HV counter</strong> at <code>$C00008</code> reports the beam position directly, and it's not
+a simple count. Real hardware counters jump at certain values to stay within 8 bits while covering a full
+line or frame, and games that read them expect the jumps. The vertical counter on NTSC, for example, runs
+up to <code>$EA</code> and then jumps back to <code>$E5</code>:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if (!s_.pal) {
+    if (v &gt; 0xEA) {
+        v += 0x1FA;  // 0xEB -&gt; 0x1E5
+    }</code></pre><figcaption>The NTSC V-counter jump, from <code>Vdp::vCounter</code> (PAL and both interlace modes have their own variants).</figcaption></figure>
+
+<p>The horizontal counter is approximated from the master-clock position within the line: 210 counts per
+line in the 320-pixel mode (H40), 171 in the 256-pixel mode (H32), with the hardware jumps in both. That
+approximation is noted in the story, alongside two other simplifications: the FIFO always reads as empty,
+and the status register's fixed upper bits are hard-wired.</p>
+
+<blockquote class="pull"><p>A Genesis game's main loop usually does very little except wait for the
+vertical interrupt. Get that interrupt wrong and everything else is wrong.</p></blockquote>
+
+<h2>The vertical interrupt</h2>
+
+<p>On an NTSC Genesis in 224-line mode, the picture ends after line 223. At line 224 the VDP flags a
+<strong>V-int</strong>, and if register 1 has interrupts enabled it raises the 68000's interrupt level to
+6. Most of a typical game's per-frame work (reading the pad, copying sprite tables, updating music) runs in
+that handler, while the main loop just waits for a flag the handler sets.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">int Vdp::irqLevel() const {
+    if (s_.vintPending &amp;&amp; (s_.regs[1] &amp; 0x20) != 0) {
+        return 6;
+    }
+    if (s_.hintPending &amp;&amp; (s_.regs[0] &amp; 0x10) != 0) {
+        return 4;
+    }
+    return 0;
+}</code></pre><figcaption>The interrupt level the VDP presents to the 68000: V-int at level 6 beats H-int at level 4.</figcaption></figure>
+
+<p>When the 68000 acknowledges the interrupt, the bus tells the VDP to clear the pending flag. The same
+line also pulses the Z80's interrupt line for roughly one scanline. The stub implemented the
+<strong>H-int</strong> counter too: it counts down after each active line, raises a level-4 interrupt when
+it underflows, and reloads during vertical blank.</p>
+
+<h2>Things that came early</h2>
+
+<p>DMA, the VDP's ability to copy memory into VRAM by itself, wasn't in scope, but boot code uses it
+immediately to upload graphics. So M02-04 implemented it in its simplest form: copies happened
+<em>instantly</em>, without freezing the 68000, and each one raised the <code>onDma</code> hook for the
+instrumentation layer. Getting the timing right was left to M03-02, and the story says so.</p>
+
+<h2>Tests</h2>
+
+<p>Unit tests in <code>tests/unit/vdp_test.cpp</code> parse commands and register writes, check the status
+bits and counters at known beam positions, and check the interrupt logic. The key acceptance test was a
+<code>[rom]</code> boot. Over the last 60 of 600 frames, Sonic 1 must take <em>exactly one</em> level-6
+interrupt per frame. Sonic 2 manages 58 of 60, which the story records as one lag
+frame. With a VDP that drew nothing, all three target games reached their main loops and stayed
+in step with the vertical interrupt.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M02-system-bus-boot/M02-04-vdp-port-stub.md">Story M02-04</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/vdp/vdp.hpp"><code>src/core/vdp/vdp.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/vdp/vdp.cpp"><code>src/core/vdp/vdp.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/vdp_test.cpp"><code>tests/unit/vdp_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M02-03-z80-bus-control-stub.html"><span class="label">&larr; Previous</span><span class="title">M02-03 · Borrowing the sound CPU's memory</span></a>
+<a class="next" href="M02-05-master-clock-scheduler.html"><span class="label">Next &rarr;</span><span class="title">M02-05 · One clock to rule them all</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

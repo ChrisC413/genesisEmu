@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Knowing exactly which ROM you&#x27;re holding | genesisEmu</title>
+<meta name="description" content="Loading a cartridge dump means undoing a 1990s copier&#x27;s byte shuffle, reading a 256-byte header, and fingerprinting the result.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Knowing exactly which ROM you&#x27;re holding | genesisEmu">
+<meta property="og:description" content="Loading a cartridge dump means undoing a 1990s copier&#x27;s byte shuffle, reading a 256-byte header, and fingerprinting the result.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m00">M00 · Foundation</a> · Story 4 of 7</p>
+<h1>Knowing exactly which ROM you're holding</h1>
+<p class="subtitle">Loading a cartridge dump means undoing a 1990s copier's byte shuffle, reading a 256-byte header, and fingerprinting the result.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>5 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M00-foundation/M00-04-rom-loading-and-header.md">Story M00-04</a></div>
+<div class="prose">
+<p>Reverse engineering only works if you know exactly what you're looking at. "Sonic 2" isn't one
+program. There are several retail revisions, regional variants, compilation re-releases and countless
+patched dumps. A label you attach to an address in one revision may point at the middle of an
+instruction in another. So before genesisEmu could execute anything, it had to answer one question about
+a ROM file reliably: <em>which ROM is this?</em></p>
+
+<h2>Two layouts for the same bytes</h2>
+
+<p>Genesis ROM dumps come in two main formats. A <strong>BIN</strong> (also <code>.md</code> or
+<code>.gen</code>) is the cartridge image as the CPU sees it, byte for byte. An <strong>SMD</strong> file
+comes from the Super Magic Drive, a copier device of the era. It has a 512-byte header, and the data is
+split into 16 KB blocks with the bytes inside each block shuffled.</p>
+
+<figure class="figure">
+<svg viewBox="0 0 640 222" role="img" aria-labelledby="m0004t">
+<title id="m0004t">SMD interleave: each 16 KB block stores odd bytes in its first half and even bytes in its second half.</title>
+<text class="dg-small" x="16" y="22">SMD block (16 KB)</text>
+<rect class="dg-warm" x="16" y="30" width="300" height="40" rx="6"/>
+<text class="dg-mono" x="166" y="55" text-anchor="middle">odd bytes: 1 3 5 7 ...</text>
+<rect class="dg-alt" x="320" y="30" width="300" height="40" rx="6"/>
+<text class="dg-mono" x="470" y="55" text-anchor="middle">even bytes: 0 2 4 6 ...</text>
+<text class="dg-small" x="16" y="214">BIN image (same 16 KB)</text>
+<g>
+<rect class="dg-alt" x="16" y="160" width="75" height="36" rx="4"/><text class="dg-mono" x="53" y="183" text-anchor="middle">0</text>
+<rect class="dg-warm" x="91" y="160" width="75" height="36" rx="4"/><text class="dg-mono" x="128" y="183" text-anchor="middle">1</text>
+<rect class="dg-alt" x="166" y="160" width="75" height="36" rx="4"/><text class="dg-mono" x="203" y="183" text-anchor="middle">2</text>
+<rect class="dg-warm" x="241" y="160" width="75" height="36" rx="4"/><text class="dg-mono" x="278" y="183" text-anchor="middle">3</text>
+<rect class="dg-alt" x="316" y="160" width="75" height="36" rx="4"/><text class="dg-mono" x="353" y="183" text-anchor="middle">4</text>
+<rect class="dg-warm" x="391" y="160" width="75" height="36" rx="4"/><text class="dg-mono" x="428" y="183" text-anchor="middle">5</text>
+<text class="dg-mono" x="540" y="183" text-anchor="middle">...</text>
+</g>
+<path class="dg-accent-line" d="M360 70 L53 160 M380 70 L203 160 M400 70 L353 160"/>
+<path class="dg-warm-line" d="M60 70 L128 160 M80 70 L278 160 M100 70 L428 160"/>
+</svg>
+<figcaption>Inside each SMD block the odd-addressed bytes come first and the even-addressed bytes second. De-interleaving zips the two halves back together.</figcaption>
+</figure>
+
+<p>Undoing it is a short loop over blocks:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">for (std::size_t block = 0; block &lt; body.size(); block += kSmdBlockSize) {
+    for (std::size_t i = 0; i &lt; half; ++i) {
+        out[block + i * 2] = body[block + half + i];
+        out[block + i * 2 + 1] = body[block + i];
+    }
+}</code></pre><figcaption><code>deinterleaveSmd</code> in <code>src/core/cart/rom.cpp</code>.</figcaption></figure>
+
+<p>The interesting part is deciding <em>whether</em> a file is SMD at all. The obvious approach, trusting
+the <code>.smd</code> extension, failed on real data: several of the user's <code>.smd</code> files turned
+out to be plain BIN images. So detection looks at content. Every Genesis image has the text
+<code>SEGA</code> at offset <code>$100</code>. The loader checks whether that text appears where a BIN would
+put it or where an SMD would scatter it, and uses the extension only to break a tie.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">// Decide by content: whichever layout puts "SEGA" at image offset $100 wins. In an SMD file the even
+// image bytes of the first block sit in its second half and the odd bytes in its first half.</code></pre><figcaption>Content decides; the extension is the last resort.</figcaption></figure>
+
+<blockquote class="pull"><p>Several of the user's <code>.smd</code> files were plain images, so the
+extension only breaks ties.</p></blockquote>
+
+<h2>Reading the header</h2>
+
+<p>Bytes <code>$100</code> to <code>$1FF</code> of every cartridge hold a fixed-layout header: console
+name, copyright, domestic and overseas titles, serial number, a checksum, supported I/O devices, the ROM
+and RAM address ranges, an optional SRAM declaration, and region codes. <code>parseHeader</code> reads each
+field at its documented offset. Two fields are trickier than they look.</p>
+
+<p>The <strong>SRAM declaration</strong> (at <code>$1B0</code>, the letters <code>RA</code>) carries a
+type byte that says whether the save RAM is battery-backed and whether it sits on even bytes, odd bytes or
+both. Sonic 3 &amp; Knuckles saves through it, so it has to be parsed correctly.</p>
+
+<p><strong>Region codes</strong> exist in two styles. Early games list letters, <code>J</code>,
+<code>U</code> and <code>E</code>. Later games use a single hex digit as a bitmask. The parser accepts
+both and normalises them to one mask.</p>
+
+<h2>Checksums and fingerprints</h2>
+
+<p>The header contains a 16-bit checksum: the sum of every big-endian word from <code>$200</code> to the
+end of the ROM. Many games check it at boot. genesisEmu computes it and compares, but a mismatch is only a
+<em>warning</em>. ROM hacks routinely have stale checksums, and refusing to load them would make the tool
+useless for modding.</p>
+
+<p>The real identity comes from two hashes: SHA-1 for identification and CRC32 because that's what many
+ROM databases list. Both are implemented in-house in about a hundred lines, verified against the FIPS 180
+SHA-1 test vectors and the standard CRC32 check value. The hashes are taken over the de-interleaved image,
+so the SMD and BIN of the same game produce the same SHA-1. A test builds a synthetic ROM, interleaves
+it, and checks exactly that.</p>
+
+<h2>A table of known games</h2>
+
+<p><code>known_roms.cpp</code> maps SHA-1 hashes, taken from the No-Intro database, to a game, revision and
+region. It covers Sonic 1 REV00 and REV01, three revisions of Sonic 2, three regional Sonic 3 releases,
+standalone Sonic &amp; Knuckles, and the combined "Sonic 3 &amp; Knuckles" images.</p>
+
+<p>That last case is the lock-on trick. Sonic &amp; Knuckles has a slot on top, and plugging Sonic 3 into
+it produces a combined 4 MB game. genesisEmu identifies such a pair by the SHA-1 of the two images
+concatenated:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">const KnownRom* identifyLockOn(std::span&lt;const std::uint8_t&gt; lockingCart,
+                               std::span&lt;const std::uint8_t&gt; lockedOnCart) {
+    return identifyRom(toHex(sha1(lockOnImage(lockingCart, lockedOnCart))));
+}</code></pre><figcaption>Lock-on pairs are identified by hashing the concatenated image.</figcaption></figure>
+
+<h2>Saying no clearly</h2>
+
+<p>Files under 512 bytes or over 4 MB are rejected with a clear error. The limit applies to the
+de-interleaved image, so a 4 MB game in SMD form, 4 MB plus a 512-byte header, still loads. Master System
+and Game Gear images are a common mix-up because they share file collections. The loader looks for their
+<code>TMR SEGA</code> signature and reports "Not a Mega Drive/Genesis ROM" instead of loading garbage.</p>
+
+<h2>Validated against real dumps</h2>
+
+<p>Unit tests use synthetic ROMs generated inside the test, because no commercial ROM may enter the
+repository. Real-world validation runs locally through <code>tools/validate-roms.ps1</code>, pointed at
+the user's own folder. On 2026-10-24 it identified Sonic 1 REV01, Sonic 2 REV01, Sonic 3 USA and Europe,
+and standalone Sonic &amp; Knuckles, and the S&amp;K + Sonic 3 pairs hashed to the known combined entries.
+Just as important, the negative cases behaved: a patched Sonic 2, a Sonic &amp; Knuckles dump with three
+modified bytes and an unknown Sonic 1 all stayed unidentified, and <code>.sms</code> files were
+rejected.</p>
+
+<p>That result settled the project's canonical ROM set (decision D-023): Sonic 1 REV01, Sonic 2 REV01, and
+S3K built from Sonic &amp; Knuckles plus Sonic 3 USA.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M00-foundation/M00-04-rom-loading-and-header.md">Story M00-04</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/cart/rom.cpp"><code>src/core/cart/rom.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/cart/known_roms.cpp"><code>src/core/cart/known_roms.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/util/hash.cpp"><code>src/core/util/hash.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/rom_test.cpp"><code>tests/unit/rom_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M00-03-logging-and-config.html"><span class="label">&larr; Previous</span><span class="title">M00-03 · Where settings live, and how they survive upgrades</span></a>
+<a class="next" href="M00-05-app-shell-window.html"><span class="label">Next &rarr;</span><span class="title">M00-05 · A window with room for a workbench</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

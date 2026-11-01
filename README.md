@@ -26,6 +26,21 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for formatting, CI and the macOS validati
 Licensed under the [MIT License](LICENSE); third-party components are listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
+## Blog / How it's built
+
+**<https://chrisc413.github.io/genesisEmu/>**: one article per completed story, explaining what each feature
+does, why an emulator needs it and how this code base builds and tests it. No game assets; diagrams are
+original. The site is plain HTML in [`blog/`](blog/README.md), published by GitHub Pages from `main`.
+
+| Milestone | Articles |
+|-----------|----------|
+| M00 · Foundation | 7: build system, CI, config and logging, ROM loading, app shell, `gen_cli`, macOS validation |
+| M01 · 68000 CPU | 12: core framework, SingleStepTests harness, addressing modes, every instruction group, exceptions, timing audit, disassembler |
+| M02 · System bus & boot | 7: memory map, I/O and TMSS, Z80 bus control, VDP stub, scheduler, tracing, boot tests |
+| M03 · VDP video | 11: ports, DMA, interrupts, planes, scrolling, window, sprites, priority, interlace, presentation, golden frames |
+| M04 · Input, Z80, playable | 9: pads, input mapping, scripted input, Z80 core and harnesses, Z80 disassembler, integration, SRAM, playability |
+| M05 · Audio | 6: output and sync, PSG, YM2612 via ymfm, DAC and timers, mixer and register log, audio regression tests |
+
 ## Layout
 
 ```

@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A million tests before breakfast | genesisEmu</title>
+<meta name="description" content="The SingleStepTests suite records what a real 68000 does for each instruction. genesisEmu checks itself against all of it in about three seconds.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="A million tests before breakfast | genesisEmu">
+<meta property="og:description" content="The SingleStepTests suite records what a real 68000 does for each instruction. genesisEmu checks itself against all of it in about three seconds.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m01">M01 · 68000 CPU</a> · Story 2 of 12</p>
+<h1>A million tests before breakfast</h1>
+<p class="subtitle">The SingleStepTests suite records what a real 68000 does for each instruction. genesisEmu checks itself against all of it in about three seconds.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>5 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-02-singlesteptests-harness.md">Story M01-02</a></div>
+<div class="prose">
+<p>How do you know a CPU emulator is right? Running a game and checking that it looks fine is a weak test.
+Games use a fraction of the instruction set and tolerate many small errors. Writing your own tests by
+reading the manual only checks your reading of the manual.</p>
+
+<p>The SingleStepTests project offers something better: for the 68000, about a million recorded test
+vectors. Each vector gives a complete initial state (registers, the prefetch queue, the relevant bytes of
+memory), runs <em>one instruction</em>, and gives the expected final state and the exact number of clock
+cycles. If an emulator matches all of them, it behaves like the reference across the instruction set,
+including the odd corners.</p>
+
+<p>M01-02 built the harness that runs those vectors. Everything else in the milestone was developed
+against it.</p>
+
+<h2>Getting the data without committing it</h2>
+
+<p>The suite is large: 124 files and 202.6 MB of gzipped JSON. It also has no LICENSE file, so it can't
+be vendored into an MIT repository. <code>tools/fetch-test-data.py</code> downloads it on demand, pinned to a
+specific commit (<code>e0d5ece9</code>), and checks every file against the git blob SHA-1 recorded in
+<code>tools/test-data.lock.json</code>. A file whose hash changed upstream is rejected, not silently
+used.</p>
+
+<p>Parsing 200 MB of JSON in a C++ test would be slow and would need a JSON parser in the test binary. The
+fetch script converts each file once into a compact binary <code>.sst</code> format, about 250 MB in total,
+that the runner streams with a few lines of code:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">//   "SST68K\x01\x00"            8-byte magic
+//   source git blob SHA-1       40 ASCII hex characters (the .json.gz it was converted from)
+//   u32 count
+//   count x test:
+//     u16 nameLength, name bytes (UTF-8)
+//     initial state, final state:
+//       u32 d0-d7, a0-a6, usp, ssp, sr, pc   (19 x u32; pc = address of the opcode in prefetch[0])
+//       u16 prefetch[2]                       (IR, IRC)
+//       u32 ramCount, ramCount x (u32 address, u8 value)
+//     u32 cycles</code></pre><figcaption>The on-disk layout, from the header comment of <code>tests/m68k/sst_format.hpp</code>.</figcaption></figure>
+
+<p>Each converted file records the hash of the JSON it came from, so a stale conversion is detected and
+re-run.</p>
+
+<h2>Running one vector</h2>
+
+<p>For each vector the runner loads the initial RAM bytes into a flat 16 MB bus, sets the CPU state, calls
+<code>step()</code> once and compares. It checks all registers, both stack pointers, the status register,
+the program counter, both prefetch words and every expected RAM byte. It also checks for writes the
+vector <em>didn't</em> expect, so a spurious write to the wrong address fails even if every expected byte
+is right.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">for (const std::uint32_t addr : bus.written()) {
+    const bool known = std::any_of(want.ram.begin(), want.ram.end(),
+                                   [&amp;](const auto&amp; e) { return (e.first &amp; 0xFFFFFF) == addr; });
+    if (!known &amp;&amp; ramDiffs++ &lt; 4) {</code></pre><figcaption>Writes are tracked so that unexpected ones show up in the diff.</figcaption></figure>
+
+<p>Instead of clearing 16 MB between vectors, the bus remembers which bytes were loaded or written and
+zeroes only those. That keeps a million vectors in the range of seconds.</p>
+
+<blockquote class="pull"><p>The Release CI job runs all 1,000,060 vectors on every push. It takes about
+three seconds.</p></blockquote>
+
+<h2>Reports you can act on</h2>
+
+<p>The output is one line per file: passed, total, state mismatches, cycle-only mismatches and excluded
+vectors. The split between "state" and "cycle-only" matters during development. A cycle-only mismatch
+means the instruction computed the right result but took the wrong time, a different kind of bug from a
+wrong flag.</p>
+
+<p>With <code>--show N</code> the runner prints the first N failures in full: the initial registers and
+every field that differs, written as <code>expected!=actual</code>. <code>--failures FILE</code> writes
+every failure to a file for grepping. <code>--only MOVE.w,ADD.l</code> restricts a run to the files you're
+working on.</p>
+
+<h2>Exclusions need a reason</h2>
+
+<p>A handful of vectors disagree with the 68000 manual or are corrupt. Silently skipping them would hide
+regressions, and "fixing" the core to match them would make it wrong. The harness reads
+<code>tests/m68k/sst_exclusions.txt</code>, in which every excluded vector sits under an <code>@</code>
+line that states the reason:</p>
+
+<figure class="codefig"><pre><code class="language-text">@ ASR with a register count greater than the operand size on a negative operand: the suite expects C=X=0, but
+@ the shift is a bit-by-bit loop that keeps shifting out the sign bit, so C=X=1 (PRM: "C - set according to the
+@ last bit shifted out"; Musashi agrees). Selected by: ASR Dn,Dy with (Dn &amp; 63) &gt; size and the operand's MSB set.</code></pre><figcaption>The head of the exclusion file. The reasons are explained in the cycle-timing audit (M01-11).</figcaption></figure>
+
+<p>By the end of the milestone the file held 3,738 entries with two reasons, out of just over a million
+vectors.</p>
+
+<h2>Testing the tester</h2>
+
+<p>A harness that always passes is useless. The self-test <code>m68k.sst_selftest</code> runs the NOP vectors
+with <code>--inject-fault</code>, which flips a bit of D0 after every NOP, and with
+<code>--expect-fail</code>, which inverts the exit code. If the harness ever stops detecting a corrupted
+register, CI goes red.</p>
+
+<h2>In CI: everything, every push</h2>
+
+<p>The story planned a fast subset per push and a full nightly run. In practice the full suite was quick
+enough to need no nightly job. The Release job runs all 1,000,060 vectors on every push in about three
+seconds, and the Debug job runs the first 250 vectors of each file. The converted data is cached by the
+hash of the lock file. If the data is missing, the runner exits with code 4, which CTest reports as skipped
+rather than passed.</p>
+
+<h2>What the suite doesn't cover</h2>
+
+<p>The story notes record the suite's blind spots. Every vector starts in supervisor mode with interrupt
+mask 7, SSP at <code>$800</code> and the trace bit clear. User mode, privilege violations, tracing,
+interrupts and STOP are therefore covered by hand-written unit tests in the later stories.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-02-singlesteptests-harness.md">Story M01-02</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/m68k/sst_runner.cpp"><code>tests/m68k/sst_runner.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/m68k/sst_format.hpp"><code>tests/m68k/sst_format.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/m68k/sst_exclusions.txt"><code>tests/m68k/sst_exclusions.txt</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tools/fetch-test-data.py"><code>tools/fetch-test-data.py</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/CMakeLists.txt"><code>tests/CMakeLists.txt</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M01-01-cpu-core-framework.html"><span class="label">&larr; Previous</span><span class="title">M01-01 · The skeleton of a 68000</span></a>
+<a class="next" href="M01-03-effective-address-modes.html"><span class="label">Next &rarr;</span><span class="title">M01-03 · Every way to find an operand</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

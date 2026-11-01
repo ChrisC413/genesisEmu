@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Talking to the video chip, exactly | genesisEmu</title>
+<meta name="description" content="The VDP&#x27;s command port has latch rules that look like trivia until a game depends on one. M03-01 implemented all of them and gave each one a unit test.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Talking to the video chip, exactly | genesisEmu">
+<meta property="og:description" content="The VDP&#x27;s command port has latch rules that look like trivia until a game depends on one. M03-01 implemented all of them and gave each one a unit test.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m03">M03 · VDP video</a> · Story 1 of 11</p>
+<h1>Talking to the video chip, exactly</h1>
+<p class="subtitle">The VDP's command port has latch rules that look like trivia until a game depends on one. M03-01 implemented all of them and gave each one a unit test.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>5 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-01-vdp-ports-registers-memories.md">Story M03-01</a></div>
+<div class="prose">
+<p>M02 gave genesisEmu a VDP that accepted commands well enough to boot three games. M03 was the video
+milestone, and before drawing a single pixel it made the chip's interface exact. Rendering reads VRAM, CRAM
+and VSRAM, so if a byte lands one address off, or a write that should be dropped isn't, every later
+rendering story inherits the error.</p>
+
+<h2>Three memories behind two ports</h2>
+
+<p>The VDP owns three memories the 68000 can't address directly:</p>
+
+<ul>
+<li><strong>VRAM</strong>, 64 KB: tile graphics, the name tables that arrange tiles into planes, the
+sprite table and the horizontal scroll table;</li>
+<li><strong>CRAM</strong>, 64 words: the palette, four lines of 16 colours, each a 9-bit
+<code>0000 BBB0 GGG0 RRR0</code> value;</li>
+<li><strong>VSRAM</strong>, 40 words: vertical scroll values.</li>
+</ul>
+
+<p>All access goes through the data port, after a two-word command on the control port has set a 16-bit
+address and a 6-bit <strong>code</strong> that says which memory, read or write, and whether to start DMA.
+The state the VDP keeps for this is small: the address, the code, a <code>pending</code> flag between the
+first and second command word, a read buffer, and the 24 registers.</p>
+
+<h2>The latch rules</h2>
+
+<p>The interesting part is how the control port interprets words. M03-01 implemented the rules the
+hardware actually follows, which aren't all in the official documentation:</p>
+
+<ul>
+<li>A first command word sets address bits A13–A0 and code bits CD1–CD0 and arms <code>pending</code>.
+The second sets A15–A14 and CD5–CD2.</li>
+<li>A <strong>lone first word</strong>, one that is never followed by a second, keeps A15–A14 from the most
+recent second word.</li>
+<li>A <strong>register write</strong> also loads A13–A0 and CD1–CD0 from its bits. That leaves CD1–CD0 = 2,
+which isn't a valid target, so stray data writes after a register write are dropped, as on hardware.</li>
+<li>Any data-port access or status read clears <code>pending</code>.</li>
+</ul>
+
+<figure class="codefig"><pre><code class="language-cpp">// Either way the word also loads A13-A0 and CD1-CD0 (a register write leaves CD1-CD0 = 2, an invalid
+// target, so stray data writes after it are dropped as on hardware).
+s_.code = static_cast&lt;std::uint8_t&gt;((s_.code &amp; 0x3C) | (value &gt;&gt; 14));
+s_.address = static_cast&lt;std::uint16_t&gt;(s_.addressHigh | (value &amp; 0x3FFF));</code></pre><figcaption>The end of <code>Vdp::writeControl</code>: both register writes and first command words reload the low code and address bits.</figcaption></figure>
+
+<blockquote class="pull"><p>A register write quietly changes the access target too. Data written after
+it goes nowhere, on hardware and in the emulator.</p></blockquote>
+
+<h2>Reads, writes and wraparound</h2>
+
+<p>Each memory has its own write behaviour, and <code>writeTarget</code> shows them side by side. A VRAM
+write to an odd address swaps the bytes of the word. CRAM keeps only the nine colour bits and wraps every
+64 words. VSRAM has 40 entries inside a 64-word address window, so writes to entries 40–63 are dropped:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">case kCodeCramWrite:  // 9-bit color 0000 BBB0 GGG0 RRR0; 64 words, the address wraps
+    s_.cram[(s_.address &gt;&gt; 1) &amp; 0x3F] = static_cast&lt;std::uint16_t&gt;(value &amp; 0x0EEE);
+    paletteDirty_ = true;
+    ++cramWritesThisLine_;
+    break;
+case kCodeVsramWrite: {  // 40 words; addresses 40-63 of the 64-word window are not backed
+    const std::size_t i = (s_.address &gt;&gt; 1) &amp; 0x3F;
+    if (i &lt; kVsramWords) {
+        s_.vsram[i] = static_cast&lt;std::uint16_t&gt;(value &amp; 0x07FF);
+    }
+    break;
+}</code></pre><figcaption>Three memories, three sets of rules. Every write advances the address by the auto-increment in register 15.</figcaption></figure>
+
+<p>Reads go through a <strong>read buffer</strong>. CRAM and VSRAM are narrower than 16 bits, and the unused
+bits of a read come from whatever the buffer last held. There's also an undocumented read code,
+<code>$0C</code>, an 8-bit VRAM read that puts one byte in the low half of the word. It's implemented and
+tested like the documented codes.</p>
+
+<h2>A FIFO, approximately</h2>
+
+<p>On hardware, data-port writes go into a four-entry FIFO, and during active display the VDP only drains
+it at certain moments. Writing faster than that stalls the 68000. genesisEmu models the FIFO only as far as
+the status register shows it: writes during active display fill it, it drains at the end of each line, and
+the "FIFO empty" and "FIFO full" bits follow. Writes never stall the CPU. The story records this as an
+approximation; none of the target games needed more.</p>
+
+<h2>The sprite cache</h2>
+
+<p>One hardware detail affects rendering directly. The VDP keeps a private copy of the first four bytes
+(Y position, size and link) of every entry in the sprite attribute table. That copy is updated only when
+the 68000 writes VRAM <em>inside</em> the table. If a game moves the table to another address, the cache
+isn't reloaded, and the sprite renderer (M03-07) keeps using the old values.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">const std::uint16_t base = static_cast&lt;std::uint16_t&gt;((s_.regs[5] &lt;&lt; 9) &amp; (h40() ? 0xFC00 : 0xFE00));
+const auto off = static_cast&lt;std::uint16_t&gt;(addr - base);
+if (off &lt; kMaxSprites * 8 &amp;&amp; (off &amp; 4) == 0) {
+    s_.satCache[static_cast&lt;std::size_t&gt;((off &gt;&gt; 3) * 4 + (off &amp; 3))] = value;
+}</code></pre><figcaption><code>Vdp::writeVram</code> mirrors writes that hit bytes 0-3 of a sprite entry into the cache.</figcaption></figure>
+
+<h2>Tested edge by edge</h2>
+
+<p><code>tests/unit/vdp_test.cpp</code> has a case for each rule: the read and write codes for every memory,
+the 8-bit VRAM read, invalid codes being dropped, <code>pending</code> cleared by a data or status access,
+the A15–A14 latch reused by a lone first word, register writes reloading the code, CRAM and VSRAM wrapping,
+the status bits, and the sprite cache following only writes inside the table. The DMA bit in a command is
+ignored while DMA is disabled in register 1, which M03-02 builds on.</p>
+
+<p>The story is explicit about what isn't modelled: Master System compatibility mode, the HV-counter latch
+bit and the 128 KB VRAM mode. None of the target games use them, and the story doesn't claim otherwise. It
+also notes that no free VDP test ROM was run, because the project's fetch script doesn't download any.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-01-vdp-ports-registers-memories.md">Story M03-01</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/vdp/vdp.hpp"><code>src/core/vdp/vdp.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/vdp/vdp.cpp"><code>src/core/vdp/vdp.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/vdp_test.cpp"><code>tests/unit/vdp_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M02-07-boot-smoke-tests.html"><span class="label">&larr; Previous</span><span class="title">M02-07 · Three games boot, with nothing on screen</span></a>
+<a class="next" href="M03-02-dma.html"><span class="label">Next &rarr;</span><span class="title">M03-02 · DMA, and the cost of a free copy</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

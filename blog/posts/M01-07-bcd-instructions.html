@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decimal arithmetic on a binary chip | genesisEmu</title>
+<meta name="description" content="Score counters and timers on the Genesis are often binary-coded decimal. ABCD, SBCD and NBCD are three instructions with flags the manual calls undefined.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Decimal arithmetic on a binary chip | genesisEmu">
+<meta property="og:description" content="Score counters and timers on the Genesis are often binary-coded decimal. ABCD, SBCD and NBCD are three instructions with flags the manual calls undefined.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m01">M01 · 68000 CPU</a> · Story 7 of 12</p>
+<h1>Decimal arithmetic on a binary chip</h1>
+<p class="subtitle">Score counters and timers on the Genesis are often binary-coded decimal. ABCD, SBCD and NBCD are three instructions with flags the manual calls undefined.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-07-bcd-instructions.md">Story M01-07</a></div>
+<div class="prose">
+<p>Look at a Sonic HUD: score, time, rings. Each number has to be shown as decimal digits, and turning a
+binary number into decimal digits needs division, which costs over a hundred cycles on a 68000. Many games
+avoid that by storing such numbers in <strong>binary-coded decimal</strong> (BCD) in the first place: each
+4-bit nibble holds one decimal digit, so the byte <code>$59</code> means fifty-nine. Drawing it is a matter
+of looking at each nibble.</p>
+
+<p>The 68000 supports this directly with three instructions: <strong>ABCD</strong> (add decimal with
+extend), <strong>SBCD</strong> (subtract decimal with extend) and <strong>NBCD</strong> (negate decimal).
+They work on single bytes, two digits at a time, and chain through the X flag for longer numbers. M01-07
+implemented them, including the flags Motorola documented as undefined.</p>
+
+<h2>Add in binary, then correct</h2>
+
+<p>Inside the chip, BCD addition is ordinary binary addition followed by a correction. Adding
+<code>$08 + $05</code> in binary gives <code>$0D</code>. That isn't a valid decimal digit, so the chip adds 6,
+giving <code>$13</code>: thirteen, carry into the tens digit handled. The same happens for the tens digit
+with <code>$60</code>. The header comment in <code>ops_bcd.cpp</code> sums up the model:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">// The 68000 adds/subtracts in binary and then applies decimal corrections: +/-6 when the low digit carried or
+// borrowed (or exceeds 9 on addition), +/-$60 for the high digit. N is the result's top bit and V reports
+// that the correction flipped bit 7 (0 -&gt; 1 on addition, 1 -&gt; 0 on subtraction). Z is only ever cleared.</code></pre><figcaption>The model, from the top of <code>src/core/m68k/ops_bcd.cpp</code>.</figcaption></figure>
+
+<figure class="figure">
+<svg viewBox="0 0 640 140" role="img" aria-labelledby="m0107t">
+<title id="m0107t">BCD add example: 0x38 plus 0x25 gives binary 0x5D; low digit over 9 so add 6, giving 0x63.</title>
+<rect class="dg-box" x="10" y="30" width="130" height="70" rx="8"/>
+<text class="dg-mono" x="75" y="58" text-anchor="middle">$38 + $25</text>
+<text class="dg-small" x="75" y="80" text-anchor="middle">38 + 25 in decimal</text>
+<rect class="dg-warm" x="190" y="30" width="130" height="70" rx="8"/>
+<text class="dg-mono" x="255" y="58" text-anchor="middle">= $5D</text>
+<text class="dg-small" x="255" y="80" text-anchor="middle">binary; D is not a digit</text>
+<rect class="dg-alt" x="370" y="30" width="110" height="70" rx="8"/>
+<text class="dg-mono" x="425" y="58" text-anchor="middle">+ $06</text>
+<text class="dg-small" x="425" y="80" text-anchor="middle">low-digit fix</text>
+<rect class="dg-green" x="530" y="30" width="100" height="70" rx="8"/>
+<text class="dg-mono dg-bold" x="580" y="58" text-anchor="middle">$63</text>
+<text class="dg-small" x="580" y="80" text-anchor="middle">63: correct</text>
+<path class="dg-line" d="M140 65 H190 M320 65 H370 M480 65 H530"/>
+</svg>
+<figcaption>ABCD in one picture: a binary add, then a +6 correction because the low nibble went past 9. A high nibble past 9 gets +$60 and sets the carry.</figcaption>
+</figure>
+
+<p>The code follows the same steps:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">const std::uint32_t low = (src &amp; 0x0F) + (dst &amp; 0x0F) + x;
+const std::uint32_t binary = (src &amp; 0xFF) + (dst &amp; 0xFF) + x;
+std::uint32_t result = binary;
+if (low &gt; 9) {
+    result += 6;
+}
+const bool carry = (result &amp; 0x3F0) &gt; 0x90;
+if (carry) {
+    result += 0x60;
+}
+setBcdFlags(c, result, carry, (binary &amp; 0x80) == 0 &amp;&amp; (result &amp; 0x80) != 0);</code></pre><figcaption><code>addBcd</code>: binary sum, then the corrections. The carry test looks at the high digit after the first correction.</figcaption></figure>
+
+<blockquote class="pull"><p>"Undefined" in a manual doesn't mean random. The chip does something
+specific, and software can come to depend on it.</p></blockquote>
+
+<h2>Undefined, but not random</h2>
+
+<p>Motorola's manual says the N and V flags are <em>undefined</em> after these instructions. That doesn't
+mean they're random. A given chip produces a specific, repeatable result, and the SingleStepTests suite
+recorded it. An emulator that leaves those flags alone, or clears them, fails thousands of vectors. More to
+the point, any game code that accidentally branches on them would behave differently.</p>
+
+<p>The rule the core settled on reproduces every vector. N is simply bit 7 of the corrected result. V is set
+when the decimal correction itself flipped bit 7: on addition, the binary sum had bit 7 clear and the
+corrected result has it set; on subtraction, the reverse. That's the last argument to
+<code>setBcdFlags</code> above.</p>
+
+<p>Two flags behave like the extended binary instructions from M01-05. C and X carry the decimal carry or
+borrow out of the byte, so multi-byte numbers can be chained. Z is only ever <em>cleared</em>, never set.
+That's what makes a chain of ABCDs over a 6-digit score correctly report "the whole number is zero".</p>
+
+<h2>Two operand forms</h2>
+
+<p>Each instruction comes in a register form (<code>abcd.b d0,d1</code>) and a memory form using
+pre-decrement on both operands (<code>abcd.b -(a0),-(a1)</code>). The memory form exists for exactly the
+multi-byte case: point two address registers just past the ends of two BCD numbers and repeat the
+instruction to walk down through the bytes, least significant first, with X carrying between them.</p>
+
+<p>The memory form has its own ordering details. It spends 2 internal cycles, decrements and reads the
+source, decrements and reads the destination, prefetches the next instruction, and only then writes the
+result. As elsewhere in the core, that order is what makes faulting cases come out exactly right. A7
+decrements by 2 for these byte operations, the same stack-alignment rule as the addressing modes.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">c.idle(2);
+c.s.a[ry] -= ry == 7 ? 2 : 1;
+const std::uint32_t src = c.readByte(c.s.a[ry]);
+c.s.a[rx] -= rx == 7 ? 2 : 1;
+const std::uint32_t dst = c.readByte(c.s.a[rx]);
+const std::uint32_t r = Add ? addBcd(c, src, dst) : subBcd(c, src, dst);
+c.prefetch();
+c.writeByte(c.s.a[rx], static_cast&lt;std::uint8_t&gt;(r));</code></pre><figcaption>The memory form, step by step.</figcaption></figure>
+
+<h2>Inputs that aren't valid BCD</h2>
+
+<p>Nothing stops a program from passing <code>$FF</code> to ABCD. The chip still runs its add-and-correct
+sequence and produces some byte. Because the core implements the same steps rather than "convert to decimal,
+add, convert back", invalid inputs produce the same results as on the chip. The test vectors use random
+bytes, so most of them are exactly such invalid inputs, and the core matches them.</p>
+
+<h2>Verified</h2>
+
+<p>ABCD, SBCD and NBCD pass 100% of their 24,195 SingleStepTests vectors, including the undefined N and V
+flags and every cycle count. The disassembler's golden-text tests check the two syntactic forms, for
+example <code>abcd.b -(a0),-(a1)</code> and <code>sbcd.b d0,d1</code>.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-07-bcd-instructions.md">Story M01-07</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/ops_bcd.cpp"><code>src/core/m68k/ops_bcd.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/analysis/disasm68k/disasm68k.cpp"><code>src/analysis/disasm68k/disasm68k.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M01-06-logic-shift-bit.html"><span class="label">&larr; Previous</span><span class="title">M01-06 · Bit twiddling, and a disagreement with the reference</span></a>
+<a class="next" href="M01-08-program-control.html"><span class="label">Next &rarr;</span><span class="title">M01-08 · Branches, calls and knowing where you went</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

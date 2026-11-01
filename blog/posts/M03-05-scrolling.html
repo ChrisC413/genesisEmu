@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parallax: scrolling every line differently | genesisEmu</title>
+<meta name="description" content="Sonic&#x27;s backgrounds move at several speeds at once: clouds slowly, mountains faster, the ground at full speed. The VDP lets each scanline scroll on its own, and so does genesisEmu.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Parallax: scrolling every line differently | genesisEmu">
+<meta property="og:description" content="Sonic&#x27;s backgrounds move at several speeds at once: clouds slowly, mountains faster, the ground at full speed. The VDP lets each scanline scroll on its own, and so does genesisEmu.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m03">M03 · VDP video</a> · Story 5 of 11</p>
+<h1>Parallax: scrolling every line differently</h1>
+<p class="subtitle">Sonic's backgrounds move at several speeds at once: clouds slowly, mountains faster, the ground at full speed. The VDP lets each scanline scroll on its own, and so does genesisEmu.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-05-scrolling.md">Story M03-05</a></div>
+<div class="prose">
+<p>Green Hill Zone's background is one of the most recognisable images of 16-bit gaming. Clouds drift
+slowly, mountains slide past faster, the lake shimmers, and the foreground moves at full speed. It's all one
+background plane. The trick is that the Genesis can scroll every <em>line</em> of a plane by a different
+amount. M03-05 implemented the VDP's scrolling modes, horizontal and vertical.</p>
+
+<h2>Horizontal scroll: a table in VRAM</h2>
+
+<p>Horizontal scroll values live in a table in VRAM (its address is in register 13). Each entry holds two
+words, one for plane A and one for plane B. Register 11 picks how many entries the table has:</p>
+
+<ul>
+<li><strong>full screen</strong>: one entry for the whole frame;</li>
+<li><strong>per cell</strong>: one entry per 8-line strip;</li>
+<li><strong>per line</strong>: one entry for every scanline, which is what parallax needs;</li>
+<li>a <strong>prohibited</strong> fourth setting, which on hardware repeats the first eight entries. The
+emulator does the same rather than guessing.</li>
+</ul>
+
+<figure class="codefig"><pre><code class="language-cpp">switch (s_.regs[11] &amp; 3) {
+    case 1:
+        hsLine = screenLine &amp; 7;
+        break;
+    case 2:
+        hsLine = screenLine &amp; ~7;
+        break;
+    case 3:
+        hsLine = screenLine;
+        break;
+    default:
+        break;
+}</code></pre><figcaption>Choosing the scroll-table entry for this line, from <code>Vdp::renderPlane</code>.</figcaption></figure>
+
+<p>The scroll value is 10 bits. The renderer subtracts it from the screen X position and wraps by the plane
+width, so a plane scrolls around seamlessly. With per-line scrolling, a game writes a different value for
+each band of the background every frame. A slow-moving cloud band gets a small offset, the ground a large
+one, and the eye reads it as depth.</p>
+
+<figure class="figure">
+<svg viewBox="0 0 640 170" role="img" aria-labelledby="m0305t">
+<title id="m0305t">Per-line horizontal scroll: bands of the same plane shifted by different amounts create parallax.</title>
+<rect class="dg-box" x="20" y="20" width="600" height="130"/>
+<rect class="dg-alt" x="40" y="24" width="560" height="28"/>
+<text class="dg-small" x="320" y="42" text-anchor="middle">lines 0-31: scroll −12 (far clouds)</text>
+<rect class="dg-green" x="70" y="56" width="530" height="28"/>
+<text class="dg-small" x="335" y="74" text-anchor="middle">lines 32-63: scroll −40 (mountains)</text>
+<rect class="dg-warm" x="120" y="88" width="480" height="28"/>
+<text class="dg-small" x="360" y="106" text-anchor="middle">lines 64-95: scroll −96 (near hills)</text>
+<rect class="dg-alt" x="180" y="120" width="420" height="26"/>
+<text class="dg-small" x="390" y="137" text-anchor="middle">lines 96+: scroll −160 (ground)</text>
+</svg>
+<figcaption>An illustration, not real game data. One plane, four bands, four scroll values. Updated every frame at different rates, it looks like depth.</figcaption>
+</figure>
+
+<h2>Vertical scroll: per screen or per column</h2>
+
+<p>Vertical scroll values live in VSRAM. Register 11 chooses between one value for the whole plane and one
+value per <strong>2-cell column</strong>, a 16-pixel-wide strip. Column scrolling allows effects such as
+rippling or wobbling backgrounds, and it's the reason VSRAM has 40 entries: 20 columns × 2 planes.</p>
+
+<p>Combining horizontal and column scrolling raises a question: which column does a pixel belong to after
+the plane has been scrolled sideways? genesisEmu follows the hardware's fetch grid, which moves with the fine
+horizontal scroll. That leaves a partly visible column at the left edge that has no VSRAM entry of its own.
+What real hardware shows there is a known quirk, and the emulator approximates it, as the code comment
+explains:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">// 2-cell columns follow the fine-scrolled fetch grid; the partly visible column left of the
+// first one has no VSRAM entry of its own (approximated as entries 38 and 39 ANDed).
+const int n = ((x - fine + 16) &gt;&gt; 4) - 1;
+vs = n &lt; 0 ? (s_.vsram[38] &amp; s_.vsram[39])
+           : s_.vsram[static_cast&lt;std::size_t&gt;(std::min(n, 19) * 2 + plane)];</code></pre><figcaption>The left-edge quirk. The story labels it an approximation.</figcaption></figure>
+
+<p>Vertical scroll values are 10 bits normally and 11 in interlace mode 2 (M03-09), where the plane is
+twice as tall in pixels.</p>
+
+<blockquote class="pull"><p>Green Hill Zone's background is one plane. The depth comes from scrolling
+each band of lines by a different amount.</p></blockquote>
+
+<h2>Recording what happened</h2>
+
+<p>As each line is rendered, the renderer records the scroll values it used, horizontal for both planes
+and vertical for the first column, into a per-line array exposed as <code>Vdp::lineInfo()</code>. Nothing in
+emulation needs it. It's there for the debugger's VDP viewers planned for M06, which can then show exactly
+how a frame was scrolled without re-deriving it from VRAM.</p>
+
+<h2>Verified, and not verified</h2>
+
+<p>Unit tests build planes with recognisable patterns and check each mode: full, per-cell and per-line
+horizontal scroll, and full-screen and per-column vertical scroll. The visual check was Sonic 1's Green Hill
+Zone attract demo at frames 1,300, 2,000 and 2,800. The clouds, mountains, water band and foreground scroll
+at different rates, and all three frames are golden checkpoints.</p>
+
+<p>The second criterion, Sonic 2's Emerald Hill Zone water ripple, is <strong>not verified</strong>. The
+Emerald Hill attract demo is the two-player version; its background renders plausibly, but the ripple wasn't
+compared frame by frame against a reference. The story stays "In progress" until it is.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M03-vdp-video/M03-05-scrolling.md">Story M03-05</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/vdp/vdp_render.cpp"><code>src/core/vdp/vdp_render.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/vdp_render_test.cpp"><code>tests/unit/vdp_render_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M03-04-plane-rendering.html"><span class="label">&larr; Previous</span><span class="title">M03-04 · The first pixels: tiles, name tables and planes</span></a>
+<a class="next" href="M03-06-window-plane.html"><span class="label">Next &rarr;</span><span class="title">M03-06 · The window: a plane that doesn't scroll</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

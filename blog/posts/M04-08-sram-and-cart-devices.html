@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Battery saves and a socket for custom hardware | genesisEmu</title>
+<meta name="description" content="Sonic 3 &amp; Knuckles saves your progress in battery-backed RAM on the cartridge. Supporting it meant building a small plug-in system for cartridge hardware, which the project&#x27;s LED mod will plug into later.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Battery saves and a socket for custom hardware | genesisEmu">
+<meta property="og:description" content="Sonic 3 &amp; Knuckles saves your progress in battery-backed RAM on the cartridge. Supporting it meant building a small plug-in system for cartridge hardware, which the project&#x27;s LED mod will plug into later.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m04">M04 · Input, Z80, playable</a> · Story 8 of 9</p>
+<h1>Battery saves and a socket for custom hardware</h1>
+<p class="subtitle">Sonic 3 & Knuckles saves your progress in battery-backed RAM on the cartridge. Supporting it meant building a small plug-in system for cartridge hardware, which the project's LED mod will plug into later.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-08-sram-and-cart-devices.md">Story M04-08</a></div>
+<div class="prose">
+<p>A cartridge isn't always just ROM. Some carry extra hardware: battery-backed RAM for saves, bank-switching
+chips, or, in this project's future, a custom board that lights an LED for each Chaos Emerald collected
+(milestone M12). Sonic 3 &amp; Knuckles has battery-backed save RAM (SRAM) for its save slots. M04-08 added it,
+and designed the mechanism so that other cartridge hardware can be added the same way.</p>
+
+<h2>A chain of devices</h2>
+
+<p>A cartridge is modelled as its ROM plus an ordered list of <strong>devices</strong>. Each device implements
+the <code>ICartDevice</code> interface and can do three things, all optional:</p>
+
+<ul>
+<li>claim <strong>/TIME registers</strong>, the <code>$A130xx</code> range that the console strobes a dedicated
+cartridge pin for, where mappers and other cartridge hardware live;</li>
+<li><strong>overlay</strong> part of the cartridge address space, the way SRAM appears at
+<code>$200000</code>;</li>
+<li><strong>snoop</strong> writes to ROM space, which some hardware uses as a write-only port.</li>
+</ul>
+
+<figure class="codefig"><pre><code class="language-cpp">// Cartridge-space overlay: [first, last] of the 68k addresses the device may answer (empty: first &gt;
+// last). The bus routes every access in the 64 KB pages that range touches through the chain before the
+// ROM.
+virtual std::uint32_t memFirst() const { return 1; }
+virtual std::uint32_t memLast() const { return 0; }</code></pre><figcaption>The overlay part of <code>ICartDevice</code>. Returning true means "I handled this access".</figcaption></figure>
+
+<p>The first device that answers wins. Devices are part of the machine state: each one hashes its state into
+the determinism hash, and they'll be included in save states when those arrive in M06.</p>
+
+<p>The bus integrates the chain through its page table from M02-01. A ROM page that a device overlays loses
+its direct fast-read pointer and becomes a <code>Cart</code> page, so every access there goes through the
+chain first. All other ROM pages keep the fast path, so a 4 MB game with a small SRAM region pays the cost on
+one 64 KB page only.</p>
+
+<blockquote class="pull"><p>The SRAM controller is just the first cartridge device. The emerald-LED board
+planned for M12 will be another.</p></blockquote>
+
+<h2>The SRAM controller</h2>
+
+<p>The first device is <code>SramDevice</code>, configured from the cartridge header's SRAM declaration, which
+M00-04 already parses. The header gives the address range and the <strong>byte lanes</strong>. Many cartridges
+wire an 8-bit SRAM chip to only the odd (or even) bytes of the 16-bit bus. Sonic 3 &amp; Knuckles' SRAM sits
+at odd addresses from <code>$200001</code>, so only every other byte exists. The device maps addresses to
+storage accordingly:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">case SramLanes::Odd:
+    out = off &gt;&gt; 1;
+    return (addr &amp; 1) != 0;</code></pre><figcaption>Odd-lane SRAM: only odd addresses are backed, and two bus addresses map to one stored byte.</figcaption></figure>
+
+<p>For a lock-on image (Sonic &amp; Knuckles with Sonic 3 attached), the declaration comes from the
+locked-on cartridge's header at <code>$200100</code>, which is where Sonic 3's own header ends up in the
+combined image.</p>
+
+<h2>$A130F1: ROM or RAM?</h2>
+
+<p>SRAM at <code>$200000</code> overlaps ROM in a 4 MB image like S3K. The cartridge resolves this with a
+register at <code>$A130F1</code>: bit 0 maps SRAM in (hiding the ROM underneath), bit 1 write-protects it.
+The device claims that /TIME register:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">const bool wasMapped = mapped();
+control_ = static_cast&lt;std::uint8_t&gt;(value &amp; 0x03);
+if (wasMapped &amp;&amp; !mapped() &amp;&amp; dirty_) {
+    flushRequested_ = true;
+}</code></pre><figcaption><code>SramDevice::timeWrite</code>. Unmapping with unsaved changes requests a flush to disk.</figcaption></figure>
+
+<p>If the ROM is small enough that SRAM doesn't overlap it, SRAM is mapped from power-on; otherwise the game
+has to switch it in. Before this story, S3K's save writes showed up in the bus issue log as ROM writes
+(M02-01). Now they land in SRAM.</p>
+
+<h2>Saving to disk</h2>
+
+<p>SRAM contents persist in <code>&lt;user data&gt;/roms/&lt;sha1&gt;/&lt;sha1&gt;.srm</code>, inside the
+per-ROM folder from M00-03. The app loads it when a ROM starts and writes it every 2 seconds while dirty, when
+the ROM changes and on exit. <code>gen_cli run --sram file</code> does the same for headless runs.</p>
+
+<h2>Tests</h2>
+
+<p>Unit tests cover SRAM over a 4 MB ROM switched by <code>$A130F1</code> (ROM visible again when unmapped),
+SRAM beyond a small ROM mapped from power-on, persistence to a <code>.srm</code> file, and the chain itself: a
+test device claiming <code>$A130E1</code> receives writes, and unclaimed <code>$A130xx</code> writes are logged
+as issues. The end-to-end check used scripted input. One run of S3K picks data-select slot 1, starts Angel
+Island and writes the <code>.srm</code>. A second run loads it and shows slot 1 as "ZONE 1" with lives
+instead of "NEW". The app logs "battery save loaded" for the same file. Saving from inside an interactive app
+session uses the same code but wasn't exercised directly, and the story notes that it still deserves a
+manual check.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-08-sram-and-cart-devices.md">Story M04-08</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/cart/cart_device.hpp"><code>src/core/cart/cart_device.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/cart/sram.cpp"><code>src/core/cart/sram.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/bus/system_bus.cpp"><code>src/core/bus/system_bus.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/common/sram_file.cpp"><code>src/common/sram_file.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/cart_device_test.cpp"><code>tests/unit/cart_device_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M04-07-z80-system-integration.html"><span class="label">&larr; Previous</span><span class="title">M04-07 · Two CPUs sharing one machine</span></a>
+<a class="next" href="M04-09-playability-milestone.html"><span class="label">Next &rarr;</span><span class="title">M04-09 · Playable, at 14% of one core</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

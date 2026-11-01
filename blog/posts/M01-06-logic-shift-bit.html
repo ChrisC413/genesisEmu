@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bit twiddling, and a disagreement with the reference | genesisEmu</title>
+<meta name="description" content="Logic ops, shifts, rotates and bit tests pass 359,187 vectors. For 3,736 more, the project sided with the manual against the test suite.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Bit twiddling, and a disagreement with the reference | genesisEmu">
+<meta property="og:description" content="Logic ops, shifts, rotates and bit tests pass 359,187 vectors. For 3,736 more, the project sided with the manual against the test suite.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m01">M01 · 68000 CPU</a> · Story 6 of 12</p>
+<h1>Bit twiddling, and a disagreement with the reference</h1>
+<p class="subtitle">Logic ops, shifts, rotates and bit tests pass 359,187 vectors. For 3,736 more, the project sided with the manual against the test suite.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>5 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-06-logic-shift-bit.md">Story M01-06</a></div>
+<div class="prose">
+<p>Games run on bit twiddling. Collision flags are packed into bytes, object status lives in individual
+bits, controller input arrives as a bitmask, and multiplying by a power of two is a shift. M01-06 covers
+the 68000 instructions that do this: AND, OR, EOR and NOT with their immediate and status-register
+forms, all eight shifts and rotates, the bit instructions BTST, BSET, BCLR and BCHG, plus TST, TAS and
+Scc.</p>
+
+<h2>Shifts, one bit at a time</h2>
+
+<p>The 68000 has four families of shift, each in both directions: <strong>arithmetic</strong> (ASL/ASR,
+which keep the sign), <strong>logical</strong> (LSL/LSR), <strong>rotate</strong> (ROL/ROR) and
+<strong>rotate through extend</strong> (ROXL/ROXR, where the X flag acts as a 17th, 9th or 33rd bit).
+Counts can come from the instruction (1 to 8) or from a register, modulo 64, which is more than the
+operand size.</p>
+
+<p>The flags differ in small ways between families. ASL sets V if the sign bit changed <em>at any
+point</em> during the shift. A rotate never touches X. ROXL with a count of zero copies X into C. Rather
+than finding a clever closed form for each, the core shifts one bit at a time, exactly as the description
+in the manual reads:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">for (unsigned i = 0; i &lt; count; ++i) {
+    if constexpr (Left) {
+        carry = (v &amp; msb) != 0;
+        std::uint32_t n = (v &lt;&lt; 1) &amp; mask;
+        if constexpr (T == Shift::Ro) {
+            n |= carry ? 1 : 0;
+        } else if constexpr (T == Shift::Rox) {
+            n |= x ? 1 : 0;
+            x = carry;
+        } else if constexpr (T == Shift::As) {
+            overflow |= ((n ^ v) &amp; msb) != 0;
+        }
+        v = n;</code></pre><figcaption>One templated loop handles all eight shift and rotate kinds; the family and direction are compile-time constants.</figcaption></figure>
+
+<p>A loop of up to 63 iterations sounds slow, but large register counts are rare in real code, and the
+loop matches the hardware's own timing model: 2 cycles per bit shifted. That's in the handler too:
+<code>c.idle((S == 4 ? 4 : 2) + 2 * static_cast&lt;int&gt;(count))</code>.</p>
+
+<blockquote class="pull"><p>When the reference and the manual disagree, the project has to choose, and
+then write the choice down.</p></blockquote>
+
+<h2>The ASR disagreement</h2>
+
+<p>Here the suite and the core part ways. Take ASR (arithmetic shift right) on a negative byte, shifted by
+a register count greater than 8, say 20. An arithmetic right shift copies the sign bit back in, so the value
+fills with ones, and every bit shifted out after the first few is a 1. The manual says C is "set according
+to the last bit shifted out", so C and X should end up 1.</p>
+
+<p>For these cases the SingleStepTests suite expects C = X = 0. The core follows the manual (and
+Musashi, the long-established 68000 emulator, agrees with the manual). The 3,736 affected vectors are
+listed in <code>tests/m68k/sst_exclusions.txt</code> under a paragraph explaining why, with the exact
+selection rule: <em>ASR Dn,Dy with (Dn &amp; 63) &gt; size and the operand's MSB set</em>. Two more ASL.b
+vectors are excluded as corrupt: their expected D2 differs in all 32 bits, which a byte shift can't
+produce.</p>
+
+<p>The exclusion is a decision, recorded where anyone can audit it. If later evidence from real hardware
+favours the suite, changing the core is a few lines and deleting the exclusions.</p>
+
+<h2>Bit numbers wrap differently by destination</h2>
+
+<p>BTST and its siblings take a bit number from an immediate or a register. If the target is a data
+register, the number is taken modulo 32. If it's memory, the operation is byte-sized and the number is
+taken modulo 8. One handler covers both, templated on the destination mode. The suite also confirmed one
+timing detail: BTST with an immediate bit number on a register takes 10 cycles.</p>
+
+<h2>TAS: a Genesis quirk</h2>
+
+<p>TAS, "test and set", reads a byte, sets the flags from it, and writes it back with bit 7 set, as one
+indivisible read-modify-write bus cycle. It was made for multiprocessor locks. On the Genesis the write
+half of that locked cycle doesn't reach the cartridge or RAM, so memory is left unchanged. The CPU spec
+lists this as quirk C68-9: "TAS write-back is ignored on the cartridge/RAM bus".</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if (c.tasWriteback) {
+    c.writeByte(addr, static_cast&lt;std::uint8_t&gt;(v | 0x80));
+} else {
+    c.idle(4);  // the write cycle still takes its time; the Genesis bus ignores it (C68-9)
+}</code></pre><figcaption>TAS on memory. The write cycle still costs its time even when the Genesis bus drops it.</figcaption></figure>
+
+<p>Write-back is off by default, which is correct for the Genesis. The SingleStepTests runner turns it on,
+because the suite models a normal 68000 bus. A unit test, <em>TAS write-back is configurable (Genesis
+quirk)</em>, covers both settings. A few commercial Genesis games are known to rely on this quirk, so
+the emulator has to get it right even though the test suite can't check it.</p>
+
+<h2>Scc and the logic ops</h2>
+
+<p>Scc writes <code>$FF</code> or <code>$00</code> to a byte depending on a condition, a branch-free way to
+turn a flag into a value. The logic instructions set N and Z from the result and clear V and C through the
+same helper MOVE uses, <code>setLogicFlags</code>. Their immediate forms with CCR or SR as the
+destination are how code changes flags or the interrupt mask directly. The SR forms are privileged, which
+M01-09 handles.</p>
+
+<h2>The numbers</h2>
+
+<p>Across 45 files, covering AND, OR, EOR, NOT and TST in all sizes and forms, every shift and rotate,
+BTST/BCHG/BCLR/BSET, TAS and Scc, the core passes 100% of the 359,187 vectors that aren't excluded,
+cycles included. The exclusions are 3,736 ASR vectors where the project followed the manual and 2 corrupt
+ASL.b vectors.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-06-logic-shift-bit.md">Story M01-06</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/ops_shift.cpp"><code>src/core/m68k/ops_shift.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/ops_logic.cpp"><code>src/core/m68k/ops_logic.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/m68k/sst_exclusions.txt"><code>tests/m68k/sst_exclusions.txt</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/m68k_test.cpp"><code>tests/unit/m68k_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M01-05-integer-arithmetic.html"><span class="label">&larr; Previous</span><span class="title">M01-05 · Arithmetic, flags and the price of a division</span></a>
+<a class="next" href="M01-07-bcd-instructions.html"><span class="label">Next &rarr;</span><span class="title">M01-07 · Decimal arithmetic on a binary chip</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Two CPUs sharing one machine | genesisEmu</title>
+<meta name="description" content="With the Z80 core complete, it had to join the running console: run in step with the 68000, stop when the 68000 takes its bus, reach into 68000 memory through a bank window, and take an interrupt every frame.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Two CPUs sharing one machine | genesisEmu">
+<meta property="og:description" content="With the Z80 core complete, it had to join the running console: run in step with the 68000, stop when the 68000 takes its bus, reach into 68000 memory through a bank window, and take an interrupt every frame.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m04">M04 · Input, Z80, playable</a> · Story 7 of 9</p>
+<h1>Two CPUs sharing one machine</h1>
+<p class="subtitle">With the Z80 core complete, it had to join the running console: run in step with the 68000, stop when the 68000 takes its bus, reach into 68000 memory through a bank window, and take an interrupt every frame.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-07-z80-system-integration.md">Story M04-07</a></div>
+<div class="prose">
+<p>By M04-05 the Z80 core passed every test in isolation. M04-07 put it into the machine, where it shares a
+bus with the 68000, gets stopped and reset by it, reads 68000 memory through a window, and is interrupted by
+the video chip. This is where the sound drivers of the three games started actually running.</p>
+
+<h2>Catching up</h2>
+
+<p>The scheduler from M02-05 had left an empty <code>catchUp()</code> hook for this. The 68000 still drives
+time line by line. At the end of each line, the Z80 runs until its clock reaches the line's end in master
+clocks, at 15 master clocks per T-state:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">while (z80Mclk_ &lt; mclk) {
+    if (!z80_.running()) {
+        z80Mclk_ = mclk;  // held by BUSREQ or RESET: time passes without execution
+        break;
+    }
+    const int t = z80cpu_-&gt;step();
+    if (t == 0) {
+        break;  // breakpoint (M06 surfaces Z80 breaks in run())
+    }
+    z80Mclk_ += static_cast&lt;std::uint64_t&gt;(t) * kZ80Divider;
+}</code></pre><figcaption><code>Machine::runZ80</code>. When BUSREQ or RESET holds the Z80, time passes without execution.</figcaption></figure>
+
+<p>Line granularity isn't always fine enough. When the 68000 writes BUSREQ or RESET, it's usually in the
+middle of a handshake with the sound driver, and the Z80 must have run up to exactly that moment, not to the
+end of the previous line. So the bus calls a sync hook <em>before</em> applying either write, and the Z80
+catches up to the 68000's current time first. Without that, a game waiting for the driver to acknowledge
+something could see a stale answer, or hang.</p>
+
+<h2>Tighter arbitration</h2>
+
+<p>M02-03 had granted the Z80 bus to the 68000 immediately and ignored the reset line, a deliberate
+shortcut while the Z80 didn't run. M04-07 replaced it with the real rule: the Z80 runs only while neither
+BUSREQ nor RESET is asserted, and the 68000 owns the Z80 bus only while BUSREQ is asserted <em>and</em>
+RESET is released. Asserting RESET also resets the Z80 CPU. A unit test checks that BUSREQ isn't granted
+while the Z80 is held in reset.</p>
+
+<blockquote class="pull"><p>The Z80 can look into 68000 memory through a 32 KB window. It costs both CPUs
+time, and the emulator charges it to both.</p></blockquote>
+
+<h2>The bank window</h2>
+
+<p>The Z80 has a 16-bit address space, but sound drivers need data from the cartridge: music, and
+especially drum samples. So addresses <code>$8000–$FFFF</code> on the Z80 side are a window into 68000
+memory. A 9-bit bank register selects which 32 KB is visible, loaded one bit per write (M02-03 described the
+68000's side of it).</p>
+
+<p>Each window access takes over the 68000's bus, which costs time on both sides. The spec gives approximate
+figures, 3 Z80 wait states and 11 68000 cycles per access, and they're configurable in
+<code>MachineConfig::z80Window</code>. After each Z80 run, the 68000's clock is pushed forward by the stall
+it accumulated.</p>
+
+<p>For reverse engineering, a window access also needs to be visible with its <em>translated</em> address. A
+read from Z80 <code>$9234</code> means nothing without knowing the bank. The new
+<code>onZ80Window</code> hook reports both the Z80 address and the 68000 address it reached:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">waitCycles += timing_.z80Wait;
+m68kStall_ += timing_.m68kStall;
+if (hooks_ != nullptr &amp;&amp; hooks_-&gt;onZ80Window != nullptr) {
+    hooks_-&gt;onZ80Window(hooks_-&gt;ctx, kind, addr, m68kAddr, value,
+                        cpu_ != nullptr ? cpu_-&gt;currentPc() : 0);
+}</code></pre><figcaption><code>Z80Control::reportWindow</code>: charge the time, then tell the instrumentation layer.</figcaption></figure>
+
+<p>That's what the planned ROM map (M07) needs to mark cartridge bytes as "read by the Z80 as data", such as
+drum samples. A unit test writes the nine bank bits from Z80 code to select <code>$FF0000</code>, reads 68000
+RAM through the window, writes back, and checks that the hook reported the translated address
+<code>$FF1235</code>.</p>
+
+<h2>The frame interrupt and the sound ports</h2>
+
+<p>The VDP holds the Z80's interrupt line for the first line of vertical blank (M03-03 exposed it). Now the
+Z80 actually takes it, in interrupt mode 1, once per frame, giving the driver a regular tick.</p>
+
+<p>The sound chips weren't emulated yet (that's M05), but their register writes now flow somewhere useful.
+Every write to the YM2612 or the PSG, from either CPU, goes into a <strong>register log</strong> with the
+frame, line, CPU, PC, chip, port, register and value. <code>gen_cli run --reg-log file.csv</code> exports it.</p>
+
+<h2>Verified by listening without sound</h2>
+
+<p>The criteria were that the Sonic 2 and S3K drivers run without hanging the 68000, and that the log shows
+plausible YM2612 writes during title music. All three games ran over 3,000 frames of attract mode and
+scripted play with no faults. The register log showed the drivers at work: Sonic 1 logged 27,000 YM2612
+writes in 500 frames, mostly Z80 writes to register <code>$2A</code>, the DAC data port, playing the "SEGA"
+voice sample, plus key-on events from the 68000. Sonic 2 logged 25,000. Sonic 3 &amp; Knuckles logged over
+100,000, including key-ons and PSG writes.</p>
+
+<p>Running the Z80 also shifted the games' attract-mode timing by a few frames, so the boot hashes and most
+of the golden frame hashes from M03 changed, in a <code>[golden-update]</code> commit. The changed frames were
+compared with the cached ones: same scenes, small position shifts.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-07-z80-system-integration.md">Story M04-07</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/sched/machine.cpp"><code>src/core/sched/machine.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/z80/z80_control.cpp"><code>src/core/z80/z80_control.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/z80/z80_control.hpp"><code>src/core/z80/z80_control.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/audio/register_log.hpp"><code>src/core/audio/register_log.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/z80_system_test.cpp"><code>tests/unit/z80_system_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M04-06-z80-disassembler.html"><span class="label">&larr; Previous</span><span class="title">M04-06 · Reading the sound driver: a Z80 disassembler</span></a>
+<a class="next" href="M04-08-sram-and-cart-devices.html"><span class="label">Next &rarr;</span><span class="title">M04-08 · Battery saves and a socket for custom hardware</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

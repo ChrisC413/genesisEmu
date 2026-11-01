@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moving data, in exactly the right order | genesisEmu</title>
+<meta name="description" content="MOVE looks like the simplest instruction there is. Getting it bit-exact meant matching the order of the chip&#x27;s microcode.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Moving data, in exactly the right order | genesisEmu">
+<meta property="og:description" content="MOVE looks like the simplest instruction there is. Getting it bit-exact meant matching the order of the chip&#x27;s microcode.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m01">M01 · 68000 CPU</a> · Story 4 of 12</p>
+<h1>Moving data, in exactly the right order</h1>
+<p class="subtitle">MOVE looks like the simplest instruction there is. Getting it bit-exact meant matching the order of the chip's microcode.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>5 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-04-data-movement.md">Story M01-04</a></div>
+<div class="prose">
+<p>Most of what a game's CPU does is move data: copy a sprite's position into a table, load a pointer,
+push registers before a subroutine, clear a variable. The 68000 has a family of instructions for this,
+and M01-04 implemented all of them: MOVE, MOVEA, MOVEQ, MOVEM, MOVEP, LEA, PEA, EXG, SWAP, LINK, UNLK
+and CLR.</p>
+
+<p>The result was 100% of 153,235 SingleStepTests vectors across 19 files, cycle counts included. The
+interesting part is what it took to get there, because "copy A to B" turned out to have hidden
+structure.</p>
+
+<h2>When does MOVE write?</h2>
+
+<p>For correct output, all MOVE needs is to read the source, write the destination and set the N and Z
+flags. But in the word and long test files, 35–58% of the vectors involve an <em>address error</em>, an odd address
+somewhere in the operation. When that happens the 68000 stops mid-instruction and records what it was
+doing. So the emulator must stop at the same point: after the same reads, the same writes and the same
+prefetches, with the registers half-updated in the same way.</p>
+
+<p>The comment above the MOVE handler records what those frames revealed:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">// MOVE writes its destination in the microcode order the address-error frames reveal: -(An) destinations
+// prefetch before writing, and with a memory source an abs.L destination is written as soon as its high
+// address word has been fetched (the low word is used straight from IRC).</code></pre><figcaption><code>src/core/m68k/ops_move.cpp</code>. The vectors describe this behaviour; the code reproduces it.</figcaption></figure>
+
+<p>The handler is a template over size, source mode and destination mode, and each destination case
+encodes its own order. For <code>(An)+</code>, for example, the register is incremented only after the
+write has started without faulting:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">} else if constexpr (Dst == Ind || Dst == PostInc) {
+    // (An)+ is only incremented once the write has started without an address error.
+    const std::uint32_t addr = c.s.a[dst];
+    c.setLogicFlags&lt;S&gt;(v);
+    c.write&lt;S&gt;(addr, v);
+    c.prefetch();
+    if constexpr (Dst == PostInc) {
+        c.s.a[dst] += (S == 1 &amp;&amp; dst != 7) ? 1 : S == 4 ? 4 : 2;
+    }</code></pre><figcaption>If the write faults, An keeps its old value, as on the real chip.</figcaption></figure>
+
+<p>A long write to <code>-(An)</code> has a quirk of its own. It writes the <em>low</em> word first,
+decrementing An by 2 before each half. If the second half faults, An is left 2 lower than where it
+started, and the core has a dedicated helper, <code>writePreDecLong</code>, to reproduce it.</p>
+
+<blockquote class="pull"><p>In the word and long files, up to 58% of the vectors involve an address error. To pass them,
+the emulator has to stop at the same point inside the instruction as the real chip.</p></blockquote>
+
+<h2>MOVEM: a bitmask of registers</h2>
+
+<p>MOVEM saves or restores any subset of the sixteen registers in one instruction. Subroutines start with
+<code>movem.l d0-d7/a0-a6,-(sp)</code> and end with the reverse. The subset is a 16-bit mask in the
+extension word, and the mask's bit order <em>flips</em> for the pre-decrement form. Normally bit 0 is D0
+and bit 15 is A7. With <code>-(An)</code>, bit 0 is A7 and bit 15 is D0, because the registers are stored
+downwards from the top:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">const int r = 15 - i;  // bit 0 = A7 ... bit 15 = D0
+const std::uint32_t v = r &gt;= 8 ? c.s.a[r - 8] : c.s.d[r];
+addr -= kStep;
+if constexpr (S == 4) {
+    c.writeLongDescending(addr, v);
+} else {
+    c.writeWord(addr, static_cast&lt;std::uint16_t&gt;(v));
+}</code></pre><figcaption>Storing downwards with the reversed mask. Long values are written low word first, as with any -(An) destination.</figcaption></figure>
+
+<p>Loading has its own details. A word-sized MOVEM into registers sign-extends each value into all 32 bits,
+data registers included, unlike MOVE.W, which leaves the upper half alone. And the 68000 reads one extra
+word after the last register, which costs time and can fault. Both are in the code because the suite
+checks both.</p>
+
+<h2>MOVEP: built for 8-bit peripherals</h2>
+
+<p>MOVEP is an odd instruction. It transfers a register's bytes to <em>every other</em> address:
+<code>base</code>, <code>base+2</code>, <code>base+4</code>... It was designed for 8-bit peripheral chips
+wired to only one half of the 16-bit data bus. The implementation is a simple loop, high byte first:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">for (int i = 0; i &lt; kBytes; ++i) {
+    c.writeByte(base + 2 * static_cast&lt;std::uint32_t&gt;(i),
+                static_cast&lt;std::uint8_t&gt;(d &gt;&gt; (8 * (kBytes - 1 - i))));
+}</code></pre><figcaption>MOVEP to memory: one byte per access, two addresses apart.</figcaption></figure>
+
+<h2>Small instructions, small surprises</h2>
+
+<ul>
+<li><strong>CLR reads before it clears.</strong> On the 68000, <code>CLR</code> to memory performs a read
+cycle first, then the write. It looks wasteful, but it costs time and can trigger read side effects on
+hardware registers, so the core does it too.</li>
+<li><strong>MOVEA doesn't touch flags.</strong> Moves into address registers leave the condition codes
+alone and sign-extend word sources to 32 bits.</li>
+<li><strong>MOVEQ</strong> packs a signed 8-bit constant into the opcode itself and sign-extends it into
+the full register. It's the fastest way to load a small number, and it is extremely common in 68000 code.</li>
+<li><strong>LEA and PEA</strong> only accept "control" addressing modes (no registers, no
+post-increment) and pay 2 extra internal cycles for the indexed forms. PEA with an absolute address
+pushes before the final prefetch; with other modes it prefetches first.</li>
+<li><strong>LINK and UNLK</strong> build and tear down stack frames: push An, copy SP into An, add a
+displacement to SP.</li>
+</ul>
+
+<h2>How it was verified</h2>
+
+<p>Each instruction family has its own SingleStepTests files: MOVE.b/w/l, MOVE.q, MOVEA.w/l, MOVEM.w/l,
+MOVEP.w/l, LEA, PEA, EXG, SWAP, LINK, UNLINK and CLR.b/w/l. All 153,235 vectors pass, including every
+address-error variant and every cycle count. When a vector failed, the runner's diff (expected versus
+actual register by register, plus the cycle count) usually pointed straight at an ordering difference,
+and fixing it became one more line of microcode-order knowledge in the handlers.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M01-m68k-cpu/M01-04-data-movement.md">Story M01-04</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/m68k/ops_move.cpp"><code>src/core/m68k/ops_move.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/m68k_test.cpp"><code>tests/unit/m68k_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M01-03-effective-address-modes.html"><span class="label">&larr; Previous</span><span class="title">M01-03 · Every way to find an operand</span></a>
+<a class="next" href="M01-05-integer-arithmetic.html"><span class="label">Next &rarr;</span><span class="title">M01-05 · Arithmetic, flags and the price of a division</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

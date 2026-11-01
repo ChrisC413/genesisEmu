@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One clock to rule them all | genesisEmu</title>
+<meta name="description" content="Two CPUs, a video chip and two sound chips all run off one 53.69 MHz crystal. The scheduler keeps them in step, one scanline at a time, deterministically.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="One clock to rule them all | genesisEmu">
+<meta property="og:description" content="Two CPUs, a video chip and two sound chips all run off one 53.69 MHz crystal. The scheduler keeps them in step, one scanline at a time, deterministically.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m02">M02 · System bus & boot</a> · Story 5 of 7</p>
+<h1>One clock to rule them all</h1>
+<p class="subtitle">Two CPUs, a video chip and two sound chips all run off one 53.69 MHz crystal. The scheduler keeps them in step, one scanline at a time, deterministically.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M02-system-bus-boot/M02-05-master-clock-scheduler.md">Story M02-05</a></div>
+<div class="prose">
+<p>A Genesis is several chips working at once. The 68000 runs at one speed, the Z80 at another, the video
+chip draws pixels at a third, and the sound chips have rates of their own. All of these clocks are derived
+from a single crystal, the <strong>master clock</strong> (MCLK): 53.693175 MHz on NTSC consoles. The 68000
+gets MCLK divided by 7, and the Z80 MCLK divided by 15.</p>
+
+<p>An emulator runs one thing at a time, so it has to interleave the chips in a way that keeps them close
+enough together that no game can tell the difference. M02-05 built the <strong>scheduler</strong> that does
+this, in the <code>Machine</code> class that represents the whole console.</p>
+
+<h2>Everything is measured in master clocks</h2>
+
+<p>The scheduler keeps a 64-bit count of master clocks since power-on. A 64-bit counter at 53.7 MHz would
+take thousands of years to overflow, so the question never comes up. Every other quantity is expressed in
+master clocks as well. A scanline is 3,420 MCLK. An NTSC frame is 262 lines; a PAL frame is 313:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">inline constexpr int kMclkPerLine = 3420;
+inline constexpr int kLinesNtsc = 262;
+inline constexpr int kLinesPal = 313;
+inline constexpr int kM68kDivider = 7;
+inline constexpr int kZ80Divider = 15;
+inline constexpr std::uint64_t kMclkPerFrameNtsc = static_cast&lt;std::uint64_t&gt;(kMclkPerLine) * kLinesNtsc;</code></pre><figcaption>The basic constants, from <code>src/core/sched/machine.hpp</code>.</figcaption></figure>
+
+<p>That makes an NTSC frame 896,040 MCLK, or about 59.92 frames per second, which was the first acceptance
+criterion and the first unit test.</p>
+
+<h2>A scanline at a time</h2>
+
+<p>Decision D-002 set the granularity: instruction-accurate CPUs and a scanline-based video chip. Each
+68000 instruction runs to completion, adding its cycles × 7 to the CPU's clock. When the CPU's clock passes
+the end of the current line, the line ends:</p>
+
+<figure class="figure">
+<svg viewBox="0 0 640 200" role="img" aria-labelledby="m0205t">
+<title id="m0205t">Scanline loop: the 68000 runs instructions until its clock passes the line end; then the Z80 and audio catch up, the VDP processes the line, and interrupt levels update. The overshoot carries into the next line.</title>
+<line class="dg-line" x1="20" y1="60" x2="620" y2="60"/>
+<line class="dg-accent-line" x1="20" y1="40" x2="20" y2="80"/>
+<line class="dg-accent-line" x1="470" y1="40" x2="470" y2="80"/>
+<text class="dg-small" x="20" y="30">line start</text>
+<text class="dg-small" x="470" y="30" text-anchor="middle">line end (+3,420 MCLK)</text>
+<rect class="dg-alt" x="20" y="50" width="90" height="20"/>
+<rect class="dg-alt" x="110" y="50" width="60" height="20"/>
+<rect class="dg-alt" x="170" y="50" width="130" height="20"/>
+<rect class="dg-alt" x="300" y="50" width="80" height="20"/>
+<rect class="dg-alt" x="380" y="50" width="120" height="20"/>
+<text class="dg-small" x="260" y="95" text-anchor="middle">68000 instructions (each atomic)</text>
+<path class="dg-warm-line" d="M470 72 H500"/>
+<text class="dg-small" x="510" y="76">overshoot carries</text>
+<text class="dg-small" x="510" y="90">into the next line</text>
+<rect class="dg-warm" x="70" y="120" width="150" height="54" rx="8"/>
+<text class="dg-text dg-bold" x="145" y="143" text-anchor="middle">catchUp()</text>
+<text class="dg-small" x="145" y="160" text-anchor="middle">Z80 and sound to line end</text>
+<rect class="dg-green" x="245" y="120" width="150" height="54" rx="8"/>
+<text class="dg-text dg-bold" x="320" y="143" text-anchor="middle">VDP endLine</text>
+<text class="dg-small" x="320" y="160" text-anchor="middle">render, H-int counter</text>
+<rect class="dg-box" x="420" y="120" width="150" height="54" rx="8"/>
+<text class="dg-text dg-bold" x="495" y="143" text-anchor="middle">next line</text>
+<text class="dg-small" x="495" y="160" text-anchor="middle">V-int at 224 · update IPL</text>
+<path class="dg-line" d="M220 147 H245 M395 147 H420"/>
+</svg>
+<figcaption>The last instruction of a line usually ends a little past the boundary. That overshoot isn't lost; the next line starts with the CPU slightly ahead.</figcaption>
+</figure>
+
+<figure class="codefig"><pre><code class="language-cpp">void Machine::endLine() {
+    const std::uint64_t lineEnd = clock_.lineStart + kMclkPerLine;
+    catchUp(lineEnd);
+    vdp_.endLine(line_);
+    clock_.lineStart = lineEnd;
+    if (++line_ &gt;= linesPerFrame()) {
+        line_ = 0;
+        ++frame_;</code></pre><figcaption><code>Machine::endLine</code> (as of M05; in M02 <code>catchUp</code> was an empty hook).</figcaption></figure>
+
+<p>Since instructions are atomic, the last one on a line generally finishes after the line boundary. The
+scheduler doesn't cut it short or discard the extra time. The CPU's clock simply stays ahead, and the next
+line accounts for it. Over a frame the totals come out exact, which the test checks: <code>run(frames=1)</code>
+stops at line 0 of the next frame at MCLK 896,040, with the overshoot carried forward.</p>
+
+<h2>Catching up</h2>
+
+<p>The other chips run <em>lazily</em>. Rather than interleaving the Z80 instruction by instruction with the
+68000, the scheduler lets the 68000 run a whole line and then brings everything else up to the line's end
+with <code>catchUp()</code>. In M02 that function was an empty placeholder. M04 filled it with the Z80 and
+M05 with the sound chips. When the 68000 does something the Z80 must see at the exact moment, such as
+taking the Z80's bus, the bus calls a sync hook first so the Z80 catches up to the current time before the
+change. The structure was designed in from the start so those later stories didn't need to change the
+loop.</p>
+
+<blockquote class="pull"><p>The same ROM, the same input and the same build always produce the same machine
+state, down to the last bit. Everything else in the project depends on that.</p></blockquote>
+
+<h2>A run API for tools</h2>
+
+<p><code>Machine::run</code> takes a limit: a number of frames, of instructions, of master clocks, or "until a
+breakpoint". It returns a <code>RunResult</code> saying why it stopped (limit reached, breakpoint, or a fault
+exception when <code>stopOnFault</code> is set) and how many instructions ran. <code>step(cpu)</code> runs
+exactly one instruction on either CPU, processing any line or frame boundary it crosses. This is the
+interface the CLI, the tests and later the debugger use. A breakpoint stops <em>before</em> its instruction
+and is resumable, using the hook behaviour from M01-01.</p>
+
+<p>The machine also keeps a few cheap counters: exceptions per vector, fault count and the first fault's
+PC, V-ints per frame, and the PC that the last V-int interrupted. They aren't part of the emulated state,
+but the boot tests in M02-07 are built on them.</p>
+
+<h2>Deterministic by construction</h2>
+
+<p>Nothing in the loop depends on wall-clock time, thread scheduling or uninitialised memory. Given the same
+ROM and input, every run makes the same decisions in the same order. Decision D-011 requires it, and M02
+backs it with a hash. <code>Machine::stateHash()</code> feeds every component's state, field by field, into
+an XXH3-64 hash. Values are serialised explicitly as little-endian bytes and never as raw struct memory, so
+compiler padding and host byte order can't leak in. A <code>[determinism]</code> unit test runs the synthetic
+boot ROM twice and requires identical hashes, and checks that the hash changes when the state does.</p>
+
+<p>PAL's 313-line frames are implemented and unit-tested for line counts, but per decision D-020 (NTSC
+first) they're only lightly tested beyond that.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M02-system-bus-boot/M02-05-master-clock-scheduler.md">Story M02-05</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/sched/machine.hpp"><code>src/core/sched/machine.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/sched/machine.cpp"><code>src/core/sched/machine.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/machine_test.cpp"><code>tests/unit/machine_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M02-04-vdp-port-stub.html"><span class="label">&larr; Previous</span><span class="title">M02-04 · A video chip that draws nothing</span></a>
+<a class="next" href="M02-06-instruction-trace-logger.html"><span class="label">Next &rarr;</span><span class="title">M02-06 · A line of text for every instruction</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

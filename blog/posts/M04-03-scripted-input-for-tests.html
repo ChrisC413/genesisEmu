@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teaching the test suite to play Sonic | genesisEmu</title>
+<meta name="description" content="A small text format of &quot;hold these buttons from frame N&quot; lines, plus hash checkpoints, lets CI-style tests start a game, run right and jump, and prove the result is the same every time.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Teaching the test suite to play Sonic | genesisEmu">
+<meta property="og:description" content="A small text format of &quot;hold these buttons from frame N&quot; lines, plus hash checkpoints, lets CI-style tests start a game, run right and jump, and prove the result is the same every time.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m04">M04 · Input, Z80, playable</a> · Story 3 of 9</p>
+<h1>Teaching the test suite to play Sonic</h1>
+<p class="subtitle">A small text format of "hold these buttons from frame N" lines, plus hash checkpoints, lets CI-style tests start a game, run right and jump, and prove the result is the same every time.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-03-scripted-input-for-tests.md">Story M04-03</a></div>
+<div class="prose">
+<p>Until M04, every automated test of the real games ran with no input: boot, title screen, attract demo.
+That leaves out most of the game. To test actual gameplay automatically, the tests need to press buttons,
+the same buttons at the same frames every time. M04-03 added a minimal scripted-input format for exactly
+that.</p>
+
+<p>It is deliberately <em>not</em> a movie or replay feature for users. Decision D-007 scopes the project's
+"freeze" features to pause, save states and trace-from-pause, and explicitly leaves input movies out. This
+format exists only for tests.</p>
+
+<h2>The format</h2>
+
+<p>A script is a text file of lines. An input line gives a frame, a port and the buttons to hold from that
+frame on. A checkpoint line names a frame and the kind of hash to check there. Here is the start of the
+Sonic 1 script in the repository:</p>
+
+<figure class="codefig"><pre><code class="language-text"># frame  port  buttons
+rom 69e102855d4389c3fd1a8f3dc7d193f8eee5fe5b
+0        1     -
+620      1     START
+630      1     -
+900      1     RIGHT
+1000     1     RIGHT+C
+1010     1     RIGHT</code></pre><figcaption>From <code>tests/scripts/sonic1_ghz1.txt</code>. The <code>rom</code> line names the ROM by SHA-1; checkpoints carry recorded hashes.</figcaption></figure>
+
+<p>Read aloud: press Start at frame 620 on the title screen, release it, hold Right from frame 900, and tap C
+(jump) every hundred frames. Further down the same file:</p>
+
+<figure class="codefig"><pre><code class="language-text">checkpoint 640 frame_hash 0b95e176bc48d644
+checkpoint 900 frame_hash c4e8401a9e4252da
+checkpoint 1000 frame_hash 9a459c87cf1ec397
+checkpoint 1300 frame_hash f80ee54d59df6778
+checkpoint 1300 state_hash e65ddceb139e630e</code></pre><figcaption>Checkpoints: frame hashes from M03, a full state hash, and audio hashes added later in M05.</figcaption></figure>
+
+<p>The story added two things to the format spec 13 describes: an optional expected hash on each checkpoint line
+(so the script carries its own golden values) and the optional <code>rom</code> line, so a test can find
+the right dump in the user's ROM folder.</p>
+
+<h2>Semantics that keep it deterministic</h2>
+
+<p>An input line holds its buttons until the next line for the same port. Each line is latched at the
+<em>start</em> of its frame, which is the same once-per-frame latch from M04-01. A checkpoint at frame N is
+evaluated after N frames have run. The emulator is deterministic, so these rules fully define the run: the
+same script on the same ROM produces the same hashes.</p>
+
+<blockquote class="pull"><p>The script holds only button presses and hashes. It contains nothing from
+the game, so it can live in a public repository.</p></blockquote>
+
+<h2>Recording and checking</h2>
+
+<p>The CLI drives it:</p>
+
+<ul>
+<li><code>gen_cli run --rom game.bin --input script.txt</code> plays the script, runs at least to its last
+frame, and prints every checkpoint's hash.</li>
+<li><code>--check</code> turns mismatches, and checkpoints with no expected hash, into failures with exit
+code 3. A mismatching frame checkpoint also writes <code>checkpoint_&lt;N&gt;.png</code> into
+<code>--out</code>, so you can see what the game showed instead.</li>
+<li><code>--update-script</code> writes the computed hashes back into the script file, replacing old values
+and keeping comments. That's how a script is recorded in the first place.</li>
+</ul>
+
+<p>Writing hashes back into a file the user wrote, without disturbing its comments, is a small parsing job
+that the module handles in one function:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">// Replaces (or appends) the expected hash of the checkpoint lines in `hashes` (1-based line -&gt; hex),
+// keeping comments. Used to record goldens.
+std::string updateScriptHashes(std::string_view text, const std::map&lt;std::size_t, std::string&gt;&amp; hashes);</code></pre><figcaption><code>updateScriptHashes</code> rewrites only the checkpoint lines it has hashes for.</figcaption></figure>
+
+<h2>Three scripts</h2>
+
+<p>The repository has one script per target game, each reaching the first act of play:</p>
+
+<ul>
+<li><strong>Sonic 1</strong>: start from the title, run right with jumps through the start of Green Hill Zone
+act 1. By frame 1,300 Sonic has run into a Motobug and been knocked back on the bridge, losing his rings,
+so collision and damage work.</li>
+<li><strong>Sonic 2</strong>: start at frame 950 (earlier presses during the title animation are ignored by
+the game), then run into Emerald Hill Zone act 1 with Tails following.</li>
+<li><strong>Sonic 3 &amp; Knuckles</strong>: start, choose "no save" on the data-select screen, sit through
+the Angel Island intro, then run right and jump. Frame 2,400 shows Sonic in act 1 with a score of 100 and
+7 rings.</li>
+</ul>
+
+<p>The <code>[rom]</code> test <em>Scripted input reaches the recorded checkpoints</em> replays all three.
+The parser and the frame-accurate latching have their own unit tests that need no ROM: button lines and
+checkpoints parse, errors name the offending line, and the player latches buttons at exactly the frame
+they're scripted for.</p>
+
+<h2>Open: the second operating system</h2>
+
+<p>The acceptance criterion asks for the same frame hash every run <em>on both operating systems</em>. On
+Windows that holds: the hashes were recorded in one process and re-checked by the ROM test in another. A Mac
+hasn't run it yet, so the story says "Done on Windows; macOS run pending". When M05 added audio, the same
+scripts gained <code>audio_hash</code> checkpoints, and they became the regression net for sound too.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-03-scripted-input-for-tests.md">Story M04-03</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/common/input_script.hpp"><code>src/common/input_script.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/common/input_script.cpp"><code>src/common/input_script.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/scripts/sonic1_ghz1.txt"><code>tests/scripts/sonic1_ghz1.txt</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/roms/script_test.cpp"><code>tests/roms/script_test.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/input_script_test.cpp"><code>tests/unit/input_script_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M04-02-input-mapping.html"><span class="label">&larr; Previous</span><span class="title">M04-02 · Keyboards, gamepads and "press a key"</span></a>
+<a class="next" href="M04-04-z80-core-and-harness.html"><span class="label">Next &rarr;</span><span class="title">M04-04 · A second CPU, and two ways to check it</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

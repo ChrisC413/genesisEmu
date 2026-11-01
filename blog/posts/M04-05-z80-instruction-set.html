@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Every Z80 opcode, including the ones Zilog never documented | genesisEmu</title>
+<meta name="description" content="1,604,000 test vectors and both ZEX exercisers pass, with no exclusions. Getting there meant modelling two flag bits Zilog never documented and a hidden register that leaks into them.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Every Z80 opcode, including the ones Zilog never documented | genesisEmu">
+<meta property="og:description" content="1,604,000 test vectors and both ZEX exercisers pass, with no exclusions. Getting there meant modelling two flag bits Zilog never documented and a hidden register that leaks into them.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m04">M04 · Input, Z80, playable</a> · Story 5 of 9</p>
+<h1>Every Z80 opcode, including the ones Zilog never documented</h1>
+<p class="subtitle">1,604,000 test vectors and both ZEX exercisers pass, with no exclusions. Getting there meant modelling two flag bits Zilog never documented and a hidden register that leaks into them.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-05-z80-instruction-set.md">Story M04-05</a></div>
+<div class="prose">
+<p>The Z80 instruction set is old and well studied, but "well studied" includes decades of discoveries about
+behaviour Zilog never documented. Code written against real chips can depend on that behaviour, on purpose
+or by accident, and an emulator can't know in advance which parts a given sound driver uses. M04-05 implemented everything and checked it against two independent
+references.</p>
+
+<p>The headline result: <strong>1,604,000 of 1,604,000</strong> SingleStepTests Z80 vectors pass, with no
+exclusions, and <strong>ZEXDOC 67/67</strong> and <strong>ZEXALL 67/67</strong>. The core is hand-written from
+public documentation: Zilog's user manual, Sean Young's "The Undocumented Z80 Documented", and published
+research on MEMPTR and the block instructions.</p>
+
+<h2>Decoding by bit fields</h2>
+
+<p>Z80 opcodes have a regular structure when you split the byte into fields: two bits <code>x</code>, three
+bits <code>y</code> and three bits <code>z</code>. In the unprefixed range <code>$40–$7F</code>, every opcode
+is <code>LD r,r'</code> with <code>y</code> as destination and <code>z</code> as source, except
+<code>$76</code>, which would be "LD (HL),(HL)" and is HALT instead:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if (op &gt;= 0x40 &amp;&amp; op &lt; 0x80) {
+    if (op == 0x76) {  // HALT
+        s_.halted = true;
+        return 4;
+    }
+    if (z == 6) {  // LD r,(HL) / LD r,(IX+d): r is always the real register
+        const std::uint16_t addr = memAddrHl();
+        setRegRaw(y, rd(addr));
+        return 7;
+    }</code></pre><figcaption>The start of <code>Z80::execMain</code>: a whole quarter of the opcode space in a dozen lines.</figcaption></figure>
+
+<p>Prefixes change the meaning of register numbers. With a <code>DD</code> prefix, "HL" becomes IX, "H"
+becomes the high byte of IX (an undocumented register usually written <code>ixh</code>), and
+<code>(HL)</code> becomes <code>(IX+d)</code> with a displacement byte. But in <code>LD r,(IX+d)</code>, the
+<em>other</em> register stays a real H or L. The code handles that with separate "raw" register accessors, as
+the comment above notes.</p>
+
+<h2>Bits 3 and 5</h2>
+
+<p>The Z80's flag register has two bits that Zilog documented as unused. They aren't. After most
+instructions, bits 3 and 5 (called X and Y) are copies of bits 3 and 5 of some internal value, usually the
+result, sometimes an operand, sometimes something stranger. A shared table precomputes S, Z, X and Y (and
+optionally parity) for every byte value, which most ALU operations use directly.</p>
+
+<p>The "something stranger" cases are where the work was. <code>BIT n,(HL)</code> takes X and Y from the
+high byte of <strong>WZ</strong>, a hidden internal register (also called MEMPTR) that holds addresses
+computed by earlier instructions. Programs can't read WZ, but they can see its high byte through those two
+flag bits, so the core tracks WZ through every instruction that updates it.</p>
+
+<blockquote class="pull"><p>Two flag bits Zilog called "unused" turn out to expose a hidden register, so
+the emulator has to track that register through every instruction.</p></blockquote>
+
+<h2>The Q latch</h2>
+
+<p>The strangest case, discovered relatively recently, involves <code>SCF</code> and <code>CCF</code> (set
+and complement the carry flag). Their X and Y bits depend on whether the <em>previous</em> instruction
+modified the flags. The core tracks this as <strong>Q</strong>: after each instruction, Q is the new F if the
+instruction wrote the flags, otherwise 0.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">case 0x37:  // SCF: X/Y = (Q ^ F) | A
+    setF(static_cast&lt;std::uint8_t&gt;((s_.f &amp; (kFlagS | kFlagZ | kFlagP)) | kFlagC |
+                                   (((s_.q ^ s_.f) | s_.a) &amp; kXy)));
+    return 4;</code></pre><figcaption>SCF's X/Y bits combine Q, F and A. The core records Q after every instruction.</figcaption></figure>
+
+<h2>Block instructions</h2>
+
+<p><code>LDIR</code>, <code>CPIR</code>, <code>INIR</code> and <code>OTIR</code> repeat until a counter runs
+out. On real hardware each repetition is a separate instruction execution that rewinds the PC by 2, which
+is why an interrupt can arrive in the middle of a long copy. The core does the same. A repeating step
+returns 21 T-states and leaves PC on the instruction; the final one returns 16. The flags of a repeating step
+have their own undocumented rule, taking X and Y from the high byte of the rewound PC:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if (repeat &amp;&amp; s_.bc() != 0) {
+    s_.pc = static_cast&lt;std::uint16_t&gt;(s_.pc - 2);
+    s_.wz = static_cast&lt;std::uint16_t&gt;(s_.pc + 1);
+    f = static_cast&lt;std::uint8_t&gt;((f &amp; ~kXy) | ((s_.pc &gt;&gt; 8) &amp; kXy));
+    setF(f);
+    return 21;
+}</code></pre><figcaption><code>LDIR</code> repeating: rewind PC, set WZ, and take X/Y from PC's high byte.</figcaption></figure>
+
+<h2>Interrupts, HALT and the R register</h2>
+
+<p>The Z80 has three maskable interrupt modes. In IM 0 it executes whatever byte is on the data bus. The
+Genesis leaves the bus pulled up, so that byte is <code>$FF</code>, which is <code>RST 38h</code>, the same
+destination as IM 1. IM 2 builds a vector address from the I register and the bus byte. The non-maskable
+interrupt (NMI) is also implemented. <code>EI</code> delays interrupt acceptance by one instruction, and an
+interrupt accepted right after <code>LD A,I</code> or <code>LD A,R</code> clears the P/V flag (a bug of the
+original NMOS chip), both modelled.</p>
+
+<p><code>HALT</code> leaves PC after the instruction and then executes internal NOP cycles until an interrupt,
+incrementing the 7-bit refresh counter R each time, as the hardware does. R counts every opcode fetch
+(<em>M1 cycle</em>), including prefixes. Its top bit only changes through <code>LD R,A</code>.</p>
+
+<h2>Results</h2>
+
+<p>The SingleStepTests suite (commit <code>ebe1875d</code>) compares every register, including WZ, R, Q and
+the EI and LD A,I latches, plus RAM, port writes and T-states: 1,604,000 of 1,604,000 vectors pass in about 2
+seconds. ZEXDOC and ZEXALL each run about 5.76 billion instructions in roughly 78 seconds in Release, around
+75 million instructions per second, and report 67 of 67 tests OK. The Release CI job runs the full vector
+suite on every push; the ZEX programs run nightly.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M04-input-z80-playable/M04-05-z80-instruction-set.md">Story M04-05</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/z80/z80.cpp"><code>src/core/z80/z80.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/z80/z80_ops.cpp"><code>src/core/z80/z80_ops.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/z80/z80_tables.hpp"><code>src/core/z80/z80_tables.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/z80/ssz_runner.cpp"><code>tests/z80/ssz_runner.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/z80/zex_runner.cpp"><code>tests/z80/zex_runner.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M04-04-z80-core-and-harness.html"><span class="label">&larr; Previous</span><span class="title">M04-04 · A second CPU, and two ways to check it</span></a>
+<a class="next" href="M04-06-z80-disassembler.html"><span class="label">Next &rarr;</span><span class="title">M04-06 · Reading the sound driver: a Z80 disassembler</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>
