@@ -38,7 +38,8 @@ bool printableTag(std::span<const std::uint8_t> tag) {
 }  // namespace
 
 StateChunk* StateFile::find(std::string_view tag) {
-    const auto it = std::find_if(chunks.begin(), chunks.end(), [&](const StateChunk& c) { return c.tag == tag; });
+    const auto it =
+        std::find_if(chunks.begin(), chunks.end(), [&](const StateChunk& c) { return c.tag == tag; });
     return it == chunks.end() ? nullptr : &*it;
 }
 
@@ -119,7 +120,8 @@ std::vector<std::uint8_t> encodeInfo(const StateInfo& info) {
 
 std::optional<StateInfo> decodeInfo(const StateChunk& chunk, std::string& error) {
     if (chunk.version == 0 || chunk.version > kInfoVersion) {
-        error = "chunk 'INFO' version " + std::to_string(chunk.version) + " is newer than this build supports";
+        error =
+            "chunk 'INFO' version " + std::to_string(chunk.version) + " is newer than this build supports";
         return std::nullopt;
     }
     StateInfo info;

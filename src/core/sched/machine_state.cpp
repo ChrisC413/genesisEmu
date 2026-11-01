@@ -31,7 +31,8 @@ constexpr std::array<ChunkDef, 9> kChunks{{
 }};
 
 const ChunkDef* findChunk(std::string_view tag) {
-    const auto it = std::find_if(kChunks.begin(), kChunks.end(), [&](const ChunkDef& d) { return d.tag == tag; });
+    const auto it =
+        std::find_if(kChunks.begin(), kChunks.end(), [&](const ChunkDef& d) { return d.tag == tag; });
     return it == kChunks.end() ? nullptr : &*it;
 }
 
@@ -145,13 +146,15 @@ void Machine::serializeChunk(std::string_view tag, state::Archive& ar) {
             ar.blob(payload);
             if (ar.loading() && ar.ok()) {
                 if (name != d->name()) {
-                    ar.fail("cartridge device '" + name + "' does not match '" + std::string(d->name()) + "'");
+                    ar.fail("cartridge device '" + name + "' does not match '" + std::string(d->name()) +
+                            "'");
                     return;
                 }
                 state::Archive sub(std::span<const std::uint8_t>(payload), ar.version());
                 d->serialize(sub);
                 if (!sub.ok() || !sub.atEnd()) {
-                    ar.fail("cartridge device '" + name + "': " + (sub.ok() ? "trailing bytes" : sub.error()));
+                    ar.fail("cartridge device '" + name +
+                            "': " + (sub.ok() ? "trailing bytes" : sub.error()));
                     return;
                 }
             }
@@ -160,8 +163,9 @@ void Machine::serializeChunk(std::string_view tag, state::Archive& ar) {
         auto region = static_cast<std::uint8_t>(region_);
         ar.u8(region);
         if (ar.loading() && ar.ok() && region != static_cast<std::uint8_t>(region_)) {
-            ar.fail(std::string("the state was saved with region ") + bus::toString(static_cast<bus::Region>(region)) +
-                    ", this machine runs " + bus::toString(region_));
+            ar.fail(std::string("the state was saved with region ") +
+                    bus::toString(static_cast<bus::Region>(region)) + ", this machine runs " +
+                    bus::toString(region_));
             return;
         }
         ar.u64(frame_);
@@ -192,8 +196,8 @@ std::string Machine::applyState(const state::StateFile& file) {
         state::Archive ar(std::span<const std::uint8_t>(chunk->payload), chunk->version);
         serializeChunk(def.tag, ar);
         if (!ar.ok() || !ar.atEnd()) {
-            return "save state chunk '" + chunk->tag + "' is corrupt (" + (ar.ok() ? "trailing bytes" : ar.error()) +
-                   ")";
+            return "save state chunk '" + chunk->tag + "' is corrupt (" +
+                   (ar.ok() ? "trailing bytes" : ar.error()) + ")";
         }
     }
     vdp_.invalidateCaches();
@@ -226,7 +230,8 @@ bool Machine::loadState(std::span<const std::uint8_t> bytes, std::string& error)
         }
         const ChunkDef* def = findChunk(c.tag);
         if (def == nullptr) {
-            error = "save state chunk '" + c.tag + "' is not understood by this build (saved by a newer version?)";
+            error = "save state chunk '" + c.tag +
+                    "' is not understood by this build (saved by a newer version?)";
             return false;
         }
         if (c.version == 0 || c.version > def->version) {

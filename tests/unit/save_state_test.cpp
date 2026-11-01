@@ -1,6 +1,8 @@
 // Save states (M06-00a): archive round trips, the chunked container, chunk versioning, wrong-ROM refusal and
 // save -> run == load -> run determinism on the synthetic boot ROM.
 
+#include "core/state/save_state.hpp"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -11,7 +13,6 @@
 #include "core/cart/rom.hpp"
 #include "core/sched/machine.hpp"
 #include "core/state/archive.hpp"
-#include "core/state/save_state.hpp"
 #include "support/synthetic_rom.hpp"
 
 using namespace gen;
@@ -212,14 +213,15 @@ TEST_CASE("Chunk versions: newer, unknown, missing and corrupt chunks are refuse
         CHECK_THAT(error, ContainsSubstring("INFO"));
     }
     SECTION("an unknown chunk") {
-        const auto bytes = edit(saved, [](state::StateFile& f) { f.chunks.push_back({"XTRA", 1, {1, 2, 3}}); });
+        const auto bytes =
+            edit(saved, [](state::StateFile& f) { f.chunks.push_back({"XTRA", 1, {1, 2, 3}}); });
         CHECK_FALSE(m.loadState(bytes, error));
         CHECK_THAT(error, ContainsSubstring("'XTRA'") && ContainsSubstring("not understood"));
     }
     SECTION("a missing chunk") {
-        const auto bytes = edit(saved, [](state::StateFile& f) { std::erase_if(f.chunks, [](const auto& c) {
-                                            return c.tag == "SND ";
-                                        }); });
+        const auto bytes = edit(saved, [](state::StateFile& f) {
+            std::erase_if(f.chunks, [](const auto& c) { return c.tag == "SND "; });
+        });
         CHECK_FALSE(m.loadState(bytes, error));
         CHECK_THAT(error, ContainsSubstring("'SND '"));
     }
