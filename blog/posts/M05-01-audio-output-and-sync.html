@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>53,267 samples in, 48,000 out | genesisEmu</title>
+<meta name="description" content="The Genesis produces sound at an odd native rate, and the emulator&#x27;s video runs on a different clock from the sound card. A resampler and a feedback loop keep the two in sync without clicks.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="53,267 samples in, 48,000 out | genesisEmu">
+<meta property="og:description" content="The Genesis produces sound at an odd native rate, and the emulator&#x27;s video runs on a different clock from the sound card. A resampler and a feedback loop keep the two in sync without clicks.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m05">M05 · Audio</a> · Story 1 of 6</p>
+<h1>53,267 samples in, 48,000 out</h1>
+<p class="subtitle">The Genesis produces sound at an odd native rate, and the emulator's video runs on a different clock from the sound card. A resampler and a feedback loop keep the two in sync without clicks.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M05-audio/M05-01-audio-output-and-sync.md">Story M05-01</a></div>
+<div class="prose">
+<p>M05 is the audio milestone. Before any sound chip was emulated, one problem had to be solved: getting
+samples from the emulator to the speakers smoothly, for hours, without clicks, gaps or drift. That's harder
+than it sounds, because two clocks are involved that never agree exactly.</p>
+
+<h2>Two clocks</h2>
+
+<p>The emulated sound hardware produces samples at its own native rate. In genesisEmu that's one stereo
+sample every 1,008 master clocks, about <strong>53,267 Hz</strong>. The host's sound card plays at
+<strong>48,000 Hz</strong>, driven by its own crystal. And the emulator itself is paced by the video:
+M03-10 runs one emulated frame per display refresh when the display is close to 59.92 Hz.</p>
+
+<p>If the emulator produces audio slightly faster than the sound card plays it, the buffer slowly grows and
+latency creeps up. Slightly slower, and it eventually runs dry, which you hear as a click. "Slightly" is
+unavoidable: a 60 Hz display driving a 59.92 Hz console is already 0.13% off, before any crystal error.</p>
+
+<h2>Step 1: resample properly</h2>
+
+<p>Converting 53,267 Hz to 48,000 Hz isn't a whole-number ratio, so every output sample falls between two
+input samples. The naive answer, linear interpolation, lets high frequencies fold back as audible aliasing.
+genesisEmu uses a <strong>windowed-sinc</strong> resampler, the textbook approach for band-limited
+conversion:</p>
+
+<ul>
+<li>A 32-tap filter kernel: a sinc function (an ideal low-pass filter) shaped by a Blackman window so it can
+be finite.</li>
+<li>The cutoff is at 90% of the lower Nyquist frequency, so nothing above about 21.6 kHz survives to alias.</li>
+<li>The kernel is precomputed at 256 fractional positions ("phases"), and the resampler interpolates
+between the two nearest, so each output sample costs 32 multiply-adds per channel.</li>
+</ul>
+
+<figure class="codefig"><pre><code class="language-cpp">const double x = 2.0 * fc * t;
+const double sinc =
+    std::abs(x) &lt; 1e-9 ? 1.0 : std::sin(std::numbers::pi * x) / (std::numbers::pi * x);
+// Blackman window over [-kHalfTaps, kHalfTaps].
+const double w = (t + kHalfTaps) / (2.0 * kHalfTaps);
+const double win =
+    0.42 - 0.5 * std::cos(2 * std::numbers::pi * w) + 0.08 * std::cos(4 * std::numbers::pi * w);</code></pre><figcaption>Building one phase of the kernel in <code>Resampler::setRates</code>: windowed sinc, normalised so every phase has unity DC gain.</figcaption></figure>
+
+<p>A unit test feeds a 1 kHz tone at the native rate through the resampler to 48 kHz and checks that the
+pitch stays within 0.5% and the level within 2%.</p>
+
+<blockquote class="pull"><p>Neither clock is wrong, and they'll never agree. So the emulator listens to how
+full the buffer is and nudges its rate by a fraction of a percent.</p></blockquote>
+
+<h2>Step 2: close the loop</h2>
+
+<p>The resampler's ratio isn't fixed. <strong>Dynamic rate control</strong> watches how much audio is queued in
+the SDL3 audio stream and adjusts the ratio to steer it toward a target of about two frames (33 ms). A fuller
+queue makes the resampler consume input slightly faster, producing fewer output samples, and an emptier one
+does the opposite. The adjustment is proportional to the error and clamped to ±0.5%, far too small to hear
+as a pitch change:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">const double queued = static_cast&lt;double&gt;(SDL_GetAudioStreamQueued(stream_)) / (kRate * 4.0);
+if (queued &gt; kMaxQueueSeconds) {
+    SDL_ClearAudioStream(stream_);
+}
+const double error = (queued - kTargetSeconds) / kTargetSeconds;
+resampler_.setRatioAdjust(1.0 + std::clamp(error * 0.005, -0.005, 0.005));</code></pre><figcaption><code>AudioOutput::push</code>: measure the queue, nudge the ratio, resample, queue the result.</figcaption></figure>
+
+<p>If the queue ever exceeds 250 ms, for example after the window was dragged and the main loop stalled, it's
+dropped rather than played late. A short gap is better than permanent lag.</p>
+
+<p>This is also what makes the vsync-driven video from M03-10 work. The 0.08 Hz difference between a 60 Hz
+display and a 59.92 Hz console was deliberately left for audio rate control to absorb.</p>
+
+<h2>Pause, fast-forward and no sound card</h2>
+
+<p>When emulation pauses, the queued audio is cleared and the device paused, so the last buffer doesn't keep
+buzzing. When fast-forward runs (M03-10), audio is muted, since a 27× speed-up of the soundtrack isn't useful.
+And when no audio device can be opened, as on GitHub's CI runners, the app logs a warning and runs silently
+instead of failing.</p>
+
+<h2>What's still open</h2>
+
+<p>Both acceptance criteria are listening or soak tests: no underruns over 30 minutes at 60 Hz and at 144 Hz
+host refresh, and silence immediately on pause. The build machine's display runs at 100 Hz, so the 60 and
+144 Hz cases weren't available, and there's no unattended way to listen for an underrun. The story is marked
+"Implemented; listening / long-run checks pending (Chris)", with both boxes unchecked.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M05-audio/M05-01-audio-output-and-sync.md">Story M05-01</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/audio/resampler.cpp"><code>src/core/audio/resampler.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/audio/resampler.hpp"><code>src/core/audio/resampler.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/app/audio_output.cpp"><code>src/app/audio_output.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/audio_test.cpp"><code>tests/unit/audio_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M04-09-playability-milestone.html"><span class="label">&larr; Previous</span><span class="title">M04-09 · Playable, at 14% of one core</span></a>
+<a class="next" href="M05-02-psg-sn76489.html"><span class="label">Next &rarr;</span><span class="title">M05-02 · Square waves and a shift register: the PSG</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>&quot;SEGA!&quot;: the DAC and the timers | genesisEmu</title>
+<meta name="description" content="Drums, voice clips and the famous start-up chant come from an 8-bit DAC that the Z80 feeds one sample at a time. Sound drivers also depend on the chip&#x27;s timers and busy flag, which turned out to affect video timing too.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="&quot;SEGA!&quot;: the DAC and the timers | genesisEmu">
+<meta property="og:description" content="Drums, voice clips and the famous start-up chant come from an 8-bit DAC that the Z80 feeds one sample at a time. Sound drivers also depend on the chip&#x27;s timers and busy flag, which turned out to affect video timing too.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m05">M05 · Audio</a> · Story 4 of 6</p>
+<h1>"SEGA!": the DAC and the timers</h1>
+<p class="subtitle">Drums, voice clips and the famous start-up chant come from an 8-bit DAC that the Z80 feeds one sample at a time. Sound drivers also depend on the chip's timers and busy flag, which turned out to affect video timing too.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M05-audio/M05-04-ym2612-dac-and-timers.md">Story M05-04</a></div>
+<div class="prose">
+<p>Power on Sonic the Hedgehog and the first thing you hear is a voice saying "SEGA!". That isn't FM
+synthesis. It's a digitised recording, played through the YM2612's <strong>DAC</strong> mode: when register
+<code>$2B</code> enables it, channel 6 stops synthesising and instead outputs whatever 8-bit value was last
+written to register <code>$2A</code>. The Z80 sound driver writes samples to that register one at a time, as
+fast as it can, which is how Genesis games play drums and voice clips.</p>
+
+<p>M05-04 implemented the DAC and the chip's two timers, which drivers also depend on.</p>
+
+<h2>The DAC replaces channel 6</h2>
+
+<p>ymfm already models the DAC. genesisEmu's masked output stage from M05-03 had to keep that behaviour,
+including one detail: the DAC is controlled by <em>both</em> the DAC mute and FM channel 6's mute, since it
+physically replaces that channel.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">if (m_dac_enable != 0) {
+    // The DAC replaces channel 6: muting FM 6 or the DAC silences it.
+    const bool on = (mask &amp; (1u &lt;&lt; kFmChannelDac)) != 0 &amp;&amp; (mask &amp; (1u &lt;&lt; 5)) != 0;
+    const std::int32_t dac =
+        dac_discontinuity(on ? (static_cast&lt;std::int16_t&gt;(m_dac_data &lt;&lt; 7) &gt;&gt; 7) : 0);</code></pre><figcaption>From <code>MaskedYm2612::render</code>: the DAC's 8-bit sample is centred and output in channel 6's place.</figcaption></figure>
+
+<p>The DAC's sample timing is entirely the driver's: the emulator plays each value from the moment it's
+written. That's why the catch-up rule from M05-03 matters here. A write brings the sound chip up to the
+writing CPU's exact master clock first, so the spacing between DAC writes, and with it the pitch of the
+sample, comes out right.</p>
+
+<h2>Making silence silent</h2>
+
+<p>When the DAC is enabled but idle, its output sits at a constant offset from zero. On a speaker that's
+inaudible, but in a recording it's a DC offset, and a jump in that offset can be heard as a click. The mixer
+runs a first-order high-pass filter at 10 Hz, a <strong>DC blocker</strong>, over the final mix, so the idle
+DAC settles to true silence:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">// DC blocker (first-order high-pass): removes the DAC's idle offset so silence is silent.
+const float hl = l - dcIn_[0] + dcR * dcOut_[0];
+const float hr = r - dcIn_[1] + dcR * dcOut_[1];</code></pre><figcaption>The DC blocker in <code>SoundSystem::render</code>.</figcaption></figure>
+
+<blockquote class="pull"><p>Once the timers and busy flag were real, the sound drivers waited slightly
+differently, and that moved the attract-mode video by a few frames.</p></blockquote>
+
+<h2>Timers and the busy flag</h2>
+
+<p>The YM2612 has two programmable timers, A and B. When one expires it sets a flag in the status register,
+and some drivers use those flags to pace their music. The status register also has a <strong>busy</strong>
+flag: after each register write, the chip needs a short time before it accepts the next one, and drivers can
+poll the flag.</p>
+
+<p>ymfm leaves timekeeping to its host through callbacks, so genesisEmu provides the clock. Each generated
+sample advances time by 144 YM clocks and counts the timers down, carrying any overshoot into the reload:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">void advance() {
+    now_ += kFmSampleClocks;
+    for (std::uint32_t t = 0; t &lt; 2; ++t) {
+        if (timers_[t] &lt; 0) {
+            continue;
+        }
+        timers_[t] -= kFmSampleClocks;</code></pre><figcaption><code>Interface::advance</code>: time moves only as samples are generated, so timers are deterministic.</figcaption></figure>
+
+<p>For a status read to be correct, the chip has to be up to date at the moment of the read. Like writes,
+status reads first catch the sound chips up to the reading CPU's clock. A unit test checks that timer A sets
+its status flag.</p>
+
+<p>Until M05, status reads were stubbed to "ready" (M02-03). With a real busy flag and real timers, the
+drivers' waits changed length, and that shifted attract-mode timing. The M05 pull request records the
+resulting <code>[golden-update]</code>: three boot state hashes, five frame hashes ("same scenes, checked"),
+and the scripted-input hashes changed, and the state hash now also covers the sound chips.</p>
+
+<h2>Objective checks</h2>
+
+<p>The acceptance criteria, a clear "SEGA" voice at the correct pitch and correct S3K drums, are listening
+tests and still open. The story records the measurements that could be made without ears. In Sonic 1, the
+"SEGA" chant is the only sound between 2.5 and 4.5 seconds after power-on, at −23 dBFS, with a zero-crossing
+rate around 1.3 kHz, which is typical of speech. The register log shows 27,000 Z80 writes to
+<code>$2A</code> in that window. Sonic 2 and Sonic 3 &amp; Knuckles play their SEGA samples at about 4 seconds
+and 1–2 seconds respectively.</p>
+
+<p>The recordings stayed as scratch files on the build machine, as the project requires for anything taken
+from the games.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M05-audio/M05-04-ym2612-dac-and-timers.md">Story M05-04</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/audio/fm_synth.cpp"><code>src/core/audio/fm_synth.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/audio/sound.cpp"><code>src/core/audio/sound.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/z80/z80_control.cpp"><code>src/core/z80/z80_control.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/audio_test.cpp"><code>tests/unit/audio_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M05-03-ym2612-fm.html"><span class="label">&larr; Previous</span><span class="title">M05-03 · FM synthesis, borrowed on purpose</span></a>
+<a class="next" href="M05-05-mixer-mute-and-register-log.html"><span class="label">Next &rarr;</span><span class="title">M05-05 · A mixing desk for reverse engineers</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

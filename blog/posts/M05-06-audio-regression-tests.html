@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testing sound without listening to it | genesisEmu</title>
+<meta name="description" content="An audio regression test that&#x27;s exact, cheap and independent of the host&#x27;s sound card: hash every native sample since power-on, and check the hash at scripted checkpoints.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Testing sound without listening to it | genesisEmu">
+<meta property="og:description" content="An audio regression test that&#x27;s exact, cheap and independent of the host&#x27;s sound card: hash every native sample since power-on, and check the hash at scripted checkpoints.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m05">M05 · Audio</a> · Story 6 of 6</p>
+<h1>Testing sound without listening to it</h1>
+<p class="subtitle">An audio regression test that's exact, cheap and independent of the host's sound card: hash every native sample since power-on, and check the hash at scripted checkpoints.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M05-audio/M05-06-audio-regression-tests.md">Story M05-06</a></div>
+<div class="prose">
+<p>The final story of the audio milestone answers a practical question. Once sound works, how do you notice
+when a later change breaks it? Listening to three title themes after every commit isn't realistic, and a
+listener wouldn't notice a subtle change anyway. M05-06 added two tools: WAV recording for when you do want to
+listen, and audio hashes for automated tests.</p>
+
+<h2>Hash the native samples, not the speakers</h2>
+
+<p>The key design choice is <em>where</em> to hash. The audio that reaches the sound card has passed through the
+resampler and dynamic rate control from M05-01, which depend on the host's sound card, its buffer and real-time
+timing, so they're not deterministic. One step earlier, the samples the emulated chips produce at the native
+~53,267 Hz rate depend only on the emulated machine, and the machine is deterministic.</p>
+
+<p>So the sound system feeds every native sample it renders into a running XXH3 hash, from power-on:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">hasher_-&gt;bytes(std::span(reinterpret_cast&lt;const std::uint8_t*&gt;(out_.data() + base),
+                         static_cast&lt;std::size_t&gt;(n) * 2 * sizeof(std::int16_t)));</code></pre><figcaption>The last step of <code>SoundSystem::render</code>: the freshly mixed samples go into the running hash.</figcaption></figure>
+
+<p>That hash covers the entire soundtrack so far, every sample of FM, DAC and PSG output after mixing. Change
+one sample anywhere and the hash changes. It costs one hashing pass over data that's being produced anyway.</p>
+
+<blockquote class="pull"><p>Hash before the resampler, and the test doesn't depend on whose sound card it
+runs on.</p></blockquote>
+
+<h2>A new checkpoint kind</h2>
+
+<p>The scripted-input format from M04-03 already had <code>frame_hash</code> and <code>state_hash</code>
+checkpoints. M05-06 added a third, <code>audio_hash</code>, with the same rules: evaluated after N frames,
+optional expected value, recorded with <code>--update-script</code>, checked with <code>--check</code>. Every
+script in <code>tests/scripts/</code> now asserts it twice, at the title screen and at the end of the run:</p>
+
+<figure class="codefig"><pre><code class="language-text">checkpoint 600 audio_hash 7f918422fb08ab4e  # SEGA chant + title music (M05-06)
+checkpoint 1300 audio_hash 0dacd6c229bcddd0</code></pre><figcaption>The audio checkpoints at the end of <code>tests/scripts/sonic1_ghz1.txt</code>.</figcaption></figure>
+
+<p>The first one, at frame 600, covers the "SEGA" chant (M05-04) and the start of the title music. The second
+covers gameplay: Sonic running, jumping and getting hit. The <code>[rom]</code> test that replays the
+scripts checks these along with the frame and state hashes, so a regression in any sound chip, the mixer or
+the timing of driver writes fails the test.</p>
+
+<p>The state hash (M02-05) also includes the audio hash, so even a <code>state_hash</code> checkpoint fails if
+the sound diverged.</p>
+
+<h2>WAV recording</h2>
+
+<p>When a hash does change, the next step is to listen. <code>gen_cli run --wav file.wav</code> records the
+same native-rate mix, 16-bit stereo at about 53,267 Hz, in a standard RIFF/WAVE file. The writer is under seventy
+lines: a header with placeholder sizes, the samples, and sizes patched in when the file is closed. In the app,
+the Sound panel (M05-05) starts and stops recording, so you can capture exactly the passage you're looking at.
+Recording the native mix rather than the speaker output means a WAV made by the CLI and one made in the app
+from the same run contain the same samples.</p>
+
+<p>All the measurements quoted in the earlier audio articles, such as the −23 dBFS SEGA chant, its
+zero-crossing rate and the absence of clipped samples, were taken from WAVs recorded this way. As always,
+those recordings of commercial games stayed as scratch files and were never committed.</p>
+
+<h2>One box open</h2>
+
+<p>The acceptance criterion is <em>title-screen audio hash stable across runs and operating systems</em>. Across
+runs it holds: the hashes were recorded in one process and re-checked in another on Windows. Across operating
+systems it hasn't been tested, because no Mac was available. The mixer uses floating-point filters, so equality
+across compilers has to be demonstrated rather than assumed. So the story reads "Done on Windows; macOS run pending", and the box stays
+unchecked until a Mac produces the same hash.</p>
+
+<p>That's where the series stands at the end of M05: a hand-written 68000 and Z80, a complete VDP, sound, and
+a test suite that checks millions of CPU vectors on every push and golden frames and audio hashes against the
+user's own ROMs, with every unverified claim marked as unverified. The next milestones turn the emulator into a workbench: a debugger,
+a colour-coded map of the ROM and, eventually, a reassemblable disassembly of each game.</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M05-audio/M05-06-audio-regression-tests.md">Story M05-06</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/audio/sound.cpp"><code>src/core/audio/sound.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/common/wav.cpp"><code>src/common/wav.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/common/input_script.cpp"><code>src/common/input_script.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/scripts/sonic1_ghz1.txt"><code>tests/scripts/sonic1_ghz1.txt</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/roms/script_test.cpp"><code>tests/roms/script_test.cpp</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M05-05-mixer-mute-and-register-log.html"><span class="label">&larr; Previous</span><span class="title">M05-05 · A mixing desk for reverse engineers</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>

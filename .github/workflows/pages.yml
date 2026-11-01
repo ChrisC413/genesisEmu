@@ -1,0 +1,39 @@
+# Publishes the static blog in blog/ to GitHub Pages (https://chrisc413.github.io/genesisEmu/).
+# Free tier only (D-016): one standard windows-latest job (M00-02 keeps every workflow on windows-latest), the
+# official Pages actions, and no build step.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "blog/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer push supersedes a queued one but never cancels a running deployment.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy blog
+    runs-on: windows-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: blog
+      - id: deployment
+        uses: actions/deploy-pages@v4

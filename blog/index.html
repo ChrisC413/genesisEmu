@@ -16,18 +16,18 @@
 </head>
 <body>
 <header class="topbar"><div class="topbar-inner">
-<a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu: How it's built</a>
+<a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
 <nav><a href="index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
 </div></header>
 <main>
 <section class="hero">
-<p class="kicker">Build notes · 46 articles</p>
+<p class="kicker">Build notes · 52 articles</p>
 <h1>How genesisEmu is built</h1>
 <p class="lede">genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering and modding the
 Sonic games. The project is written spec-first: every feature starts as a short story with acceptance
 criteria. This series has one article per finished story. Each one covers what the feature does, why an
 emulator needs it, and how this code base builds and tests it.</p>
-<p class="meta">46 articles · about 3 hours of reading ·
+<p class="meta">52 articles · about 4 hours of reading ·
 <a href="https://github.com/ChrisC413/genesisEmu">source on GitHub</a> · start with <a href="posts/M00-01-repo-and-build-system.html">M00-01</a></p>
 </section>
 <nav class="toc" aria-label="Milestones">
@@ -36,6 +36,7 @@ emulator needs it, and how this code base builds and tests it.</p>
 <a href="#m02">M02 · System bus & boot</a>
 <a href="#m03">M03 · VDP video</a>
 <a href="#m04">M04 · Input, Z80, playable</a>
+<a href="#m05">M05 · Audio</a>
 </nav>
 <section class="milestone" id="m00">
 <div class="milestone-head"><span class="tag">M00 · 7 stories</span><h2>Foundation</h2><p>Repository, build, CI and an application shell that loads a ROM, on Windows and macOS.</p></div>
@@ -106,6 +107,17 @@ emulator needs it, and how this code base builds and tests it.</p>
 <li><a href="posts/M04-07-z80-system-integration.html"><span class="pid">M04-07</span><span class="ptitle">Two CPUs sharing one machine</span><span class="pblurb">Running the Z80 inside the machine: per-line catch-up, BUSREQ/RESET arbitration tightened, the bank window with stall costs and an onZ80Window hook, the V-blank interrupt, and a log of sound-chip writes.</span><span class="pmeta">4 min read</span></a></li>
 <li><a href="posts/M04-08-sram-and-cart-devices.html"><span class="pid">M04-08</span><span class="ptitle">Battery saves and a socket for custom hardware</span><span class="pblurb">A pluggable cartridge-device chain on /TIME and cartridge space, the SRAM controller with byte lanes and $A130F1 switching, and .srm persistence keyed by ROM SHA-1.</span><span class="pmeta">4 min read</span></a></li>
 <li><a href="posts/M04-09-playability-milestone.html"><span class="pid">M04-09</span><span class="ptitle">Playable, at 14% of one core</span><span class="pblurb">The M04 exit check: scripted stand-ins for GHZ1, EHZ1 and AIZ1, performance of 0.55-0.75 ms per frame and about 14% of a core for the whole app, a bug triage, and an honest open box.</span><span class="pmeta">3 min read</span></a></li>
+</ul>
+</section>
+<section class="milestone" id="m05">
+<div class="milestone-head"><span class="tag">M05 · 6 stories</span><h2>Audio</h2><p>PSG and YM2612 sound, the DAC, a mixer, register logging and audio regression tests.</p></div>
+<ul class="post-list">
+<li><a href="posts/M05-01-audio-output-and-sync.html"><span class="pid">M05-01</span><span class="ptitle">53,267 samples in, 48,000 out</span><span class="pblurb">Getting emulated sound to the speakers: a 32-tap windowed-sinc resampler from the native ~53,267 Hz to 48 kHz, an SDL3 audio stream, and ±0.5% dynamic rate control around a two-frame buffer.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M05-02-psg-sn76489.html"><span class="pid">M05-02</span><span class="ptitle">Square waves and a shift register: the PSG</span><span class="pblurb">An in-house SN76489-style PSG: three 10-bit tone channels, a noise channel with Sega's 16-bit LFSR taps, a 2 dB attenuation table, and box-filtered mixing at the native rate.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M05-03-ym2612-fm.html"><span class="pid">M05-03</span><span class="ptitle">FM synthesis, borrowed on purpose</span><span class="pblurb">The YM2612 via the vendored ymfm library behind an IFmSynth interface: register ports, catch-up generation, per-channel muting through a small subclass, and save-state serialisation.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M05-04-ym2612-dac-and-timers.html"><span class="pid">M05-04</span><span class="ptitle">"SEGA!": the DAC and the timers</span><span class="pblurb">YM2612 channel 6 as an 8-bit DAC, a DC blocker for silent silence, timers A/B and the busy flag clocked per sample, status reads that sync to the reading CPU, and objective checks on the SEGA chant.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M05-05-mixer-mute-and-register-log.html"><span class="pid">M05-05</span><span class="ptitle">A mixing desk for reverse engineers</span><span class="pblurb">The mixer and Sound panel: FM/PSG levels, an optional model-1 low-pass, mute/solo for eleven channels, and a ring-buffer log of every YM2612/PSG write with frame, line, CPU and PC, exported as CSV.</span><span class="pmeta">4 min read</span></a></li>
+<li><a href="posts/M05-06-audio-regression-tests.html"><span class="pid">M05-06</span><span class="ptitle">Testing sound without listening to it</span><span class="pblurb">WAV recording of the native-rate mix and an audio_hash checkpoint in scripted input: an XXH3 hash over every sample since power-on, recorded at the title screen and end of each script.</span><span class="pmeta">4 min read</span></a></li>
 </ul>
 </section>
 </main>

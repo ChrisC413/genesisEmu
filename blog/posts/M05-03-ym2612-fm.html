@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FM synthesis, borrowed on purpose | genesisEmu</title>
+<meta name="description" content="The YM2612 gives the Genesis its sound. Instead of writing an FM synthesizer from scratch, genesisEmu wraps ymfm, a well-regarded BSD-licensed implementation, behind a narrow interface.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="FM synthesis, borrowed on purpose | genesisEmu">
+<meta property="og:description" content="The YM2612 gives the Genesis its sound. Instead of writing an FM synthesizer from scratch, genesisEmu wraps ymfm, a well-regarded BSD-licensed implementation, behind a narrow interface.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>genesisEmu<span class="brand-sub">: How it's built</span></a>
+<nav><a href="../index.html">All articles</a><a href="https://github.com/ChrisC413/genesisEmu">GitHub</a></nav>
+</div></header>
+<main>
+<article class="article">
+<p class="kicker"><a href="../index.html#m05">M05 · Audio</a> · Story 3 of 6</p>
+<h1>FM synthesis, borrowed on purpose</h1>
+<p class="subtitle">The YM2612 gives the Genesis its sound. Instead of writing an FM synthesizer from scratch, genesisEmu wraps ymfm, a well-regarded BSD-licensed implementation, behind a narrow interface.</p>
+<div class="byline"><span>genesisEmu build notes</span><span class="dot"></span><span>4 min read</span><span class="dot"></span><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M05-audio/M05-03-ym2612-fm.md">Story M05-03</a></div>
+<div class="prose">
+<p>The Yamaha YM2612 is where the Genesis gets its sound: six channels of <strong>FM synthesis</strong>, each
+built from four operators, sine-wave oscillators that modulate each other's phase in one of eight
+arrangements. It's capable of anything from bright brass to metallic bass, and getting it exactly right
+involves envelope generators, a low-frequency oscillator, quirky rounding in its output stage and
+undocumented edge cases that took the emulation community years to map out.</p>
+
+<p>The project made a deliberate choice about it. Decision D-013: <em>YM2612 via ymfm (BSD-3) behind
+<code>IFmSynth</code></em>. The hand-written requirement applies to the CPUs, where reverse engineering needs
+total control and instrumentation. For the FM chip, ymfm, Aaron Giles's library of Yamaha FM cores, is
+accurate and permissively licensed. Writing a second YM2612 from scratch would have taken a lot of
+effort for no gain in the project's goals.</p>
+
+<h2>Vendored, unmodified</h2>
+
+<p>ymfm isn't in the vcpkg baseline the project pins, so its OPN sources are vendored unmodified under
+<code>third_party/ymfm/</code> at a recorded commit. They're built as a separate static library that compiles
+warning-free, skipped by the project's clang-format check, and listed in
+<code>THIRD_PARTY_NOTICES.md</code> with the full BSD-3 licence text, which was one of the acceptance
+criteria.</p>
+
+<h2>A narrow interface</h2>
+
+<p>The rest of the emulator never sees ymfm. It talks to <code>IFmSynth</code>: write a register port (the
+YM2612's four ports A0/D0/A1/D1), read the status, generate N samples, and serialise or restore the chip.
+<code>makeYmfmSynth()</code> is the only place that knows which implementation is behind it. If a different
+FM core is ever wanted, for comparison or for speed, it's one class to replace.</p>
+
+<figure class="codefig"><pre><code class="language-cpp">void write(int port, std::uint8_t value) override {
+    chip_.write(static_cast&lt;std::uint32_t&gt;(port &amp; 3), value);
+}
+std::uint8_t readStatus() override { return chip_.read_status(); }</code></pre><figcaption><code>YmfmSynth</code> forwards writes and status reads straight to ymfm.</figcaption></figure>
+
+<h2>Catch-up, one sample at a time</h2>
+
+<p>The sound system follows the same lazy pattern as the Z80 (M04-07). It doesn't run continuously; it's
+brought up to date when something needs it. That happens at the end of every scanline, and also immediately
+<em>before</em> any CPU reads or writes a sound-chip port, so a write lands at exactly the right sample:</p>
+
+<figure class="codefig"><pre><code class="language-cpp">void SoundSystem::ymWrite(int port, std::uint8_t value) {
+    sync();
+    fm_-&gt;write(port, value);
+}</code></pre><figcaption><code>SoundSystem</code>: every port access first renders samples up to the accessing CPU's current clock.</figcaption></figure>
+
+<p>The YM2612 is clocked from the 68000's clock (master clock ÷ 7) and produces one sample every 144 of its own
+clocks. That works out to one stereo sample every 1,008 master clocks, the native rate of about 53,267 Hz that
+the whole audio path from M05-01 is built around.</p>
+
+<blockquote class="pull"><p>The CPUs are hand-written because reverse engineering needs complete control of
+them. For the FM chip, a proven library was the better engineering choice.</p></blockquote>
+
+<h2>Muting channels without forking the library</h2>
+
+<p>For reverse engineering, being able to mute or solo individual FM channels is essential (M05-05). ymfm's
+<code>generate</code> mixes all channels internally. Instead of modifying the vendored sources, genesisEmu
+derives a small class, <code>MaskedYm2612</code>, that reproduces ymfm's YM2612 output stage, including the
+"DAC discontinuity" quirk of the real chip's output, but only adds up the channels in a mask. A muted channel
+contributes exactly what a silent channel would.</p>
+
+<h2>Save states</h2>
+
+<p>The interface's <code>serialize()</code> and <code>deserialize()</code> wrap ymfm's own save/restore,
+extended with the timer and busy-flag state that genesisEmu tracks itself. A unit test serialises a playing
+chip, restores it into a fresh one, and requires both to produce identical samples from then on. Save-state
+<em>files</em> come with M06; the state hash already covers the serialised chip.</p>
+
+<h2>Checked by measurement, waiting for an ear</h2>
+
+<p>A unit test programs a single-operator voice for 440 Hz and checks, by counting zero crossings, that it
+plays at 440 Hz within 1%. Title-screen recordings of all three games (kept as scratch files, never committed)
+came out at −20 to −25 dBFS RMS with no clipped samples.</p>
+
+<p>The main criterion, <em>Sonic 1, 2 and 3K title music matches reference recordings by ear and within
+tolerance in a WAV comparison</em>, is open. The repository holds no reference recordings, which would come
+from another implementation or from hardware, and nobody had listened yet. The story says so: "Implemented;
+listening comparison pending (Chris)".</p>
+</div>
+<p class="endmark" aria-hidden="true">&middot; &middot; &middot;</p>
+<aside class="sources"><h2>Where to look in the repo</h2><ul>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/stories/M05-audio/M05-03-ym2612-fm.md">Story M05-03</a> (scope, acceptance criteria, notes)</li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/audio/fm_synth.hpp"><code>src/core/audio/fm_synth.hpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/audio/fm_synth.cpp"><code>src/core/audio/fm_synth.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/src/core/audio/sound.cpp"><code>src/core/audio/sound.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/tests/unit/audio_test.cpp"><code>tests/unit/audio_test.cpp</code></a></li>
+<li><a href="https://github.com/ChrisC413/genesisEmu/blob/main/THIRD_PARTY_NOTICES.md"><code>THIRD_PARTY_NOTICES.md</code></a></li>
+</ul></aside>
+</article>
+<nav class="postnav" aria-label="More articles">
+<a class="prev" href="M05-02-psg-sn76489.html"><span class="label">&larr; Previous</span><span class="title">M05-02 · Square waves and a shift register: the PSG</span></a>
+<a class="next" href="M05-04-ym2612-dac-and-timers.html"><span class="label">Next &rarr;</span><span class="title">M05-04 · "SEGA!": the DAC and the timers</span></a>
+<a class="index-link" href="../index.html">All articles in the series</a>
+</nav>
+</main>
+<footer class="footer"><div class="footer-inner">
+genesisEmu is a hand-written Sega Genesis emulator for reverse-engineering the Sonic games. MIT licensed.
+Source on <a href="https://github.com/ChrisC413/genesisEmu">GitHub</a>. No game ROMs, graphics or audio appear on this site; diagrams are original.
+</div></footer>
+</body>
+</html>
