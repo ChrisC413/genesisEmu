@@ -17,6 +17,7 @@ Start M06-01, M06-02, M06-05, M06-06 right after M02 to help bring up M03–M05.
 | ID | Story | Depends on |
 |----|-------|------------|
 | M06-00a | [Play from a game snapshot (save-state core, CLI and hotkeys)](M06-00a-play-from-snapshot.md) | M05 |
+| M06-00b | [Bug: Sonic 2 Chemical Plant liquid tints the whole screen](M06-00b-s2-liquid-rendering-fix.md) | M06-00a |
 | M06-01 | [Run control: pause, resume, step frame/scanline, reset](M06-01-run-control.md) | — |
 | M06-02 | [Instruction stepping: into, over, out, run to cursor](M06-02-instruction-stepping.md) | M06-01, M06-10 |
 | M06-03 | [Execution breakpoints, conditions and logpoints](M06-03-execution-breakpoints.md) | M06-01 |

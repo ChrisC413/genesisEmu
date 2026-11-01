@@ -164,6 +164,7 @@ public:
 private:
     bool stepCpu(RunResult& result);  // false when a breakpoint stopped it
     void endLine();
+    void checkVint();
     void catchUp(std::uint64_t mclk);
     void runZ80(std::uint64_t mclk);
     static void syncZ80(void* ctx);
@@ -185,6 +186,7 @@ private:
     std::unique_ptr<m68k::M68k> cpu_;
     std::unique_ptr<z80::Z80> z80cpu_;
     std::uint64_t z80Mclk_ = 0;
+    std::uint64_t vintAt_ = 0;  // master clock the armed V-int is raised at (see endLine)
     bool inZ80_ = false;
     Hooks hooks_;
     std::uint64_t frame_ = 0;

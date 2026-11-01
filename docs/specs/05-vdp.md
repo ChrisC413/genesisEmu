@@ -55,6 +55,11 @@ map's "graphics/palette data" classification (spec 09).
 ## Interrupts and timing
 
 - V-int at the first line of V-blank (224 in V28), when reg 1 bit 5 enabled; level 6 on the 68k; also asserts Z80 /INT.
+  A scheduler line boundary is where the V counter increments and H-int fires (H counter $A5 in H40, $85 in
+  H32). The 68k V-int (and the status F flag) follows later, at H $00 → $01: about 749 MCLK (H40) or 780 MCLK
+  (H32) into line 224, plus any Z80 stall charged to the 68k at that boundary. An H-int raised at the end of
+  line 223 is therefore taken first, as on hardware (M06-00b, D-029). Z80 /INT is asserted at the start of
+  the line.
 - H-int counter (reg 10) reloaded at every line in V-blank, decremented each active line; on underflow raise level 4 if reg 0 bit 4 enabled.
 - Interrupt acknowledge clears the pending flag (V-int pending is also visible in status bit 7).
 - Frame timing per spec 01 (3420 MCLK per line).

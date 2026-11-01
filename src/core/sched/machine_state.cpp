@@ -173,6 +173,7 @@ void Machine::serializeChunk(std::string_view tag, state::Archive& ar) {
         ar.u64(clock_.lineStart);
         ar.u64(clock_.cpuMclk);
         ar.u64(z80Mclk_);
+        ar.u64(vintAt_);
         ar.u16s(pendingInput_);
     }
 }

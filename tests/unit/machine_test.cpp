@@ -3,6 +3,7 @@
 #include "core/sched/machine.hpp"
 
 #include <cstdint>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -156,4 +157,44 @@ TEST_CASE("Fault exceptions are counted and can stop the run", "[sched]") {
     CHECK(m.stats().firstFaultVector == r.vector);
     CHECK_FALSE(isFaultVector(30));
     CHECK(isFaultVector(3));
+}
+
+TEST_CASE("An H-int at the end of the last active line is taken before the V-int", "[sched][irq]") {
+    // M06-00b: Sonic 2 sets the H-int counter to 223 when the water is below the screen. The H-int that fires
+    // at the end of line 223 must be serviced before the V-int of line 224, or its palette swap lands in
+    // V-blank after the V-int's palette upload and tints the whole next frame.
+    struct Irq {
+        int level = 0;
+        std::uint64_t frame = 0;
+        int line = 0;
+    };
+    struct Log {
+        std::vector<Irq> irqs;
+        const Machine* m = nullptr;
+    } log;
+    Machine m = bootMachine();
+    m.run(RunLimit::frames(3));    // past the boot code; interrupts enabled
+    m.vdp().writeControl(0x8014);  // reg 0: H-int enabled
+    m.vdp().writeControl(0x8ADF);  // reg 10: 223, loaded into the counter in the next V-blank
+    m.run(RunLimit::frames(1));
+    log.m = &m;
+    Hooks hooks;
+    hooks.ctx = &log;
+    hooks.onIrq = [](void* ctx, CpuId, int level) {
+        auto& l = *static_cast<Log*>(ctx);
+        l.irqs.push_back({level, l.m->frame(), l.m->line()});
+    };
+    m.setHooks(hooks);
+    m.run(RunLimit::frames(3));
+    // Per frame: exactly one H-int (counter 223) and one V-int, the H-int first, both early in line 224.
+    REQUIRE(log.irqs.size() == 6);
+    for (std::size_t i = 0; i < log.irqs.size(); i += 2) {
+        const Irq& h = log.irqs[i];
+        const Irq& v = log.irqs[i + 1];
+        CHECK(h.level == 4);
+        CHECK(v.level == 6);
+        CHECK(h.frame == v.frame);
+        CHECK(h.line == 224);
+        CHECK(v.line == 224);
+    }
 }

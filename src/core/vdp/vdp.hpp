@@ -55,7 +55,8 @@ struct VdpState {
     bool spriteCollision = false;
     bool oddFrame = false;
     bool pal = false;
-    bool z80Int = false;  // Z80 /INT, asserted for the first V-blank line
+    bool z80Int = false;     // Z80 /INT, asserted for the first V-blank line
+    bool vintArmed = false;  // the first V-blank line has begun; V-int is raised vintDelayMclk() into it
     int hintCounter = 0;
     int line = 0;  // current scanline (0 = first active line)
     std::uint16_t readBuffer = 0;
@@ -161,6 +162,19 @@ public:
     // Interrupt level the VDP drives on the 68k IPL lines (6, 4 or 0).
     int irqLevel() const;
     void acknowledge(int level);
+
+    // V-int timing (M06-00b). A scanline boundary of the scheduler is where the V counter increments and
+    // H-int fires (H counter $A5 in H40, $85 in H32). V-int (and the status F flag) comes later, at H counter
+    // $00 -> $01 of the first V-blank line: 46 H40 units (~749 MCLK) or 39 H32 units (780 MCLK) after the
+    // boundary. So an H-int raised at the end of the last active line is taken before the V-int, as on
+    // hardware (Sonic 2's water handler relies on it). The scheduler calls raiseVint() once the 68k reaches
+    // that point (plus any Z80 stall it charged to the 68k at the boundary).
+    bool vintArmed() const { return s_.vintArmed; }
+    int vintDelayMclk() const { return h40() ? 749 : 780; }
+    void raiseVint() {
+        s_.vintArmed = false;
+        s_.vintPending = true;
+    }
 
     int activeHeight() const { return (s_.regs[1] & 0x08) != 0 && s_.pal ? 240 : 224; }
     bool h40() const { return (s_.regs[12] & 0x01) != 0; }

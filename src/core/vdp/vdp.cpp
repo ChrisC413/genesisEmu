@@ -335,6 +335,9 @@ std::uint16_t Vdp::readStatus(int lineMclk) {
 }
 
 void Vdp::beginLine(int line) {
+    if (s_.vintArmed) {
+        raiseVint();  // the scheduler did not get to it within the line (cannot happen with 3420-MCLK lines)
+    }
     s_.line = line;
     const int height = activeHeight();
     if (line == 0) {
@@ -348,7 +351,7 @@ void Vdp::beginLine(int line) {
     }
     s_.z80Int = line == height;  // /INT is held for about one line
     if (line == height) {
-        s_.vintPending = true;
+        s_.vintArmed = true;  // raised vintDelayMclk() into the line (see raiseVint)
     }
 }
 
@@ -420,7 +423,7 @@ void Vdp::serialize(state::Archive& ar) {
     ar.u16(v.addressHigh);
     ar.u8(v.code);
     for (bool* b : {&v.pending, &v.fillPending, &v.vintPending, &v.hintPending, &v.spriteOverflow,
-                    &v.spriteCollision, &v.oddFrame, &v.pal, &v.z80Int}) {
+                    &v.spriteCollision, &v.oddFrame, &v.pal, &v.z80Int, &v.vintArmed}) {
         ar.boolean(*b);
     }
     ar.i32(v.hintCounter);
