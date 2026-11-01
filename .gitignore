@@ -15,6 +15,12 @@ CMakeUserPresets.json
 *.state
 /roms/
 
+# Frame, audio and VDP dumps of commercial games (CLI --out defaults to the current directory)
+*.png
+*.wav
+!docs/**/*.png
+!src/app/resources/**/*.png
+
 # Downloaded test data
 test-data/
 

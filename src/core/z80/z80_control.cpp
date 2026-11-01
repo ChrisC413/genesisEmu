@@ -29,7 +29,7 @@ void Z80Control::writeReset(bool bit8) {
 // -------------------------------------------------------------------------------------------
 
 std::uint8_t Z80Control::ymRead() {
-    return sound_ != nullptr ? sound_->ymStatus() : 0x00;  // stub: not busy, no timer overflow
+    return sound_ != nullptr ? sound_->ymStatus() : 0x00;  // no sound system: not busy, no timer overflow
 }
 
 void Z80Control::ymWrite(int port, std::uint8_t value, CpuId cpu, std::uint32_t pc) {
