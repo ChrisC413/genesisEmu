@@ -51,6 +51,13 @@ int AudioOutput::queuedMs() const {
     return bytes * 1000 / (kRate * 4);
 }
 
+void AudioOutput::flush() {
+    if (stream_ != nullptr) {
+        SDL_ClearAudioStream(stream_);
+    }
+    resampler_.reset();
+}
+
 void AudioOutput::setPaused(bool paused) {
     if (paused == paused_ || stream_ == nullptr) {
         paused_ = paused;

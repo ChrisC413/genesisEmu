@@ -6,6 +6,9 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/audio/sound.hpp"
@@ -15,9 +18,15 @@
 #include "core/cart/sram.hpp"
 #include "core/hooks.hpp"
 #include "core/m68k/m68k.hpp"
+#include "core/util/hash.hpp"
 #include "core/vdp/vdp.hpp"
 #include "core/z80/z80.hpp"
 #include "core/z80/z80_control.hpp"
+
+namespace gen::state {
+class Archive;
+struct StateFile;
+}  // namespace gen::state
 
 namespace gen {
 
@@ -127,6 +136,8 @@ public:
     audio::SoundSystem& sound() { return sound_; }
     const audio::SoundSystem& sound() const { return sound_; }
     const std::vector<std::uint8_t>& rom() const { return rom_; }
+    // SHA-1 of the image as passed to the constructor (before padding); save states are tied to it.
+    const Sha1Digest& romSha1() const { return romSha1_; }
 
     // Cartridge device chain (M04-08). The SRAM controller is created from the header's SRAM declaration
     // (for a lock-on image, the locked-on cartridge's header) and is null when none is declared.
@@ -139,15 +150,30 @@ public:
     // XXH3-64 over every component's state (CPU, RAM, VDP, I/O, Z80 side, scheduler).
     std::uint64_t stateHash() const;
 
+    // Save states (spec 08 "Save states", M06-00a): the full machine as a chunked, versioned file (format in
+    // core/state/save_state.hpp). Call between run() / step() calls, i.e. at an instruction boundary.
+    // `timestamp` is stored as given (seconds since the epoch; 0 keeps a state byte-for-byte reproducible).
+    // Hooks, statistics, the bus issue log and the sound register log are not part of a state.
+    std::vector<std::uint8_t> saveState(std::uint64_t timestamp = 0);
+    // Restores a state saved from the same ROM image (SHA-1) and region. A state is refused when it comes
+    // from another ROM, has a chunk this build does not know or a newer chunk version, is corrupt, or does
+    // not reproduce the state hash recorded when it was saved; the machine is then unchanged and `error`
+    // says why.
+    bool loadState(std::span<const std::uint8_t> bytes, std::string& error);
+
 private:
     bool stepCpu(RunResult& result);  // false when a breakpoint stopped it
     void endLine();
+    void checkVint();
     void catchUp(std::uint64_t mclk);
     void runZ80(std::uint64_t mclk);
     static void syncZ80(void* ctx);
     static std::uint64_t soundNow(void* ctx);
+    void serializeChunk(std::string_view tag, state::Archive& ar);
+    std::string applyState(const state::StateFile& file);  // empty on success
 
     std::vector<std::uint8_t> rom_;
+    Sha1Digest romSha1_{};
     MachineConfig config_;
     bus::Region region_ = bus::Region::Americas;
     bool pal_ = false;
@@ -160,6 +186,7 @@ private:
     std::unique_ptr<m68k::M68k> cpu_;
     std::unique_ptr<z80::Z80> z80cpu_;
     std::uint64_t z80Mclk_ = 0;
+    std::uint64_t vintAt_ = 0;  // master clock the armed V-int is raised at (see endLine)
     bool inZ80_ = false;
     Hooks hooks_;
     std::uint64_t frame_ = 0;

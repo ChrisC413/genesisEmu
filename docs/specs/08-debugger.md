@@ -52,6 +52,14 @@ States: `Running`, `Paused`, `Stepping`. Stops always land on an **instruction b
 - A state from a different ROM SHA-1 is refused. A state from an older format version is loaded if all its chunks are understood; otherwise a clear error.
 - Coverage and analysis data are **not** part of save states (they live in the project, spec 12). Loading a state does not erase coverage.
 - Determinism check: save → run N frames → hash; load → run N frames → hash must match.
+- Format (M06-00a, D-028): `GENESTATE` magic, a container version, then chunks `tag (4 ASCII), u16 version,
+  u16 flags, u32 length, payload`, little-endian. `INFO` holds the ROM SHA-1, frame, timestamp and the
+  `Machine::stateHash()` at save time; then one chunk per component (`M68K`, `BUS `, `VDP `, `IO  `, `Z80 `,
+  `Z80C`, `SND `, `CART`, `SCHD`). Loading validates every chunk first, applies them, and refuses the state
+  (rolling the machine back) unless the restored machine reproduces the recorded state hash. A state from
+  another region is refused like one from another ROM.
+- Command line: `genesisEmu --state=<file> <rom>`; `gen_cli run|trace --load-state <file>` and
+  `gen_cli run --save-state-at <frame>:<file>` for scripted runs that start right before a level.
 
 ## Tracing (trace-from-pause, D-007)
 

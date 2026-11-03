@@ -95,8 +95,10 @@ struct Hooks {
 
 ## Save-state serialization
 
-Every component implements `serialize(StateWriter&)` / `deserialize(StateReader&)`. The format is chunked
-(`tag, version, length, payload`) so new fields can be added without breaking old states. See spec 08.
+Every component has one `serialize(state::Archive&)` function that both saves and loads it (the archive is
+in saving or loading mode), so the two directions cannot drift apart. The format is chunked
+(`tag, version, flags, length, payload`) so new fields can be added without breaking old states. See spec 08
+and `core/state/save_state.hpp` (M06-00a).
 
 ## Third-party dependencies (via vcpkg, D-008)
 

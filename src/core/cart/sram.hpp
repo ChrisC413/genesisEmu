@@ -26,6 +26,9 @@ public:
     bool memWrite(std::uint32_t addr, std::uint8_t value) override;
     void reset() override;
     void hashState(state::StateHasher& h) const override;
+    // Contents and control register. Loading marks the SRAM dirty when its contents change, so the battery
+    // file follows the loaded state.
+    void serialize(state::Archive& ar) override;
 
     bool mapped() const { return (control_ & 0x01) != 0; }
     bool writeProtected() const { return (control_ & 0x02) != 0; }

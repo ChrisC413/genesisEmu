@@ -25,6 +25,7 @@ add_executable(gen_unit_tests
   unit/m68k_test.cpp
   unit/paths_test.cpp
   unit/rom_test.cpp
+  unit/save_state_test.cpp
   unit/skeleton_test.cpp
   unit/png_test.cpp
   unit/vdp_render_test.cpp
@@ -42,6 +43,7 @@ add_executable(gen_rom_tests
   roms/frame_test.cpp
   roms/rom_scan.cpp
   roms/rom_identify_test.cpp
+  roms/save_state_test.cpp
   roms/script_test.cpp
 )
 target_link_libraries(gen_rom_tests PRIVATE gen_common Catch2::Catch2WithMain)

@@ -92,4 +92,14 @@ void SramDevice::hashState(state::StateHasher& h) const {
     h.bytes(data_);
 }
 
+void SramDevice::serialize(state::Archive& ar) {
+    ar.u8(control_);
+    std::vector<std::uint8_t> bytes = data_;
+    ar.fixedBlob(bytes);
+    if (ar.loading() && ar.ok() && bytes != data_) {
+        data_ = std::move(bytes);
+        dirty_ = true;
+    }
+}
+
 }  // namespace gen::cart

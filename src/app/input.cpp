@@ -303,7 +303,7 @@ bool InputManager::drawPanel(bool* open) {
         ImGui::EndTable();
     }
     if (ImGui::CollapsingHeader("Hotkeys")) {
-        ImGui::TextDisabled("Step and save-state actions take effect with the debugger (M06).");
+        ImGui::TextDisabled("Step actions take effect with the debugger (M06).");
         if (ImGui::BeginTable("hotkeys", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
             for (const auto& [action, binding] : cfg_.hotkeys) {
                 ImGui::TableNextRow();

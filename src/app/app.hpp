@@ -36,6 +36,7 @@ struct AppOptions {
     std::optional<std::filesystem::path> screenshot;  // smoke test: save the last frame as PNG
     std::optional<std::filesystem::path> lockOn;      // cartridge locked onto the ROM (S&K + Sonic 3)
     bool fastForward = false;                         // start in fast-forward (benchmarks, smoke tests)
+    std::optional<std::filesystem::path> state;       // save state to load right after the ROM (M06-00a)
 };
 
 class App {
@@ -62,6 +63,13 @@ private:
     unsigned channelMask() const;  // writes dirty battery SRAM to <sha1>.srm
     std::string overlayText() const;
 
+    // Save states (M06-00a): slots 1-9 live in <user data>/roms/<sha1>/states/slot<N>.gst.
+    static constexpr int kStateSlots = 9;
+    std::filesystem::path slotPath(int slot) const;
+    bool saveState(const std::filesystem::path& path, const std::string& label);
+    bool loadState(const std::filesystem::path& path, const std::string& label);
+    void notify(std::string text);  // shown in the overlay for a few seconds
+
     common::AppPaths paths_;
     common::ConfigFile config_;
     Window window_;
@@ -84,6 +92,9 @@ private:
     std::uint64_t lastSramCheck_ = 0;
     bool showInput_ = false;
     bool stepFrame_ = false;
+    std::string notice_;
+    std::uint64_t noticeUntil_ = 0;  // SDL performance counter
+    bool stateLoadFailed_ = false;
 
     // Emulation pacing (M03-10): one emulated frame per host vsync when the display runs at ~60 Hz,
     // otherwise an accumulator against the 59.92 / 49.70 Hz frame period. Tab or the menu fast-forwards.

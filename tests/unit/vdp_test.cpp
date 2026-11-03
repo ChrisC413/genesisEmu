@@ -377,8 +377,15 @@ TEST_CASE("V-int at the first V-blank line, Z80 /INT for one line, acknowledge",
         v.endLine(line);
     }
     v.beginLine(224);
-    CHECK(v.state().vintPending);
     CHECK(v.state().z80Int);
+    // V-int itself comes vintDelayMclk() into the line, after an H-int raised at the line boundary.
+    CHECK(v.vintArmed());
+    CHECK_FALSE(v.state().vintPending);
+    CHECK(v.irqLevel() == 0);
+    CHECK(v.vintDelayMclk() == 780);  // H32
+    v.raiseVint();
+    CHECK_FALSE(v.vintArmed());
+    CHECK(v.state().vintPending);
     CHECK((v.readStatus(0) & 0x0080) != 0);
     CHECK(v.irqLevel() == 6);
     v.endLine(224);
@@ -392,6 +399,7 @@ TEST_CASE("V-int at the first V-blank line, Z80 /INT for one line, acknowledge",
     Vdp d = makeVdp();
     reg(d, 1, 0x44);
     d.beginLine(224);
+    d.raiseVint();
     CHECK(d.irqLevel() == 0);
     reg(d, 1, 0x64);
     CHECK(d.irqLevel() == 6);

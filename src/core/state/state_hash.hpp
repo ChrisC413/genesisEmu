@@ -9,6 +9,8 @@
 
 namespace gen::state {
 
+class Archive;
+
 class StateHasher {
 public:
     StateHasher();
@@ -27,6 +29,10 @@ public:
     void tag(const char (&name)[5]);
 
     std::uint64_t digest() const;
+
+    // Saves / restores the running hash (the audio hash continues across a save state). The xxHash state is
+    // written field by field, so the bytes do not depend on padding or host byte order.
+    void serialize(Archive& ar);
 
 private:
     struct Impl;

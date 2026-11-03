@@ -31,7 +31,7 @@ bool isFaultVector(int vector) {
 }
 
 Machine::Machine(std::vector<std::uint8_t> rom, std::uint8_t headerRegions, const MachineConfig& config)
-    : rom_(std::move(rom)), config_(config) {
+    : rom_(std::move(rom)), romSha1_(sha1(rom_)), config_(config) {
     // Pad to whole 64 KB pages so every ROM page can be a direct fast page.
     rom_.resize(std::min<std::size_t>((rom_.size() + 0xFFFF) & ~std::size_t{0xFFFF}, 0x400000), 0xFF);
     region_ = config.region.value_or(bus::regionFromHeader(headerRegions));
@@ -82,6 +82,7 @@ void Machine::hardReset() {
     z80cpu_->state() = z80::Z80State{};
     z80cpu_->reset();
     z80Mclk_ = 0;
+    vintAt_ = 0;
     sound_.reset(pal_);
     vdp_.reset(pal_);
     cpu_->state() = m68k::State{};
@@ -145,7 +146,12 @@ void Machine::runZ80(std::uint64_t mclk) {
 
 void Machine::endLine() {
     const std::uint64_t lineEnd = clock_.lineStart + kMclkPerLine;
+    const std::uint64_t beforeCatchUp = clock_.cpuMclk;
     catchUp(lineEnd);
+    // Z80 bank-window stalls of the ending line are charged to the 68k here, in one lump, although on
+    // hardware they happened during the line. They delay the 68k's view of this boundary (and so its H-int
+    // entry); the V-int moves with it so the H-int -> V-int distance stays as on hardware (M06-00b).
+    const std::uint64_t stallLump = clock_.cpuMclk - beforeCatchUp;
     vdp_.endLine(line_);
     clock_.lineStart = lineEnd;
     if (++line_ >= linesPerFrame()) {
@@ -159,8 +165,18 @@ void Machine::endLine() {
         }
     }
     vdp_.beginLine(line_);
+    if (vdp_.vintArmed()) {
+        vintAt_ = clock_.lineStart + static_cast<std::uint64_t>(vdp_.vintDelayMclk()) + stallLump;
+    }
     z80_.log().setPosition(frame_, line_);
     bus_->updateIrq();
+}
+
+void Machine::checkVint() {
+    if (vdp_.vintArmed() && clock_.cpuMclk >= vintAt_) {
+        vdp_.raiseVint();
+        bus_->updateIrq();
+    }
 }
 
 bool Machine::stepCpu(RunResult& result) {
@@ -193,6 +209,7 @@ bool Machine::stepCpu(RunResult& result) {
     while (clock_.cpuMclk >= clock_.lineStart + kMclkPerLine) {
         endLine();
     }
+    checkVint();
     // A 68k -> VDP DMA started by this instruction freezes the 68k until the transfer is done; the VDP
     // gets the time line by line at the DMA bandwidth of each line (M03-02).
     while (vdp_.dmaFreezesCpu()) {
@@ -201,6 +218,7 @@ bool Machine::stepCpu(RunResult& result) {
         while (clock_.cpuMclk >= clock_.lineStart + kMclkPerLine) {
             endLine();
         }
+        checkVint();
     }
     return result.reason != StopReason::Exception;
 }
@@ -305,6 +323,7 @@ std::uint64_t Machine::stateHash() const {
     h.i32(v.line);
     h.u16(v.addressHigh);
     h.boolean(v.z80Int);
+    h.boolean(v.vintArmed);
     h.u16(v.readBuffer);
     h.i32(v.fifoUsed);
     h.boolean(v.dmaActive);
@@ -365,6 +384,7 @@ std::uint64_t Machine::stateHash() const {
     h.i32(line_);
     h.u64(clock_.lineStart);
     h.u64(clock_.cpuMclk);
+    h.u64(vintAt_);
     return h.digest();
 }
 

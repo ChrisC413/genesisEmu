@@ -18,6 +18,8 @@ add_library(gen_core STATIC
   m68k/ops_shift.cpp
   m68k/ops_system.cpp
   sched/machine.cpp
+  sched/machine_state.cpp
+  state/save_state.cpp
   state/state_hash.cpp
   util/hash.cpp
   vdp/vdp.cpp
