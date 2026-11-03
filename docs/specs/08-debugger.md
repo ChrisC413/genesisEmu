@@ -14,6 +14,27 @@ States: `Running`, `Paused`, `Stepping`. Stops always land on an **instruction b
 | Step scanline / Step frame | Run to the next line / frame boundary |
 | Reset (soft/hard) | Soft = 68k reset line; hard = power cycle |
 
+Implementation (M06-01/02, `gen::debug::Debugger` in `src/debug/`):
+
+- The debugger is the only owner of the Machine hooks and installs just the callbacks that the active
+  features need; with nothing active the hooks are null and the core runs exactly as without a debugger
+  (D-030). Observing never changes results: a unit test runs with breakpoints, watchpoints, the ring buffer
+  and call tracking on, and stops / resumes at 68k breakpoints, watchpoints and interrupts, and compares the
+  state and frame hashes with an uninterrupted run.
+- Resuming (run, step) never stops on the instruction the CPU is paused at. Step over / out / run to cursor
+  are cancelled when a breakpoint or watchpoint stops first.
+- Step over keys on the stack pointer: it stops at the instruction after the call with SP at or above its
+  value at the call, so interrupts taken inside (and recursion) are stepped over too. Step out stops after the
+  first return (`RTS`/`RTE`/`RTR`, `RET`/`RET cc`/`RETI`/`RETN`) that leaves SP above its value at the start.
+- Z80 steps (D-031): the Z80 runs behind the 68k and catches up at 68k accesses and line ends. While it is
+  behind, one Z80 instruction runs directly (the same as free running); while it is ahead, the 68k first runs
+  with the Z80 held at its instruction until it is behind again. A Z80 breakpoint or watchpoint freezes the
+  Z80 at its next instruction and stops the 68k at the end of its current one.
+- App: Emulation menu, the Debugger panel and hotkeys (F5 pause/run, F11 step into, F10 over, Shift+F11 out,
+  F6 frame, Shift+F6 scanline); a focused-CPU selector; a status bar with run state, frame, line, MCLK and
+  the last stop. `genesisEmu --debugger [--pause-at=<frame>] [--break=<hex>] [--state=<file>] <rom>` opens the
+  debugger layout.
+
 ## Breakpoints
 
 | Type | Parameters |
@@ -27,6 +48,26 @@ States: `Running`, `Paused`, `Stepping`. Stops always land on an **instruction b
 - **Conditions**: a small expression language over registers, memory and frame counter, e.g. `d0.w == $10 && byte($FFB000) != 0`. Parsed once, evaluated as bytecode.
 - **Logpoints**: a breakpoint with "log, don't stop" and a format string (`"obj {a0:x} routine {byte(a0+$24)}"`).
 - Exec breakpoints use a per-address bitmap for O(1) checks; memory watchpoints use a page bitmap + range list.
+
+Implementation notes (M06-03/04):
+
+- Expression language (`src/debug/expr.hpp`): literals `$1F`, `0x1F`, `%1010`, `31`; 68k registers `d0-d7`,
+  `a0-a7`, `sp`, `pc`, `sr`, `ccr`, `usp`, `ssp`; Z80 registers `a f b c d e h l i r af bc de hl ix iy sp pc
+  af' bc' de' hl'`; `.b`/`.w`/`.l` keep the low 8/16/32 bits; `byte(x)`, `word(x)`, `long(x)` read memory
+  of the breakpoint's CPU without side effects; variables `frame`, `line`, `value` and `addr` (the access of a
+  watchpoint) and `hits`; C operators and precedence. Logpoint fields are `{expr}` or `{expr:x4}` (`x`, `X`,
+  `d`, `c`).
+- A hit count skips the first N matching hits; temporary breakpoints are removed when they stop; a logpoint
+  can also stop; any breakpoint can begin a trace of N frames when it hits.
+- Memory watchpoints see the CPU's bus accesses: the 68k bus is 16 bits wide, so a long access is two word
+  accesses. 68k work RAM mirrors (`$E00000-$FFFFFF`) are folded to `$FFxxxx`. A watchpoint stops after the
+  accessing instruction and reports its PC, the address and the value.
+- VDP breakpoints: register N written; VRAM / CRAM / VSRAM written in a range (data port or 68k -> VDP DMA,
+  `onVdpWrite`); DMA start by target and destination (`onDma`). Interrupt breakpoints (by level, 68k or Z80)
+  and exception breakpoints (by vector, `onException`) stop at the handler's first instruction; frame
+  breakpoints at the first instruction of the frame.
+- 100 exec breakpoints that never hit cost ~0.7 ms per frame in Sonic 1 (the per-instruction hook), well
+  inside the spec 01 budget.
 
 ## Inspectors (panels)
 
@@ -58,6 +99,10 @@ States: `Running`, `Paused`, `Stepping`. Stops always land on an **instruction b
   `Z80C`, `SND `, `CART`, `SCHD`). Loading validates every chunk first, applies them, and refuses the state
   (rolling the machine back) unless the restored machine reproduces the recorded state hash. A state from
   another region is refused like one from another ROM.
+- Thumbnails (M06-08): an optional `THMB` chunk (u16 width, u16 height, RGB888; 160x112) that the app and
+  `gen_cli --save-state-at` write. It is not machine state: loading ignores it and a state without one is
+  complete. The Save States panel lists slots 1-9 and named states (`<user data>/roms/<sha1>/states/*.gst`)
+  with their thumbnails; File > Save State As / Load State File use a file dialog.
 - Command line: `genesisEmu --state=<file> <rom>`; `gen_cli run|trace --load-state <file>` and
   `gen_cli run --save-state-at <frame>:<file>` for scripted runs that start right before a level.
 
@@ -68,7 +113,7 @@ Typical flow: **pause → configure → begin trace → resume/step → stop tra
 - Configuration: CPU(s), optional address-range filter (only log instructions whose PC is in range), optional "only first execution of each PC" mode, max size.
 - Each record: frame, scanline, MCLK, CPU, PC, opcode bytes, disassembly text, register deltas (only registers that changed), memory writes made by the instruction.
 - Output: text (human-diffable; one line per instruction) and a compact binary format (for tooling). Writing is buffered off the hot path.
-- **Ring-buffer mode**: always-on capture of the last N (default 100,000) instructions in memory; dumpable after a breakpoint hits — answers "how did we get here?".
+- **Ring-buffer mode**: capture of the last N (default 100,000) instructions of both CPUs in memory; dumpable after a breakpoint hits — answers "how did we get here?". It is switched on in the Trace panel rather than always on (D-030): capturing costs a hook call per instruction.
 - Traces can be started from a breakpoint action ("on hit: begin trace for 2 frames").
 - Text trace format is stable and documented so traces from two runs can be diffed with standard tools.
 
