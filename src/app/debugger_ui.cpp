@@ -81,8 +81,9 @@ bool regField(const char* label, T& value, T previous, bool editable, bool highl
                                    : sizeof(T) == 2 ? ImGuiDataType_U16
                                                     : ImGuiDataType_U32;
         const char* fmt = sizeof(T) == 1 ? "%02X" : sizeof(T) == 2 ? "%04X" : "%08X";
-        edited = ImGui::InputScalar("##v", type, &value, nullptr, nullptr, fmt,
-                                    ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue);
+        edited =
+            ImGui::InputScalar("##v", type, &value, nullptr, nullptr, fmt,
+                               ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue);
     } else {
         ImGui::Text("%0*X", digits, static_cast<unsigned>(value));
     }
@@ -98,8 +99,8 @@ const char* kindName(debug::BpKind k) {
 }
 
 constexpr std::array<debug::BpKind, 12> kKinds{
-    debug::BpKind::Exec,   debug::BpKind::Read,  debug::BpKind::Write,     debug::BpKind::Access,
-    debug::BpKind::VdpReg, debug::BpKind::Vram,  debug::BpKind::Cram,      debug::BpKind::Vsram,
+    debug::BpKind::Exec,   debug::BpKind::Read,      debug::BpKind::Write,     debug::BpKind::Access,
+    debug::BpKind::VdpReg, debug::BpKind::Vram,      debug::BpKind::Cram,      debug::BpKind::Vsram,
     debug::BpKind::Dma,    debug::BpKind::Interrupt, debug::BpKind::Exception, debug::BpKind::Frame};
 
 }  // namespace
@@ -235,9 +236,9 @@ void DebuggerUi::onStop() {
 }
 
 std::vector<std::string> DebuggerUi::windowNames() {
-    std::vector<std::string> names{kDebuggerWindow, kDisassemblyWindow, kM68kRegsWindow, kZ80RegsWindow,
-                                   kBreakpointsWindow, kTraceWindow, kCallStackWindow, kVdpRegsWindow,
-                                   kTilesWindow, kPlanesWindow, kSpritesWindow, kPaletteWindow};
+    std::vector<std::string> names{kDebuggerWindow,    kDisassemblyWindow, kM68kRegsWindow,  kZ80RegsWindow,
+                                   kBreakpointsWindow, kTraceWindow,       kCallStackWindow, kVdpRegsWindow,
+                                   kTilesWindow,       kPlanesWindow,      kSpritesWindow,   kPaletteWindow};
     for (int i = 1; i <= kMemoryViews; ++i) {
         names.push_back(std::format("Memory {}", i));
     }
@@ -420,15 +421,17 @@ void DebuggerUi::drawDisassembly(bool running) {
         }
     }
     ImGui::SameLine();
-    ImGui::TextDisabled("%s  click the gutter: breakpoint, right-click: run to", cpu == CpuId::Z80 ? "Z80" : "68000");
+    ImGui::TextDisabled("%s  click the gutter: breakpoint, right-click: run to",
+                        cpu == CpuId::Z80 ? "Z80" : "68000");
     const float lineH = ImGui::GetTextLineHeightWithSpacing();
     if (ImGui::BeginChild("listing", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar)) {
         const int rows = std::max(4, static_cast<int>(ImGui::GetContentRegionAvail().y / lineH));
         const std::uint32_t idx = cpu == CpuId::Z80 ? 1 : 0;
         if (followPc_ && (!disasmTopValid_ || pc != lastPc_[idx])) {
             // Keep the PC line visible: re-anchor when it left the window.
-            const auto visible = disasmTopValid_ ? debug::buildListing(*m_, cpu, disasmTop_, 0, rows - 2, known_)
-                                                 : std::vector<debug::ListingLine>{};
+            const auto visible = disasmTopValid_
+                                     ? debug::buildListing(*m_, cpu, disasmTop_, 0, rows - 2, known_)
+                                     : std::vector<debug::ListingLine>{};
             const bool inside = std::any_of(visible.begin(), visible.end(),
                                             [&](const debug::ListingLine& l) { return l.addr == pc; });
             if (!inside) {
@@ -481,8 +484,9 @@ void DebuggerUi::drawDisassembly(bool running) {
                 d_->toggleExec(cpu, l.addr);
             }
             ImGui::SameLine(0, 0);
-            const std::string row = cpu == CpuId::Z80 ? std::format("{:04X}  {:<12} {}", l.addr, l.bytes, l.text)
-                                                      : std::format("{:06X}  {:<25} {}", l.addr, l.bytes, l.text);
+            const std::string row = cpu == CpuId::Z80
+                                        ? std::format("{:04X}  {:<12} {}", l.addr, l.bytes, l.text)
+                                        : std::format("{:06X}  {:<25} {}", l.addr, l.bytes, l.text);
             ImGui::PushStyleColor(ImGuiCol_Text, l.valid ? ImGui::GetColorU32(ImGuiCol_Text) : kDim);
             ImGui::Selectable(row.c_str(), false, ImGuiSelectableFlags_AllowOverlap, ImVec2(0, lineH - 2));
             ImGui::PopStyleColor();
@@ -668,8 +672,9 @@ void DebuggerUi::drawZ80Registers(bool running) {
         ImGui::EndTable();
     }
     const std::uint8_t f = z.f;
-    ImGui::Text("Flags  %c %c %c %c %c %c", (f & 0x80) ? 'S' : '-', (f & 0x40) ? 'Z' : '-', (f & 0x10) ? 'H' : '-',
-                (f & 0x04) ? 'P' : '-', (f & 0x02) ? 'N' : '-', (f & 0x01) ? 'C' : '-');
+    ImGui::Text("Flags  %c %c %c %c %c %c", (f & 0x80) ? 'S' : '-', (f & 0x40) ? 'Z' : '-',
+                (f & 0x10) ? 'H' : '-', (f & 0x04) ? 'P' : '-', (f & 0x02) ? 'N' : '-',
+                (f & 0x01) ? 'C' : '-');
     ImGui::BeginDisabled(!edit);
     changed |= ImGui::Checkbox("IFF1", &z.iff1);
     ImGui::SameLine();
@@ -684,8 +689,9 @@ void DebuggerUi::drawZ80Registers(bool running) {
     }
     ImGui::EndDisabled();
     const auto& c = m_->z80().state();
-    ImGui::Text("BUSREQ %s  RESET %s  %s  bank $%06X", c.busRequested ? "on" : "off", c.resetAsserted ? "on" : "off",
-                m_->z80().running() ? "running" : "held", static_cast<unsigned>(c.bank) << 15);
+    ImGui::Text("BUSREQ %s  RESET %s  %s  bank $%06X", c.busRequested ? "on" : "off",
+                c.resetAsserted ? "on" : "off", m_->z80().running() ? "running" : "held",
+                static_cast<unsigned>(c.bank) << 15);
     ImGui::Text("INT line %s", z.irqLine ? "asserted" : "clear");
     if (running) {
         ImGui::TextDisabled("Pause to edit registers.");
@@ -749,8 +755,8 @@ void DebuggerUi::drawMemory(int index, bool running) {
     }
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
-    if (ImGui::InputTextWithHint("##search", "search bytes: 4E 75 ?? 00", v.searchBuf.data(), v.searchBuf.size(),
-                                 ImGuiInputTextFlags_EnterReturnsTrue)) {
+    if (ImGui::InputTextWithHint("##search", "search bytes: 4E 75 ?? 00", v.searchBuf.data(),
+                                 v.searchBuf.size(), ImGuiInputTextFlags_EnterReturnsTrue)) {
         std::string error;
         if (const auto pat = debug::parsePattern(v.searchBuf.data(), error)) {
             v.hits = debug::findAll(*m_, region, *pat);
@@ -784,8 +790,8 @@ void DebuggerUi::drawMemory(int index, bool running) {
         ImGui::TextDisabled("%s", v.status.c_str());
     }
     if (region == debug::Region::Rom && !patches_.empty()) {
-        ImGui::TextColored(ImVec4(1, 0.6f, 0.4f, 1), "%zu ROM byte(s) patched (lost when the ROM is reloaded)",
-                           patches_.size());
+        ImGui::TextColored(ImVec4(1, 0.6f, 0.4f, 1),
+                           "%zu ROM byte(s) patched (lost when the ROM is reloaded)", patches_.size());
     }
 
     const auto& prev = v.previous[static_cast<std::size_t>(region)];
@@ -831,7 +837,8 @@ void DebuggerUi::drawMemory(int index, bool running) {
                                                  ImGuiInputTextFlags_EnterReturnsTrue |
                                                  ImGuiInputTextFlags_AutoSelectAll)) {
                             if (const auto nv = parseHex(v.editBuf.data())) {
-                                debug::writeRegion(*m_, region, off, static_cast<std::uint8_t>(*nv), patches_);
+                                debug::writeRegion(*m_, region, off, static_cast<std::uint8_t>(*nv),
+                                                   patches_);
                             }
                             v.editOffset = off + 1 < size ? static_cast<long long>(off + 1) : -1;
                             if (v.editOffset >= 0) {
@@ -905,9 +912,8 @@ void DebuggerUi::drawBreakpoints(bool running) {
     if (ImGui::Combo("##cpu", &cpu, "68000\0Z80\0")) {
         form_.cpu = cpu == 1 ? CpuId::Z80 : CpuId::M68k;
     }
-    const bool decimal =
-        form_.kind == debug::BpKind::Interrupt || form_.kind == debug::BpKind::Exception ||
-        form_.kind == debug::BpKind::Frame || form_.kind == debug::BpKind::VdpReg;
+    const bool decimal = form_.kind == debug::BpKind::Interrupt || form_.kind == debug::BpKind::Exception ||
+                         form_.kind == debug::BpKind::Frame || form_.kind == debug::BpKind::VdpReg;
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 5);
     ImGui::InputTextWithHint("##start", decimal ? "from" : "$start", formStart_.data(), formStart_.size());
@@ -922,7 +928,8 @@ void DebuggerUi::drawBreakpoints(bool running) {
             form_.dmaTarget = t - 1;
         }
     }
-    if (form_.kind == debug::BpKind::Read || form_.kind == debug::BpKind::Write || form_.kind == debug::BpKind::Access) {
+    if (form_.kind == debug::BpKind::Read || form_.kind == debug::BpKind::Write ||
+        form_.kind == debug::BpKind::Access) {
         ImGui::SameLine();
         bool byteSize = (form_.sizes & 1) != 0;
         bool wordSize = (form_.sizes & 2) != 0;
@@ -932,7 +939,8 @@ void DebuggerUi::drawBreakpoints(bool running) {
         form_.sizes = static_cast<std::uint8_t>((byteSize ? 1 : 0) | (wordSize ? 2 : 0) | 4);
     }
     ImGui::SetNextItemWidth(-1);
-    ImGui::InputTextWithHint("##cond", "condition, e.g. d0.w == $10 && byte($FFB000) != 0 (value / addr for watches)",
+    ImGui::InputTextWithHint("##cond",
+                             "condition, e.g. d0.w == $10 && byte($FFB000) != 0 (value / addr for watches)",
                              formCondition_.data(), formCondition_.size());
     ImGui::Checkbox("log", &form_.log);
     if (form_.log) {
@@ -975,7 +983,8 @@ void DebuggerUi::drawBreakpoints(bool running) {
             return;
         }
         bp.start = start.value_or(0);
-        bp.end = parseBound(formEnd_.data()).value_or(form_.kind == debug::BpKind::Dma && !start ? 0xFFFF : bp.start);
+        bp.end = parseBound(formEnd_.data())
+                     .value_or(form_.kind == debug::BpKind::Dma && !start ? 0xFFFF : bp.start);
         bp.condition = formCondition_.data();
         bp.message = formMessage_.data();
         if (!bp.log) {
@@ -1171,8 +1180,9 @@ void DebuggerUi::drawTrace(bool running) {
     if (ImGui::Button("Dump ring")) {
         std::ofstream out(ringPath_.data(), std::ios::binary);
         d_->dumpRing(out);
-        traceStatus_ = out ? std::format("ring ({} entries) written to {}", d_->ring().size(), ringPath_.data())
-                           : std::string("cannot write ") + ringPath_.data();
+        traceStatus_ =
+            out ? std::format("ring ({} entries) written to {}", d_->ring().size(), ringPath_.data())
+                : std::string("cannot write ") + ringPath_.data();
     }
     ImGui::EndDisabled();
     if (ring && !running) {
@@ -1182,7 +1192,8 @@ void DebuggerUi::drawTrace(bool running) {
         for (std::size_t i = from; i < entries.size(); ++i) {
             const debug::RingEntry& e = entries[i];
             if (e.irq > 0) {
-                ImGui::Text("%s %06X  interrupt level %d", e.cpu == CpuId::Z80 ? "Z80 " : "68k ", e.pc, e.irq);
+                ImGui::Text("%s %06X  interrupt level %d", e.cpu == CpuId::Z80 ? "Z80 " : "68k ", e.pc,
+                            e.irq);
             } else {
                 const debug::ListingLine l = debug::disassembleAt(*m_, e.cpu, e.pc);
                 ImGui::Text("%s %06X  %s", e.cpu == CpuId::Z80 ? "Z80 " : "68k ", e.pc, l.text.c_str());
@@ -1261,12 +1272,11 @@ void DebuggerUi::drawCallStack(bool running) {
 
 namespace {
 
-const char* const kVdpRegNames[24] = {"Mode 1",        "Mode 2",         "Plane A name",   "Window name",
-                                      "Plane B name",  "Sprite table",   "Sprite 128K",    "Background",
-                                      "(unused)",      "(unused)",       "H-int counter",  "Mode 3",
-                                      "Mode 4",        "H scroll table", "Plane 128K",     "Auto-increment",
-                                      "Plane size",    "Window H pos",   "Window V pos",   "DMA length lo",
-                                      "DMA length hi", "DMA source lo",  "DMA source mid", "DMA source hi"};
+const char* const kVdpRegNames[24] = {
+    "Mode 1",       "Mode 2",         "Plane A name",  "Window name",    "Plane B name",   "Sprite table",
+    "Sprite 128K",  "Background",     "(unused)",      "(unused)",       "H-int counter",  "Mode 3",
+    "Mode 4",       "H scroll table", "Plane 128K",    "Auto-increment", "Plane size",     "Window H pos",
+    "Window V pos", "DMA length lo",  "DMA length hi", "DMA source lo",  "DMA source mid", "DMA source hi"};
 
 std::string decodeReg(const vdp::VdpState& s, int r) {
     const std::uint8_t v = s.regs[static_cast<std::size_t>(r)];
@@ -1290,7 +1300,10 @@ std::string decodeReg(const vdp::VdpState& s, int r) {
             return std::format("every {} lines", v + 1);
         case 11:
             return std::format("V scroll {}, H scroll {}", (v & 0x04) ? "2-cell" : "full",
-                               (v & 3) == 0 ? "full" : (v & 3) == 2 ? "cell" : (v & 3) == 3 ? "line" : "invalid");
+                               (v & 3) == 0   ? "full"
+                               : (v & 3) == 2 ? "cell"
+                               : (v & 3) == 3 ? "line"
+                                              : "invalid");
         case 12:
             return std::format("{}, shadow/highlight {}, interlace {}", (v & 0x81) ? "H40" : "H32",
                                (v & 0x08) ? "on" : "off", (v >> 1) & 3);
@@ -1331,7 +1344,8 @@ PlaneGeometry planeGeometry(const vdp::Vdp& v, int which) {
         g.heightCells = 32;
         return g;
     }
-    g.base = which == 0 ? static_cast<std::uint32_t>((r[2] & 0x38) << 10) : static_cast<std::uint32_t>((r[4] & 7) << 13);
+    g.base = which == 0 ? static_cast<std::uint32_t>((r[2] & 0x38) << 10)
+                        : static_cast<std::uint32_t>((r[4] & 7) << 13);
     g.widthCells = cells(r[16] & 3);
     g.heightCells = cells((r[16] >> 4) & 3);
     if (g.widthCells * g.heightCells > 4096) {
@@ -1340,8 +1354,8 @@ PlaneGeometry planeGeometry(const vdp::Vdp& v, int which) {
     return g;
 }
 
-void drawTile(const vdp::VdpState& s, int tile, int palette, bool hflip, bool vflip, std::uint32_t* out, int stride,
-              bool transparentZero) {
+void drawTile(const vdp::VdpState& s, int tile, int palette, bool hflip, bool vflip, std::uint32_t* out,
+              int stride, bool transparentZero) {
     const std::size_t base = static_cast<std::size_t>(tile & 0x7FF) * 32;
     for (int y = 0; y < 8; ++y) {
         const int sy = vflip ? 7 - y : y;
@@ -1407,12 +1421,14 @@ void DebuggerUi::drawVdpRegisters() {
         ImGui::EndTable();
     }
     ImGui::Separator();
-    ImGui::Text("Status: V-int %s, H-int %s, sprite overflow %s, collision %s, %s frame, %s", s.vintPending ? "pending" : "-",
-                s.hintPending ? "pending" : "-", s.spriteOverflow ? "yes" : "no", s.spriteCollision ? "yes" : "no",
+    ImGui::Text("Status: V-int %s, H-int %s, sprite overflow %s, collision %s, %s frame, %s",
+                s.vintPending ? "pending" : "-", s.hintPending ? "pending" : "-",
+                s.spriteOverflow ? "yes" : "no", s.spriteCollision ? "yes" : "no",
                 s.oddFrame ? "odd" : "even", s.pal ? "PAL" : "NTSC");
     ImGui::Text("Access: address $%04X, code $%02X%s, FIFO %d, H-int counter %d, line %d", s.address, s.code,
                 s.pending ? " (2nd word pending)" : "", s.fifoUsed, s.hintCounter, s.line);
-    ImGui::Text("DMA: %s, %u words left, source $%06X", s.dmaActive ? "running" : "idle", s.dmaRemaining, s.dmaSource);
+    ImGui::Text("DMA: %s, %u words left, source $%06X", s.dmaActive ? "running" : "idle", s.dmaRemaining,
+                s.dmaSource);
     ImGui::End();
 }
 
@@ -1433,13 +1449,16 @@ void DebuggerUi::drawTiles() {
     for (int t = 0; t < 2048; ++t) {
         const int tx = (t % kTilesPerRow) * 8;
         const int ty = (t / kTilesPerRow) * 8;
-        drawTile(s, t, tilePalette_, false, false, pixels.data() + ty * kTilesPerRow * 8 + tx, kTilesPerRow * 8, false);
+        drawTile(s, t, tilePalette_, false, false, pixels.data() + ty * kTilesPerRow * 8 + tx,
+                 kTilesPerRow * 8, false);
     }
     tiles_.update(kTilesPerRow * 8, kRows * 8, pixels.data());
     const float scale = std::max(1.0f, std::floor(ImGui::GetContentRegionAvail().x / (kTilesPerRow * 8)));
-    if (ImGui::BeginChild("sheet", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar)) {
+    if (ImGui::BeginChild("sheet", ImVec2(0, 0), ImGuiChildFlags_None,
+                          ImGuiWindowFlags_HorizontalScrollbar)) {
         const ImVec2 origin = ImGui::GetCursorScreenPos();
-        ImGui::Image(static_cast<ImTextureID>(tiles_.id()), ImVec2(kTilesPerRow * 8 * scale, kRows * 8 * scale));
+        ImGui::Image(static_cast<ImTextureID>(tiles_.id()),
+                     ImVec2(kTilesPerRow * 8 * scale, kRows * 8 * scale));
         if (ImGui::IsItemHovered()) {
             const ImVec2 mouse = ImGui::GetIO().MousePos;
             const int cx = static_cast<int>((mouse.x - origin.x) / (8 * scale));
@@ -1457,8 +1476,8 @@ void DebuggerUi::drawTiles() {
                 for (int y = 0; y < 8; ++y) {
                     for (int x = 0; x < 8; ++x) {
                         const std::uint32_t c = one[static_cast<std::size_t>(y * 8 + x)];
-                        dl->AddRectFilled(ImVec2(at.x + x * z, at.y + y * z), ImVec2(at.x + (x + 1) * z, at.y + (y + 1) * z),
-                                          c);
+                        dl->AddRectFilled(ImVec2(at.x + x * z, at.y + y * z),
+                                          ImVec2(at.x + (x + 1) * z, at.y + (y + 1) * z), c);
                     }
                 }
                 ImGui::Dummy(ImVec2(8 * z, 8 * z));
@@ -1493,7 +1512,8 @@ void DebuggerUi::drawPlanes() {
     std::vector<std::uint32_t> pixels(static_cast<std::size_t>(w * h));
     for (int cy = 0; cy < g.heightCells; ++cy) {
         for (int cx = 0; cx < g.widthCells; ++cx) {
-            const std::size_t at = (g.base + static_cast<std::uint32_t>((cy * g.widthCells + cx) * 2)) & 0xFFFE;
+            const std::size_t at =
+                (g.base + static_cast<std::uint32_t>((cy * g.widthCells + cx) * 2)) & 0xFFFE;
             const auto entry = static_cast<std::uint16_t>((s.vram[at] << 8) | s.vram[at + 1]);
             drawTile(s, entry & 0x7FF, (entry >> 13) & 3, (entry & 0x0800) != 0, (entry & 0x1000) != 0,
                      pixels.data() + cy * 8 * w + cx * 8, w, false);
@@ -1502,18 +1522,21 @@ void DebuggerUi::drawPlanes() {
     plane_.update(w, h, pixels.data());
     ImGui::Text("nametable $%04X, %dx%d cells", g.base, g.widthCells, g.heightCells);
     const float scale = std::max(1.0f, std::floor(ImGui::GetContentRegionAvail().x / static_cast<float>(w)));
-    if (ImGui::BeginChild("plane", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar)) {
+    if (ImGui::BeginChild("plane", ImVec2(0, 0), ImGuiChildFlags_None,
+                          ImGuiWindowFlags_HorizontalScrollbar)) {
         const ImVec2 origin = ImGui::GetCursorScreenPos();
-        ImGui::Image(static_cast<ImTextureID>(plane_.id()), ImVec2(static_cast<float>(w) * scale, static_cast<float>(h) * scale));
+        ImGui::Image(static_cast<ImTextureID>(plane_.id()),
+                     ImVec2(static_cast<float>(w) * scale, static_cast<float>(h) * scale));
         if (ImGui::IsItemHovered()) {
             const ImVec2 mouse = ImGui::GetIO().MousePos;
             const int cx = static_cast<int>((mouse.x - origin.x) / (8 * scale));
             const int cy = static_cast<int>((mouse.y - origin.y) / (8 * scale));
             if (cx >= 0 && cx < g.widthCells && cy >= 0 && cy < g.heightCells) {
-                const std::size_t at = (g.base + static_cast<std::uint32_t>((cy * g.widthCells + cx) * 2)) & 0xFFFE;
+                const std::size_t at =
+                    (g.base + static_cast<std::uint32_t>((cy * g.widthCells + cx) * 2)) & 0xFFFE;
                 const auto entry = static_cast<std::uint16_t>((s.vram[at] << 8) | s.vram[at + 1]);
-                ImGui::SetTooltip("cell %d,%d  entry $%04X at VRAM $%04X\ntile %d pal %d%s%s%s", cx, cy, entry,
-                                  static_cast<unsigned>(at), entry & 0x7FF, (entry >> 13) & 3,
+                ImGui::SetTooltip("cell %d,%d  entry $%04X at VRAM $%04X\ntile %d pal %d%s%s%s", cx, cy,
+                                  entry, static_cast<unsigned>(at), entry & 0x7FF, (entry >> 13) & 3,
                                   (entry & 0x8000) ? " high" : "", (entry & 0x0800) ? " hflip" : "",
                                   (entry & 0x1000) ? " vflip" : "");
             }
@@ -1537,7 +1560,8 @@ void DebuggerUi::drawPlanes() {
                         continue;
                     }
                     dl->AddRect(ImVec2(origin.x + rx * scale, origin.y + ry * scale),
-                                ImVec2(origin.x + (rx + static_cast<float>(sw)) * scale, origin.y + (ry + static_cast<float>(sh)) * scale),
+                                ImVec2(origin.x + (rx + static_cast<float>(sw)) * scale,
+                                       origin.y + (ry + static_cast<float>(sh)) * scale),
                                 IM_COL32(255, 255, 0, 255), 0, 0, 2.0f);
                 }
             }
@@ -1552,8 +1576,9 @@ void DebuggerUi::drawSprites() {
     const auto sprites = m_->vdp().decodeSprites();
     if (spriteBoxes_) {
         for (const vdp::SpriteInfo& sp : sprites) {
-            boxes_.push_back(ScreenBox{sp.x, sp.y, sp.widthCells * 8, sp.heightCells * 8,
-                                       sp.priority ? IM_COL32(255, 80, 80, 255) : IM_COL32(80, 255, 120, 255)});
+            boxes_.push_back(
+                ScreenBox{sp.x, sp.y, sp.widthCells * 8, sp.heightCells * 8,
+                          sp.priority ? IM_COL32(255, 80, 80, 255) : IM_COL32(80, 255, 120, 255)});
         }
     }
     if (!showSprites_) {
@@ -1566,7 +1591,8 @@ void DebuggerUi::drawSprites() {
     ImGui::Checkbox("Boxes on the game view (red = high priority)", &spriteBoxes_);
     ImGui::Text("%zu sprites in link order from sprite 0; table at $%04X", sprites.size(),
                 (m_->vdp().state().regs[5] & 0x7F) << 9);
-    if (ImGui::BeginTable("sprites", 9, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY)) {
+    if (ImGui::BeginTable("sprites", 9,
+                          ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY)) {
         ImGui::TableSetupScrollFreeze(0, 1);
         for (const char* c : {"#", "x", "y", "size", "tile", "pal", "prio", "flip", "link"}) {
             ImGui::TableSetupColumn(c);
@@ -1620,8 +1646,8 @@ void DebuggerUi::drawPalette() {
             ImGui::PushID(p * 16 + i);
             ImGui::InvisibleButton("c", ImVec2(sz, sz));
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("palette %d colour %d (CRAM $%02X) = $%03X\nR %d G %d B %d", p, i, (p * 16 + i) * 2, w,
-                                  (w >> 1) & 7, (w >> 5) & 7, (w >> 9) & 7);
+                ImGui::SetTooltip("palette %d colour %d (CRAM $%02X) = $%03X\nR %d G %d B %d", p, i,
+                                  (p * 16 + i) * 2, w, (w >> 1) & 7, (w >> 5) & 7, (w >> 9) & 7);
             }
             ImGui::PopID();
             ImGui::SameLine(0, 2);

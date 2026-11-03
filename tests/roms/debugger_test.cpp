@@ -2,6 +2,8 @@
 // tests/scripts/sonic1_ghz1.txt (title screen -> Green Hill Zone act 1, running and jumping). Routines are
 // located by byte patterns of the original code, so no addresses of the commercial ROM are hard-coded.
 
+#include "debug/debugger.hpp"
+
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -15,7 +17,6 @@
 #include "common/input_script.hpp"
 #include "common/paths.hpp"
 #include "core/sched/machine.hpp"
-#include "debug/debugger.hpp"
 #include "debug/listing.hpp"
 #include "debug/memory.hpp"
 #include "rom_scan.hpp"
@@ -43,7 +44,8 @@ std::optional<Sonic1> loadSonic1() {
     if (it == roms.end()) {
         return std::nullopt;
     }
-    std::ifstream in(fs::path(GENESIS_SOURCE_DIR) / "tests" / "scripts" / "sonic1_ghz1.txt", std::ios::binary);
+    std::ifstream in(fs::path(GENESIS_SOURCE_DIR) / "tests" / "scripts" / "sonic1_ghz1.txt",
+                     std::ios::binary);
     const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     std::string error;
     auto script = common::parseInputScript(text, error);
@@ -199,7 +201,8 @@ TEST_CASE("Sonic 1: DMA-to-CRAM breakpoint fires on palette loads; sprites decod
     }
 }
 
-TEST_CASE("Sonic 1: step over a jsr and 100 breakpoints within the performance budget", "[rom][debug][perf]") {
+TEST_CASE("Sonic 1: step over a jsr and 100 breakpoints within the performance budget",
+          "[rom][debug][perf]") {
     const auto s1 = loadSonic1();
     if (!s1) {
         SKIP("Sonic 1 REV01 not in GENESIS_ROM_DIR");
