@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -10,13 +11,15 @@ struct SDL_Window;
 
 namespace gen::app {
 
-// Native "Open ROM" dialog (SDL3). SDL may invoke the completion callback on another thread, so the
-// result is handed over through a mutex and collected on the main thread with poll().
+// Native open / save dialog (SDL3) for ROMs or save states. SDL may invoke the completion callback on another
+// thread, so the result is handed over through a mutex and collected on the main thread with poll().
 class RomFileDialog {
 public:
-    RomFileDialog();
+    enum class Kind : std::uint8_t { Rom, State };
+    explicit RomFileDialog(Kind kind = Kind::Rom);
 
-    void open(SDL_Window* parent, const std::optional<std::filesystem::path>& startDir);
+    // `save`: a "save as" dialog (the chosen file need not exist).
+    void open(SDL_Window* parent, const std::optional<std::filesystem::path>& startDir, bool save = false);
     bool isOpen() const;
 
     // The chosen file, once, after the user confirms the dialog.
@@ -30,6 +33,7 @@ private:
     };
     static void onComplete(void* userdata, const char* const* files, int filter);
 
+    Kind kind_;
     std::shared_ptr<Shared> shared_;
     std::string startLocation_;  // must outlive the dialog call
 };

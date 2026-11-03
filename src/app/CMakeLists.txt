@@ -5,6 +5,7 @@ find_package(OpenGL REQUIRED)
 set(app_sources
   app.cpp
   audio_output.cpp
+  debugger_ui.cpp
   input.cpp
   sound_panel.cpp
   main.cpp
@@ -34,5 +35,5 @@ endif()
 
 set_target_properties(gen_app PROPERTIES OUTPUT_NAME genesisEmu)
 target_include_directories(gen_app PRIVATE "${PROJECT_SOURCE_DIR}/src")
-target_link_libraries(gen_app PRIVATE gen_analysis gen_common SDL3::SDL3 imgui::imgui OpenGL::GL)
+target_link_libraries(gen_app PRIVATE gen_debug gen_analysis gen_common SDL3::SDL3 imgui::imgui OpenGL::GL)
 genesis_set_warnings(gen_app)

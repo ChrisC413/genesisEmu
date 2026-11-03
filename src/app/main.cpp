@@ -20,6 +20,11 @@ constexpr const char* kUsage =
     "  --lock-on=<file>          cartridge locked onto the ROM (Sonic & Knuckles + Sonic 3)\n"
     "  --state=<file>            load a save state (from the same ROM) right after the ROM\n"
     "  --fast-forward            start in fast-forward (unthrottled)\n"
+    "  --debugger                open the debugger panels (Debug > Debugger Layout)\n"
+    "  --pause-at=<frame>        pause when the emulation reaches this frame\n"
+    "  --break=<hex address>     set a 68k execution breakpoint (repeatable)\n"
+    "  --sprite-boxes            outline the sprites on the game view\n"
+    "  --focus=<window>          bring a panel to the front, e.g. --focus=Tiles (repeatable)\n"
     "  -h, --help                show this help\n"
     "\n"
     "Set GENESISEMU_HOME to use a different user data directory.\n";
@@ -57,6 +62,35 @@ int main(int argc, char** argv) {
             options.lockOn = gen::common::fromUtf8(arg.substr(10));
         } else if (arg.starts_with("--state=")) {
             options.state = gen::common::fromUtf8(arg.substr(8));
+        } else if (arg == "--sprite-boxes") {
+            options.spriteBoxes = true;
+        } else if (arg == "--debugger") {
+            options.debugger = true;
+        } else if (arg.starts_with("--pause-at=")) {
+            const std::string_view value = arg.substr(11);
+            std::uint64_t frame = 0;
+            const auto [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), frame);
+            if (ec != std::errc() || ptr != value.data() + value.size()) {
+                report("genesisEmu: --pause-at expects a frame number\n");
+                return gen::app::kAppUsage;
+            }
+            options.pauseAt = frame;
+        } else if (arg.starts_with("--break=")) {
+            std::string_view value = arg.substr(8);
+            if (value.starts_with("$")) {
+                value.remove_prefix(1);
+            } else if (value.starts_with("0x")) {
+                value.remove_prefix(2);
+            }
+            std::uint32_t addr = 0;
+            const auto [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), addr, 16);
+            if (ec != std::errc() || ptr != value.data() + value.size()) {
+                report("genesisEmu: --break expects a hex address\n");
+                return gen::app::kAppUsage;
+            }
+            options.breakAt.push_back(addr);
+        } else if (arg.starts_with("--focus=")) {
+            options.focusWindows.emplace_back(arg.substr(8));
         } else if (arg == "--fast-forward") {
             options.fastForward = true;
         } else if (arg == "--expect-restored-layout") {

@@ -33,3 +33,21 @@ set_tests_properties(app.smoke_state PROPERTIES
   FIXTURES_REQUIRED "app_home;cli_roms;cli_state"
   SKIP_RETURN_CODE 77
   LABELS gui)
+
+# M06: the debugger layout with every panel open, an execution breakpoint on the boot ROM's V-int handler
+# ($340) that must stop the emulation there, and a pause at a frame (the app checks both before exiting).
+add_test(NAME app.smoke_debugger
+  COMMAND gen_app --smoke-test=20 --debugger --break=340 "--focus=Call Stack" --focus=Tiles
+          "--screenshot=${CMAKE_CURRENT_BINARY_DIR}/debugger.png" "${CMAKE_BINARY_DIR}/tests/cli/roms/boot.bin")
+set_tests_properties(app.smoke_debugger PROPERTIES
+  ENVIRONMENT "GENESISEMU_HOME=${home}"
+  FIXTURES_REQUIRED "app_home;cli_roms"
+  SKIP_RETURN_CODE 77
+  LABELS gui)
+add_test(NAME app.smoke_pause_at
+  COMMAND gen_app --smoke-test=20 --debugger --pause-at=5 "${CMAKE_BINARY_DIR}/tests/cli/roms/boot.bin")
+set_tests_properties(app.smoke_pause_at PROPERTIES
+  ENVIRONMENT "GENESISEMU_HOME=${home}"
+  FIXTURES_REQUIRED "app_home;cli_roms"
+  SKIP_RETURN_CODE 77
+  LABELS gui)

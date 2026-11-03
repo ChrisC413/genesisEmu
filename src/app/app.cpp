@@ -1,6 +1,7 @@
 #include "app/app.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <ctime>
 #include <format>
@@ -74,6 +75,13 @@ int App::run(const AppOptions& options) {
         v.showOverlay = cv.showOverlay;
     }
     lockOnPath_ = options.lockOn;
+    debugUi_.setDefaultTracePath(common::toUtf8(paths_.root() / "traces"));
+    debugUi_.setSpriteBoxes(options.spriteBoxes);
+    if (options.debugger) {
+        debugUi_.openAll();
+        showStates_ = true;
+        debugLayout_ = true;
+    }
     fastForwardLatched_ = options.fastForward;
     if (options.rom && !openRom(*options.rom) && options.smokeFrames > 0) {
         log::shutdown();
@@ -89,6 +97,12 @@ int App::run(const AppOptions& options) {
         if (stateLoadFailed_ && options.smokeFrames > 0) {
             log::shutdown();
             return kAppRomLoadFailed;
+        }
+    }
+
+    if (machine_) {
+        for (const std::uint32_t addr : options.breakAt) {
+            debugger_->toggleExec(CpuId::M68k, addr);
         }
     }
 
@@ -119,13 +133,20 @@ int App::run(const AppOptions& options) {
         if (auto chosen = romDialog_.poll()) {
             openRom(*chosen);
         }
+        pollStateDialogs();
         if (window_.minimized() && options.smokeFrames == 0) {
             SDL_Delay(16);
             continue;
         }
 
         handleHotkeys();
+        if (machine_) {
+            runDebugCommand(debugUi_.takeCommand());
+        }
         stepEmulation(options.smokeFrames > 0);
+        if (machine_ && options.pauseAt && running_ && machine_->frame() >= *options.pauseAt) {
+            runDebugCommand(DebugCommand::Pause);
+        }
         window_.beginFrame();
         fastForwardActive_ = input_.hotkeyHeld("fast-forward", !ImGui::GetIO().WantTextInput);
         if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_O, ImGuiInputFlags_RouteGlobal)) {
@@ -134,8 +155,19 @@ int App::run(const AppOptions& options) {
         }
         drawDockSpace();
         drawMenuBar();
-        gameView_.draw(&showGameView_, rom_, overlayText());
+        drawStatusBar();
+        std::vector<GameView::Box> boxes;
+        for (const ScreenBox& b : debugUi_.overlayBoxes()) {
+            boxes.push_back({b.x, b.y, b.w, b.h, b.colour});
+        }
+        gameView_.draw(&showGameView_, rom_, overlayText(), boxes);
+        debugUi_.draw(running_);
+        // One window per frame: focusing several at once only selects the last one's dock tab.
+        if (frame >= 2 && static_cast<std::size_t>(frame - 2) < options.focusWindows.size()) {
+            ImGui::SetWindowFocus(options.focusWindows[static_cast<std::size_t>(frame - 2)].c_str());
+        }
         drawRomInfo(&showRomInfo_, rom_);
+        drawStatesPanel();
         drawSoundPanel();
         if (input_.drawPanel(&showInput_)) {
             config_.config.input = input_.config();
@@ -208,6 +240,12 @@ void App::addRecentRom(const std::filesystem::path& path) {
 
 void App::drawDockSpace() {
     const ImGuiID dockspace = ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
+    if (debugLayout_) {
+        buildDebuggerLayout(dockspace);
+        debugLayout_ = false;
+        layoutLoaded_ = true;
+        return;
+    }
     if (layoutLoaded_ && !resetLayout_) {
         return;
     }
@@ -271,6 +309,15 @@ void App::drawMenuBar() {
             }
             ImGui::EndMenu();
         }
+        if (ImGui::MenuItem("Save State As...", nullptr, false, machine_ != nullptr)) {
+            stateSaveDialog_.open(window_.handle(), statesDir(), true);
+        }
+        if (ImGui::MenuItem("Load State File...", nullptr, false, machine_ != nullptr)) {
+            stateOpenDialog_.open(window_.handle(), statesDir());
+        }
+        if (ImGui::MenuItem("Save States...", nullptr, &showStates_, machine_ != nullptr)) {
+            scanStates();
+        }
         if (ImGui::BeginMenu("Load State", machine_ != nullptr)) {
             for (int slot = 1; slot <= kStateSlots; ++slot) {
                 std::error_code ec;
@@ -292,15 +339,39 @@ void App::drawMenuBar() {
     }
     if (ImGui::BeginMenu("Emulation")) {
         if (ImGui::MenuItem(running_ ? "Pause" : "Run", "F5", false, machine_ != nullptr)) {
-            running_ = !running_;
+            debugUi_.request(running_ ? DebugCommand::Pause : DebugCommand::Run);
         }
-        if (ImGui::MenuItem("Reset", nullptr, false, machine_ != nullptr)) {
-            machine_->hardReset();
-            accumulator_ = 0;
+        if (ImGui::MenuItem("Soft Reset", nullptr, false, machine_ != nullptr)) {
+            debugUi_.request(DebugCommand::SoftReset);
+        }
+        if (ImGui::MenuItem("Hard Reset", nullptr, false, machine_ != nullptr)) {
+            debugUi_.request(DebugCommand::HardReset);
         }
         ImGui::MenuItem("Fast-forward", "hold Tab", &fastForwardLatched_, machine_ != nullptr);
-        if (ImGui::MenuItem("Step Frame", "F6", false, machine_ != nullptr && !running_)) {
+        const bool canStep = machine_ != nullptr && !running_;
+        if (ImGui::MenuItem("Step Frame", "F6", false, canStep)) {
             stepFrame_ = true;
+        }
+        if (ImGui::MenuItem("Step Scanline", "Shift+F6", false, canStep)) {
+            debugUi_.request(DebugCommand::StepLine);
+        }
+        if (ImGui::MenuItem("Step Into", "F11", false, canStep)) {
+            debugUi_.request(DebugCommand::StepInto);
+        }
+        if (ImGui::MenuItem("Step Over", "F10", false, canStep)) {
+            debugUi_.request(DebugCommand::StepOver);
+        }
+        if (ImGui::MenuItem("Step Out", "Shift+F11", false, canStep)) {
+            debugUi_.request(DebugCommand::StepOut);
+        }
+        if (ImGui::BeginMenu("Focused CPU")) {
+            if (ImGui::MenuItem("68000", nullptr, debugUi_.focus() == CpuId::M68k)) {
+                debugUi_.setFocus(CpuId::M68k);
+            }
+            if (ImGui::MenuItem("Z80", nullptr, debugUi_.focus() == CpuId::Z80)) {
+                debugUi_.setFocus(CpuId::Z80);
+            }
+            ImGui::EndMenu();
         }
         ImGui::Separator();
         ImGui::MenuItem("Input...", nullptr, &showInput_);
@@ -313,9 +384,12 @@ void App::drawMenuBar() {
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Debug")) {
-        ImGui::MenuItem("CPU Registers", nullptr, false, false);
-        ImGui::MenuItem("Memory", nullptr, false, false);
-        ImGui::MenuItem("Breakpoints", nullptr, false, false);
+        if (ImGui::MenuItem("Debugger Layout")) {
+            debugUi_.openAll();
+            debugLayout_ = true;
+        }
+        ImGui::Separator();
+        debugUi_.drawMenu();
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Analysis")) {
@@ -391,7 +465,11 @@ int App::smokeCheck(const AppOptions& options) const {
         logger().error("smoke test: {}", what);
         ok = false;
     };
-    for (const char* name : {kGameViewWindow, kRomInfoWindow}) {
+    for (const auto& [name, shown] :
+         {std::pair(kGameViewWindow, showGameView_), std::pair(kRomInfoWindow, showRomInfo_)}) {
+        if (!shown) {
+            continue;  // closed by the layout (the debugger layout closes ROM Info)
+        }
         const ImGuiWindow* w = ImGui::FindWindowByName(name);
         if (w == nullptr || w->DockId == 0) {
             fail("panel is not docked");
@@ -409,9 +487,23 @@ int App::smokeCheck(const AppOptions& options) const {
     if (options.state && stateLoadFailed_) {
         fail("save state not loaded");
     }
+    if (machine_ && !options.breakAt.empty()) {
+        const debug::StopInfo& stop = debugger_->lastStop();
+        if (running_ || stop.kind != debug::StopInfo::Kind::Breakpoint ||
+            std::find(options.breakAt.begin(), options.breakAt.end(), machine_->cpu().state().pc) ==
+                options.breakAt.end()) {
+            fail("the execution breakpoint did not stop the emulation");
+        } else {
+            logger().info("smoke test: {}", stop.text);
+        }
+    }
+    if (machine_ && options.pauseAt && options.breakAt.empty() &&
+        (running_ || machine_->frame() != *options.pauseAt)) {
+        fail("did not pause at the requested frame");
+    }
     if (rom_) {
         logger().info("smoke test: ROM info shows '{}' sha1={}", rom_->header.overseasTitle, rom_->sha1Hex);
-        if (!machine_ || machine_->frame() == 0) {
+        if (!machine_ || (machine_->frame() == 0 && machine_->line() == 0)) {
             fail("emulation did not run");
         } else if (!gameView_.hasFrame()) {
             fail("no frame reached the game view");
@@ -437,7 +529,11 @@ void App::startMachine() {
     }
     flushSram();  // the previous game's battery save
     machineSha1_ = toHex(sha1(image));
+    debugUi_.attach(nullptr, nullptr);
+    debugger_.reset();
     machine_ = std::make_unique<Machine>(std::move(image), regions);
+    debugger_ = std::make_unique<debug::Debugger>(*machine_);
+    debugUi_.attach(machine_.get(), debugger_.get());
     applyPadTypes();
     audio_.setSourceRate(machine_->sound().sampleRate());
     if (wav_.isOpen()) {
@@ -470,7 +566,7 @@ void App::stepEmulation(bool smoke) {
     if (machine_ && !running_ && stepFrame_) {
         machine_->setInput(0, input_.buttons(0, true));
         machine_->setInput(1, input_.buttons(1, true));
-        machine_->run(RunLimit::frames(1));
+        onDebugStop(debugger_->run(RunLimit::frames(1)));
         machine_->sound().clearSamples();  // a single stepped frame is not played
         gameView_.upload(machine_->vdp());
     }
@@ -493,16 +589,19 @@ void App::stepEmulation(bool smoke) {
         machine_->setInput(0, input_.buttons(0, keyboardFree));
         machine_->setInput(1, input_.buttons(1, keyboardFree));
         machine_->sound().setChannelMask(channelMask());
-        machine_->run(RunLimit::frames(1));
+        const RunResult r = debugger_->run(RunLimit::frames(1));
         audio_.push(machine_->sound().samples());
         wav_.write(machine_->sound().samples());
         machine_->sound().clearSamples();
         ++frames;
+        if (r.reason != StopReason::LimitReached) {
+            onDebugStop(r);  // a breakpoint / watchpoint / finished step: pause mid-frame
+        }
     };
     if (fastForwardActive_ || fastForwardLatched_) {
         do {  // unthrottled: as many frames as fit in most of a 60 Hz tick
             runFrame();
-        } while (elapsed() < 0.012 && frames < 1000);
+        } while (running_ && elapsed() < 0.012 && frames < 1000);
         accumulator_ = 0;
     } else if (smoke) {
         runFrame();
@@ -519,7 +618,7 @@ void App::stepEmulation(bool smoke) {
             accumulator_ = 0;
         } else {
             accumulator_ = std::min(accumulator_ + dt, 0.25);
-            while (accumulator_ >= period && frames < 4) {
+            while (running_ && accumulator_ >= period && frames < 4) {
                 runFrame();
                 accumulator_ -= period;
             }
@@ -563,9 +662,17 @@ void App::handleHotkeys() {
             return slot >= 1 && slot <= kStateSlots;
         };
         if (action == "pause") {
-            running_ = !running_;
+            debugUi_.request(running_ ? DebugCommand::Pause : DebugCommand::Run);
         } else if (action == "step-frame") {
             stepFrame_ = !running_;
+        } else if (action == "step-scanline" || action == "step-instruction" || action == "step-over" ||
+                   action == "step-out") {
+            if (!running_) {
+                debugUi_.request(action == "step-scanline"      ? DebugCommand::StepLine
+                                 : action == "step-instruction" ? DebugCommand::StepInto
+                                 : action == "step-over"        ? DebugCommand::StepOver
+                                                                : DebugCommand::StepOut);
+            }
         } else if (slotOf("save-state-")) {
             if (machine_) {
                 saveState(slotPath(slot), std::format("slot {}", slot));
@@ -575,7 +682,6 @@ void App::handleHotkeys() {
                 loadState(slotPath(slot), std::format("slot {}", slot));
             }
         } else {
-            // Step instruction / step over arrive with the debugger (M06-02).
             logger().info("hotkey '{}' is not available yet", action);
         }
     }
@@ -593,7 +699,7 @@ void App::notify(std::string text) {
 
 // Called between frames, so the machine is at an instruction boundary (spec 08).
 bool App::saveState(const std::filesystem::path& path, const std::string& label) {
-    const auto bytes = machine_->saveState(static_cast<std::uint64_t>(std::time(nullptr)));
+    const auto bytes = machine_->saveState(static_cast<std::uint64_t>(std::time(nullptr)), true);
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
     std::ofstream f(path, std::ios::binary);
@@ -623,6 +729,7 @@ bool App::loadState(const std::filesystem::path& path, const std::string& label)
     audio_.flush();
     accumulator_ = 0;
     gameView_.upload(machine_->vdp());
+    debugUi_.attach(machine_.get(), debugger_.get());  // new baseline for "changed since the last stop"
     return true;
 }
 
@@ -643,6 +750,338 @@ void App::flushSram() {
         logger().info("battery save written to '{}'", common::toUtf8(path));
     } else {
         logger().error("cannot write battery save '{}'", common::toUtf8(path));
+    }
+}
+
+// ---- Debugger (M06) -----------------------------------------------------------------------------------
+
+void App::onDebugStop(const RunResult& result) {
+    if (result.reason == StopReason::LimitReached) {
+        debugUi_.onStop();
+        return;
+    }
+    running_ = false;
+    accumulator_ = 0;
+    const debug::StopInfo& stop = debugger_->lastStop();
+    logger().info("stopped at frame {} line {}: {}", machine_->frame(), machine_->line(),
+                  stop.text.empty() ? std::string(toString(result.reason)) : stop.text);
+    debugUi_.onStop();
+    gameView_.upload(machine_->vdp());
+}
+
+void App::runDebugCommand(DebugCommand command) {
+    const CpuId cpu = debugUi_.focus();
+    const auto stepped = [&] {
+        machine_->sound().clearSamples();  // stepping is not played
+        running_ = false;
+        debugUi_.onStop();
+        gameView_.upload(machine_->vdp());
+    };
+    switch (command) {
+        case DebugCommand::None:
+            return;
+        case DebugCommand::Run:
+            running_ = true;
+            return;
+        case DebugCommand::Pause:
+            running_ = false;
+            debugger_->cancelStep();
+            debugger_->notePause();
+            debugUi_.onStop();
+            return;
+        case DebugCommand::StepInto:
+            debugger_->stepInto(cpu);
+            stepped();
+            return;
+        case DebugCommand::StepOver:
+            if (debugger_->beginStepOver(cpu)) {
+                running_ = true;  // runs (and plays) until the call returns or something breaks
+            } else {
+                stepped();
+            }
+            return;
+        case DebugCommand::StepOut:
+            debugger_->beginStepOut(cpu);
+            running_ = true;
+            return;
+        case DebugCommand::RunTo:
+            debugger_->beginRunTo(cpu, debugUi_.runToAddress());
+            running_ = true;
+            return;
+        case DebugCommand::StepLine:
+            debugger_->run(RunLimit::lines(1));
+            stepped();
+            return;
+        case DebugCommand::StepFrame:
+            stepFrame_ = true;
+            return;
+        case DebugCommand::SoftReset:
+            machine_->softReset();
+            debugUi_.onStop();
+            notify("soft reset");
+            return;
+        case DebugCommand::HardReset:
+            machine_->hardReset();
+            accumulator_ = 0;
+            debugUi_.onStop();
+            notify("hard reset");
+            return;
+    }
+}
+
+void App::drawStatusBar() {
+    const float height = ImGui::GetFrameHeight();
+    if (ImGui::BeginViewportSideBar(
+            "##status", ImGui::GetMainViewport(), ImGuiDir_Down, height,
+            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar)) {
+        if (ImGui::BeginMenuBar()) {
+            if (machine_) {
+                const bool stepping = debugger_->stepPending();
+                ImGui::TextColored(running_ ? ImVec4(0.5f, 0.9f, 0.5f, 1) : ImVec4(1, 0.8f, 0.3f, 1), "%s",
+                                   running_ ? (stepping ? "STEPPING" : "RUNNING") : "PAUSED");
+                ImGui::Text("| %s | frame %llu  line %3d  MCLK %llu | 68k $%06X  Z80 $%04X",
+                            debugUi_.focus() == CpuId::Z80 ? "Z80" : "68k",
+                            static_cast<unsigned long long>(machine_->frame()), machine_->line(),
+                            static_cast<unsigned long long>(machine_->cpuMclk()), machine_->cpu().state().pc,
+                            machine_->z80Cpu().state().pc);
+                if (!running_ && !debugger_->lastStop().text.empty()) {
+                    ImGui::Text("| %s", debugger_->lastStop().text.c_str());
+                }
+            } else {
+                ImGui::TextDisabled("no ROM");
+            }
+            ImGui::EndMenuBar();
+        }
+    }
+    ImGui::End();
+}
+
+void App::buildDebuggerLayout(unsigned dockspace) {
+    // Game view top left; code and registers on the right; memory, breakpoints and viewers at the bottom.
+    ImGui::DockBuilderRemoveNode(dockspace);
+    ImGui::DockBuilderAddNode(dockspace, ImGuiDockNodeFlags_DockSpace);
+    ImGui::DockBuilderSetNodeSize(dockspace, ImGui::GetMainViewport()->WorkSize);
+    ImGuiID main = dockspace;
+    ImGuiID bottom = ImGui::DockBuilderSplitNode(main, ImGuiDir_Down, 0.42f, nullptr, &main);
+    ImGuiID right = ImGui::DockBuilderSplitNode(main, ImGuiDir_Right, 0.58f, nullptr, &main);
+    ImGuiID regs = ImGui::DockBuilderSplitNode(right, ImGuiDir_Right, 0.45f, nullptr, &right);
+    const ImGuiID control = ImGui::DockBuilderSplitNode(regs, ImGuiDir_Up, 0.32f, nullptr, &regs);
+    const ImGuiID bottomRight = ImGui::DockBuilderSplitNode(bottom, ImGuiDir_Right, 0.45f, nullptr, &bottom);
+    ImGui::DockBuilderDockWindow(kGameViewWindow, main);
+    ImGui::DockBuilderDockWindow(kRomInfoWindow, right);
+    ImGui::DockBuilderDockWindow(kTraceWindow, right);
+    ImGui::DockBuilderDockWindow(kCallStackWindow, right);
+    ImGui::DockBuilderDockWindow(kDisassemblyWindow, right);
+    ImGui::DockBuilderDockWindow(kDebuggerWindow, control);
+    ImGui::DockBuilderDockWindow(kVdpRegsWindow, regs);
+    ImGui::DockBuilderDockWindow(kZ80RegsWindow, regs);
+    ImGui::DockBuilderDockWindow(kM68kRegsWindow, regs);
+    ImGui::DockBuilderDockWindow(kBreakpointsWindow, bottom);
+    for (int i = kMemoryViews; i >= 1; --i) {
+        ImGui::DockBuilderDockWindow(std::format("Memory {}", i).c_str(), bottom);
+    }
+    ImGui::DockBuilderDockWindow(kSoundWindow, bottomRight);
+    ImGui::DockBuilderDockWindow(kStatesWindow, bottomRight);
+    ImGui::DockBuilderDockWindow(kPaletteWindow, bottomRight);
+    ImGui::DockBuilderDockWindow(kSpritesWindow, bottomRight);
+    ImGui::DockBuilderDockWindow(kPlanesWindow, bottomRight);
+    ImGui::DockBuilderDockWindow(kTilesWindow, bottomRight);
+    ImGui::DockBuilderFinish(dockspace);
+    showGameView_ = true;
+    showRomInfo_ = false;  // docked behind the disassembly when reopened
+}
+
+// ---- Save state browser (M06-08) ------------------------------------------------------------------------
+
+std::filesystem::path App::statesDir() const {
+    return paths_.romDataDir(machineSha1_) / "states";
+}
+
+void App::scanStates() {
+    lastStateScan_ = SDL_GetPerformanceCounter();
+    std::vector<StateEntry> found;
+    std::error_code ec;
+    const auto dir = statesDir();
+    for (int slot = 1; slot <= kStateSlots; ++slot) {
+        StateEntry e;
+        e.path = slotPath(slot);
+        e.label = std::format("Slot {}", slot);
+        e.slot = slot;
+        found.push_back(std::move(e));
+    }
+    if (std::filesystem::is_directory(dir, ec)) {
+        std::vector<std::filesystem::path> named;
+        for (const auto& f : std::filesystem::directory_iterator(dir, ec)) {
+            const auto name = f.path().filename().string();
+            if (f.path().extension() == state::kStateExtension &&
+                !(name.starts_with("slot") && name.size() == 9)) {
+                named.push_back(f.path());
+            }
+        }
+        std::sort(named.begin(), named.end());
+        for (const auto& p : named) {
+            StateEntry e;
+            e.path = p;
+            e.label = common::toUtf8(p.stem());
+            found.push_back(std::move(e));
+        }
+    }
+    for (StateEntry& e : found) {
+        e.exists = std::filesystem::exists(e.path, ec);
+        if (!e.exists) {
+            continue;
+        }
+        e.mtime = std::filesystem::last_write_time(e.path, ec);
+        // Keep the decoded picture of an unchanged file.
+        const auto old = std::find_if(stateEntries_.begin(), stateEntries_.end(), [&](const StateEntry& o) {
+            return o.path == e.path && o.mtime == e.mtime;
+        });
+        if (old != stateEntries_.end()) {
+            e.thumb = std::move(old->thumb);
+            e.frame = old->frame;
+            e.timestamp = old->timestamp;
+            e.valid = old->valid;
+            continue;
+        }
+        std::ifstream in(e.path, std::ios::binary);
+        const std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                              std::istreambuf_iterator<char>());
+        std::string error;
+        if (const auto info = state::peekStateInfo(bytes, error)) {
+            e.valid = true;
+            e.frame = info->frame;
+            e.timestamp = info->timestamp;
+        }
+        if (const auto t = state::peekThumbnail(bytes)) {
+            e.thumb = std::make_unique<Texture>();
+            e.thumb->update(t->width, t->height, t->rgba.data());
+        }
+    }
+    stateEntries_ = std::move(found);
+}
+
+void App::drawStatesPanel() {
+    if (!showStates_) {
+        return;
+    }
+    if (!ImGui::Begin(kStatesWindow, &showStates_)) {
+        ImGui::End();
+        return;
+    }
+    if (!machine_) {
+        ImGui::TextDisabled("Open a ROM first.");
+        ImGui::End();
+        return;
+    }
+    if (static_cast<double>(SDL_GetPerformanceCounter() - lastStateScan_) >
+        static_cast<double>(SDL_GetPerformanceFrequency()) * 2.0) {
+        scanStates();
+    }
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+    const bool enter = ImGui::InputTextWithHint("##name", "name of a new state", stateName_.data(),
+                                                stateName_.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::SameLine();
+    if ((ImGui::Button("Save named") || enter) && stateName_[0] != 0) {
+        std::string name = stateName_.data();
+        for (char& c : name) {
+            if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' ||
+                c == '>' || c == '|') {
+                c = '_';
+            }
+        }
+        saveState(statesDir() / (name + std::string(state::kStateExtension)), name);
+        stateName_[0] = 0;
+        scanStates();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save as...")) {
+        stateSaveDialog_.open(window_.handle(), statesDir(), true);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Load file...")) {
+        stateOpenDialog_.open(window_.handle(), statesDir());
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Refresh")) {
+        scanStates();
+    }
+    ImGui::TextDisabled("States are saved between frames or while paused, i.e. at an instruction boundary.");
+    const float thumbW = state::kThumbnailWidth * 0.75f;
+    const float thumbH = state::kThumbnailHeight * 0.75f;
+    std::optional<std::filesystem::path> toLoad;
+    std::optional<std::pair<std::filesystem::path, std::string>> toSave;
+    std::optional<std::filesystem::path> toDelete;
+    if (ImGui::BeginTable("states", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+        ImGui::TableSetupColumn("picture", ImGuiTableColumnFlags_WidthFixed, thumbW);
+        ImGui::TableSetupColumn("state");
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed);
+        for (const StateEntry& e : stateEntries_) {
+            ImGui::PushID(e.label.c_str());
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            if (e.thumb) {
+                ImGui::Image(static_cast<ImTextureID>(e.thumb->id()), ImVec2(thumbW, thumbH));
+            } else {
+                ImGui::Dummy(ImVec2(thumbW, e.exists ? thumbH : ImGui::GetTextLineHeight()));
+            }
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(e.label.c_str());
+            if (!e.exists) {
+                ImGui::TextDisabled("empty");
+            } else if (!e.valid) {
+                ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "not a readable state");
+            } else {
+                ImGui::Text("frame %llu", static_cast<unsigned long long>(e.frame));
+                if (e.timestamp != 0) {
+                    const auto when = std::chrono::floor<std::chrono::seconds>(
+                        std::chrono::system_clock::from_time_t(static_cast<std::time_t>(e.timestamp)));
+                    ImGui::TextDisabled("%s UTC", std::format("{:%Y-%m-%d %H:%M:%S}", when).c_str());
+                }
+            }
+            ImGui::TableNextColumn();
+            ImGui::BeginDisabled(!e.exists || !e.valid);
+            if (ImGui::Button("Load")) {
+                toLoad = e.path;
+            }
+            ImGui::EndDisabled();
+            if (e.slot != 0 || e.exists) {
+                if (ImGui::Button(e.exists ? "Overwrite" : "Save")) {
+                    toSave = std::pair(e.path, e.label);
+                }
+            }
+            if (e.exists && ImGui::Button("Delete")) {
+                toDelete = e.path;
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    ImGui::End();
+    if (toLoad) {
+        loadState(*toLoad, common::toUtf8(toLoad->stem()));
+    }
+    if (toSave) {
+        saveState(toSave->first, toSave->second);
+        scanStates();
+    }
+    if (toDelete) {
+        std::error_code ec;
+        std::filesystem::remove(*toDelete, ec);
+        notify("deleted " + common::toUtf8(toDelete->stem()));
+        scanStates();
+    }
+}
+
+void App::pollStateDialogs() {
+    if (auto chosen = stateOpenDialog_.poll(); chosen && machine_) {
+        loadState(*chosen, common::toUtf8(chosen->filename()));
+    }
+    if (auto chosen = stateSaveDialog_.poll(); chosen && machine_) {
+        if (!chosen->has_extension()) {
+            chosen->replace_extension(state::kStateExtension);
+        }
+        saveState(*chosen, common::toUtf8(chosen->filename()));
+        scanStates();
     }
 }
 
