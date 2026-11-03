@@ -311,8 +311,8 @@ Action Debugger::instr(CpuId cpu, std::uint32_t pc, std::uint16_t opcode) {
                                                : anyExec68k_ && testBit(execBits68k_, (pc & 0xFFFFFF) >> 1);
         if (indexed) {
             for (Breakpoint& bp : bps_) {
-                if (bp.enabled && bp.kind == BpKind::Exec && bp.cpu == cpu && pc >= bp.start && pc <= bp.end &&
-                    hit(bp, cpu, pc, 0)) {
+                if (bp.enabled && bp.kind == BpKind::Exec && bp.cpu == cpu && pc >= bp.start &&
+                    pc <= bp.end && hit(bp, cpu, pc, 0)) {
                     stopAt(StopInfo::Kind::Breakpoint, &bp, cpu, pc, pc, 0);
                     if (cpu == CpuId::Z80) {
                         z80Frozen_ = true;
@@ -391,7 +391,8 @@ void Debugger::onAccess(void* ctx, CpuId cpu, AccessKind kind, std::uint32_t add
     const std::uint32_t a = canonical(cpu, addr);
     const std::uint32_t last = a + size - 1;
     const auto& pages = cpu == CpuId::Z80 ? d.watchPagesZ80_ : d.watchPages68k_;
-    if (pages.empty() || (!testBit(pages, a >> 8) && !testBit(pages, (last >> 8) & (cpu == CpuId::Z80 ? 0xFF : 0xFFFF)))) {
+    if (pages.empty() ||
+        (!testBit(pages, a >> 8) && !testBit(pages, (last >> 8) & (cpu == CpuId::Z80 ? 0xFF : 0xFFFF)))) {
         return;
     }
     const auto sizeBit = static_cast<std::uint8_t>(size == 1 ? 1 : size == 2 ? 2 : 4);
@@ -399,7 +400,8 @@ void Debugger::onAccess(void* ctx, CpuId cpu, AccessKind kind, std::uint32_t add
         if (!bp.enabled || bp.cpu != cpu || (bp.sizes & sizeBit) == 0) {
             continue;
         }
-        const bool kindOk = bp.kind == BpKind::Access || (bp.kind == BpKind::Read && kind == AccessKind::Read) ||
+        const bool kindOk = bp.kind == BpKind::Access ||
+                            (bp.kind == BpKind::Read && kind == AccessKind::Read) ||
                             (bp.kind == BpKind::Write && kind == AccessKind::Write);
         if (!kindOk || last < bp.start || a > bp.end) {
             continue;
@@ -446,8 +448,8 @@ void Debugger::onIrq(void* ctx, CpuId cpu, int level) {
         if (bp.enabled && bp.kind == BpKind::Interrupt && bp.cpu == cpu &&
             static_cast<std::uint32_t>(level) >= bp.start && static_cast<std::uint32_t>(level) <= bp.end &&
             d.hit(bp, cpu, static_cast<std::uint32_t>(level), 0)) {
-            d.requestStop(StopInfo::Kind::Watchpoint, &bp, cpu, d.pcOf(cpu), static_cast<std::uint32_t>(level),
-                          0);
+            d.requestStop(StopInfo::Kind::Watchpoint, &bp, cpu, d.pcOf(cpu),
+                          static_cast<std::uint32_t>(level), 0);
         }
     }
 }
@@ -665,7 +667,8 @@ RunResult Debugger::stepInto(CpuId cpu) {
         for (int guard = 0; guard < 1000000 && m_.z80Mclk() >= m_.cpuMclk(); ++guard) {
             const RunResult s = m_.step(CpuId::M68k);
             r.instructions += s.instructions;
-            if (s.reason != StopReason::LimitReached && !(s.reason == StopReason::Breakpoint && s.cpu == CpuId::Z80)) {
+            if (s.reason != StopReason::LimitReached &&
+                !(s.reason == StopReason::Breakpoint && s.cpu == CpuId::Z80)) {
                 r.reason = s.reason;
                 r.cpu = s.cpu;
                 finishRun(r);
@@ -708,7 +711,8 @@ bool Debugger::beginStepOver(CpuId cpu) {
     }
     int length = 2;
     disassemble(cpu, pc, &length);
-    step_ = StepState{StepMode::Over, cpu, (pc + static_cast<std::uint32_t>(length)) & 0xFFFFFF, sp(cpu), false};
+    step_ =
+        StepState{StepMode::Over, cpu, (pc + static_cast<std::uint32_t>(length)) & 0xFFFFFF, sp(cpu), false};
     return true;
 }
 
@@ -916,8 +920,8 @@ void Debugger::rebuild() {
                     anyExecZ80_ = true;
                 } else {
                     execBits68k_.resize(k68kExecBits / 64);
-                    for (std::uint32_t a = bp.start & 0xFFFFFE; a <= std::min<std::uint32_t>(bp.end, 0xFFFFFF);
-                         a += 2) {
+                    for (std::uint32_t a = bp.start & 0xFFFFFE;
+                         a <= std::min<std::uint32_t>(bp.end, 0xFFFFFF); a += 2) {
                         setBit(execBits68k_, a >> 1);
                     }
                     anyExec68k_ = true;
@@ -997,7 +1001,8 @@ bool Debugger::beginTrace(const std::string& path, const TraceOptions& options, 
     config.maxRecords = options.maxRecords;
     traceFile_ = std::move(file);
     trace_ = std::make_unique<instrument::TraceWriter>(
-        m_, traceFile_.get(), config, [](std::span<const std::uint8_t> bytes, std::uint32_t addr, int& length) {
+        m_, traceFile_.get(), config,
+        [](std::span<const std::uint8_t> bytes, std::uint32_t addr, int& length) {
             const auto in = analysis::disasm68k::disassemble(bytes, addr);
             length = in.length;
             return in.text();
@@ -1108,8 +1113,8 @@ void Debugger::trackCalls(std::uint32_t pc) {
     applyPending(calls_, pendingCall_, pendingException_, pc);
 }
 
-void Debugger::applyPending(std::vector<CallFrame>& frames, PendingCall& call,
-                            PendingException& exception, std::uint32_t pc) const {
+void Debugger::applyPending(std::vector<CallFrame>& frames, PendingCall& call, PendingException& exception,
+                            std::uint32_t pc) const {
     const std::uint32_t spNow = m_.cpu().state().a[7];
     // Frames whose return address / exception frame is above the stack pointer have returned (RTS, RTE,
     // or code that dropped them, e.g. addq.l #4,sp).
@@ -1166,16 +1171,17 @@ std::vector<CallFrame> Debugger::walkStack(int maxFrames) const {
         return found;
     }
     const std::uint32_t romSize = static_cast<std::uint32_t>(m_.rom().size());
-    for (std::uint32_t at = top; at + 4 <= 0x1000000 && at < top + 0x400 &&
-                                 static_cast<int>(found.size()) < maxFrames;
-         at += 2) {
+    for (std::uint32_t at = top;
+         at + 4 <= 0x1000000 && at < top + 0x400 && static_cast<int>(found.size()) < maxFrames; at += 2) {
         const std::uint32_t v = read(CpuId::M68k, at, 4);
         if ((v & 1) != 0 || v < 0x200 || v >= romSize || v > 0xFFFFFF) {
             continue;
         }
         std::optional<std::uint32_t> callPc;
         std::optional<std::uint32_t> entry;
-        const auto word = [&](std::uint32_t a) { return static_cast<std::uint16_t>(read(CpuId::M68k, a, 2)); };
+        const auto word = [&](std::uint32_t a) {
+            return static_cast<std::uint16_t>(read(CpuId::M68k, a, 2));
+        };
         const std::uint16_t w2 = word(v - 2);
         const std::uint16_t w4 = word(v - 4);
         const std::uint16_t w6 = word(v - 6);

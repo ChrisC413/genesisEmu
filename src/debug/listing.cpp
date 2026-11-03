@@ -114,8 +114,8 @@ std::uint32_t previousStart(const Machine& m, CpuId cpu, std::uint32_t addr, con
     return best;
 }
 
-std::vector<ListingLine> buildListing(const Machine& m, CpuId cpu, std::uint32_t anchor, int before, int count,
-                                      const KnownStarts& known) {
+std::vector<ListingLine> buildListing(const Machine& m, CpuId cpu, std::uint32_t anchor, int before,
+                                      int count, const KnownStarts& known) {
     std::uint32_t start = anchor & addrMask(cpu);
     for (int i = 0; i < before && start > 0; ++i) {
         start = previousStart(m, cpu, start, known);

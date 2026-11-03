@@ -173,7 +173,8 @@ public:
     // core/state/save_state.hpp). Call between run() / step() calls, i.e. at an instruction boundary.
     // `timestamp` is stored as given (seconds since the epoch; 0 keeps a state byte-for-byte reproducible).
     // Hooks, statistics, the bus issue log and the sound register log are not part of a state.
-    std::vector<std::uint8_t> saveState(std::uint64_t timestamp = 0);
+    // `thumbnail` adds the optional THMB chunk (a 160x112 picture of the screen) for state browsers.
+    std::vector<std::uint8_t> saveState(std::uint64_t timestamp = 0, bool thumbnail = false);
     // Restores a state saved from the same ROM image (SHA-1) and region. A state is refused when it comes
     // from another ROM, has a chunk this build does not know or a newer chunk version, is corrupt, or does
     // not reproduce the state hash recorded when it was saved; the machine is then unchanged and `error`
@@ -181,7 +182,12 @@ public:
     bool loadState(std::span<const std::uint8_t> bytes, std::string& error);
 
 private:
-    bool stepCpu(RunResult& result);  // false when a breakpoint stopped it
+    // false when a breakpoint / stop request stopped it. kHooked: hooks are installed, so a hook may have
+    // requested a stop (without hooks the check is compiled out of the run loop).
+    template <bool kHooked>
+    bool stepCpu(RunResult& result);
+    template <bool kHooked>
+    RunResult runLoop(RunLimit limit);
     void endLine();
     void checkVint();
     void catchUp(std::uint64_t mclk);
@@ -208,6 +214,7 @@ private:
     std::uint64_t vintAt_ = 0;  // master clock the armed V-int is raised at (see endLine)
     bool inZ80_ = false;
     bool stopRequested_ = false;
+    bool hooked_ = false;  // any hook installed
     StopReason requestedStop_ = StopReason::Watchpoint;
     CpuId requestedStopCpu_ = CpuId::M68k;
     Hooks hooks_;

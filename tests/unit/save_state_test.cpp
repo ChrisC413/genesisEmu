@@ -280,3 +280,31 @@ TEST_CASE("Battery SRAM and its control register are part of a state", "[state]"
     CHECK(sram.control() == 0x01);
     CHECK(sram.dirty());  // the battery file follows the loaded contents
 }
+
+TEST_CASE("Thumbnails: optional THMB chunk, ignored by loading", "[state]") {
+    Machine m = bootMachine();
+    m.run(RunLimit::frames(5));
+    const std::vector<std::uint8_t> plain = m.saveState(0);
+    const std::vector<std::uint8_t> withThumb = m.saveState(0, true);
+    CHECK_FALSE(state::peekThumbnail(plain));
+    const auto thumb = state::peekThumbnail(withThumb);
+    REQUIRE(thumb);
+    CHECK(thumb->width == state::kThumbnailWidth);
+    CHECK(thumb->height == state::kThumbnailHeight);
+    REQUIRE(thumb->rgba.size() == 160u * 112u);
+    // Same picture as the framebuffer (nearest neighbour: every other pixel and line in H40 / 224 lines).
+    CHECK((thumb->rgba[0] & 0xFFFFFF) == (m.vdp().framebuffer()[0] & 0xFFFFFF));
+    CHECK((thumb->rgba[50 * 160 + 80] & 0xFFFFFF) ==
+          (m.vdp().framebuffer()[100 * vdp::kFbWidth + 160] & 0xFFFFFF));
+    // Loading ignores it; a state with a thumbnail restores the same machine.
+    const std::uint64_t hash = m.stateHash();
+    m.run(RunLimit::frames(3));
+    std::string error;
+    REQUIRE(m.loadState(withThumb, error));
+    CHECK(m.stateHash() == hash);
+    // A corrupt thumbnail is just "no thumbnail".
+    auto file = state::decodeStateFile(withThumb, error);
+    REQUIRE(file);
+    file->find("THMB")->payload.resize(10);
+    CHECK_FALSE(state::peekThumbnail(state::encodeStateFile(*file)));
+}

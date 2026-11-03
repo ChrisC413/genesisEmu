@@ -51,7 +51,7 @@ ListingLine disassembleAt(const Machine& m, CpuId cpu, std::uint32_t addr);
 std::uint32_t previousStart(const Machine& m, CpuId cpu, std::uint32_t addr, const KnownStarts& known);
 // `count` lines starting `before` instructions above `anchor` (so the anchor is line `before` when the
 // backward walk does not hit address 0).
-std::vector<ListingLine> buildListing(const Machine& m, CpuId cpu, std::uint32_t anchor, int before, int count,
-                                      const KnownStarts& known);
+std::vector<ListingLine> buildListing(const Machine& m, CpuId cpu, std::uint32_t anchor, int before,
+                                      int count, const KnownStarts& known);
 
 }  // namespace gen::debug

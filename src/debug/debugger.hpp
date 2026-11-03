@@ -27,12 +27,12 @@ class TraceWriter;
 namespace gen::debug {
 
 enum class BpKind : std::uint8_t {
-    Exec,       // [start, end] instruction addresses on `cpu`
-    Read,       // memory reads in [start, end] on `cpu`
-    Write,      // memory writes
-    Access,     // reads and writes
-    VdpReg,     // VDP register numbers [start, end] written
-    Vram,       // VRAM / CRAM / VSRAM byte addresses [start, end] written (data port or 68k DMA)
+    Exec,    // [start, end] instruction addresses on `cpu`
+    Read,    // memory reads in [start, end] on `cpu`
+    Write,   // memory writes
+    Access,  // reads and writes
+    VdpReg,  // VDP register numbers [start, end] written
+    Vram,    // VRAM / CRAM / VSRAM byte addresses [start, end] written (data port or 68k DMA)
     Cram,
     Vsram,
     Dma,        // a DMA starts whose destination is in `dmaTarget` (and [start, end])
@@ -49,16 +49,16 @@ struct Breakpoint {
     std::uint32_t start = 0;
     std::uint32_t end = 0;  // inclusive; == start for a single address
     bool enabled = true;
-    bool temporary = false;            // removed after the first stop
-    std::string condition;             // expression (expr.hpp); empty = always
-    std::uint64_t ignoreHits = 0;      // the first N matching hits only count
-    std::uint8_t sizes = 0x7;          // memory watchpoints: bit 0 = byte, 1 = word (68k longs are two words)
-    int dmaTarget = -1;                // Dma: vdp::DmaTarget value, or -1 for any
-    bool log = false;                  // logpoint: append the message and continue
-    std::string message;               // logpoint format (expr.hpp Format)
-    bool stop = true;                  // a logpoint may also stop
-    std::uint32_t traceFrames = 0;     // on hit: begin a trace for this many frames (needs a trace path)
-    std::uint64_t hits = 0;            // matching hits so far (after the condition)
+    bool temporary = false;         // removed after the first stop
+    std::string condition;          // expression (expr.hpp); empty = always
+    std::uint64_t ignoreHits = 0;   // the first N matching hits only count
+    std::uint8_t sizes = 0x7;       // memory watchpoints: bit 0 = byte, 1 = word (68k longs are two words)
+    int dmaTarget = -1;             // Dma: vdp::DmaTarget value, or -1 for any
+    bool log = false;               // logpoint: append the message and continue
+    std::string message;            // logpoint format (expr.hpp Format)
+    bool stop = true;               // a logpoint may also stop
+    std::uint32_t traceFrames = 0;  // on hit: begin a trace for this many frames (needs a trace path)
+    std::uint64_t hits = 0;         // matching hits so far (after the condition)
 
     // Compiled forms, built by Debugger::add / update.
     std::optional<Expr> compiledCondition;
@@ -70,8 +70,8 @@ struct StopInfo {
     enum class Kind : std::uint8_t { None, Pause, Step, Breakpoint, Watchpoint, Limit, Fault };
     Kind kind = Kind::None;
     CpuId cpu = CpuId::M68k;
-    std::uint32_t pc = 0;  // the stopped CPU's PC (for a watchpoint: the accessing instruction)
-    int breakpoint = -1;   // id
+    std::uint32_t pc = 0;       // the stopped CPU's PC (for a watchpoint: the accessing instruction)
+    int breakpoint = -1;        // id
     std::uint32_t address = 0;  // watchpoint: accessed address
     std::uint32_t value = 0;
     std::string text;  // human readable summary
@@ -81,12 +81,12 @@ struct StopInfo {
 struct CallFrame {
     enum class Kind : std::uint8_t { Call, Interrupt, Exception };
     Kind kind = Kind::Call;
-    std::uint32_t callPc = 0;      // the JSR / BSR, or the interrupted PC
-    std::uint32_t entry = 0;       // the subroutine / handler address
-    std::uint32_t returnPc = 0;    // where it returns to
-    std::uint32_t sp = 0;          // SP right after the return address / exception frame was pushed
-    int vector = -1;               // Interrupt / Exception
-    bool verified = true;          // stack walk: false when the call site could not be confirmed
+    std::uint32_t callPc = 0;    // the JSR / BSR, or the interrupted PC
+    std::uint32_t entry = 0;     // the subroutine / handler address
+    std::uint32_t returnPc = 0;  // where it returns to
+    std::uint32_t sp = 0;        // SP right after the return address / exception frame was pushed
+    int vector = -1;             // Interrupt / Exception
+    bool verified = true;        // stack walk: false when the call site could not be confirmed
 };
 std::string describeVector(int vector);
 
@@ -252,8 +252,8 @@ private:
 
     StepState step_;
     std::array<Skip, 2> skip_{};
-    bool z80Frozen_ = false;                // a stop was requested: the Z80 does not start another one
-    bool stopping_ = false;                 // a stop was requested during this run
+    bool z80Frozen_ = false;  // a stop was requested: the Z80 does not start another one
+    bool stopping_ = false;   // a stop was requested during this run
     StopInfo stop_;
     std::deque<std::string> log_;
 

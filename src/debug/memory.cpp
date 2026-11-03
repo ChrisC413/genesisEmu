@@ -22,8 +22,8 @@ std::optional<std::uint8_t> peek(const Machine& m, CpuId cpu, std::uint32_t addr
     if (addr >= 0xE00000) {
         return m.bus().state().ram[addr & 0xFFFF];
     }
-    if (const cart::SramDevice* sram = m.sram(); sram != nullptr && sram->mapped() && addr >= sram->memFirst() &&
-                                                 addr <= sram->memLast()) {
+    if (const cart::SramDevice* sram = m.sram();
+        sram != nullptr && sram->mapped() && addr >= sram->memFirst() && addr <= sram->memLast()) {
         std::uint8_t v = 0;
         if (const_cast<cart::SramDevice*>(sram)->memRead(addr, v)) {  // a plain array read
             return v;

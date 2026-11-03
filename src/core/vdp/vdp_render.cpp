@@ -392,3 +392,44 @@ void Vdp::renderLine(int line) {
 }
 
 }  // namespace gen::vdp
+
+namespace gen::vdp {
+
+std::vector<SpriteInfo> Vdp::decodeSprites() const {
+    // Same sources as the renderer: Y / size / link from the internal SAT cache, the rest from VRAM.
+    const bool im2 = interlace2();
+    const int maxTotal = h40() ? 80 : 64;
+    const int yMask = im2 ? 0x3FF : 0x1FF;
+    const int yOffset = im2 ? 256 : 128;
+    const auto satBase = static_cast<std::uint16_t>((s_.regs[5] << 9) & (h40() ? 0xFC00 : 0xFE00));
+    std::vector<SpriteInfo> out;
+    int idx = 0;
+    for (int visited = 0; visited < maxTotal; ++visited) {
+        const std::uint8_t* c = &s_.satCache[static_cast<std::size_t>(idx * 4)];
+        const auto ea = static_cast<std::uint16_t>(satBase + idx * 8 + 4);
+        const int name = (s_.vram[ea] << 8) | s_.vram[static_cast<std::uint16_t>(ea + 1)];
+        const int rawX = ((s_.vram[static_cast<std::uint16_t>(ea + 2)] << 8) |
+                          s_.vram[static_cast<std::uint16_t>(ea + 3)]) &
+                         0x1FF;
+        SpriteInfo sp;
+        sp.index = idx;
+        sp.x = rawX - 128;
+        sp.y = (((c[0] << 8) | c[1]) & yMask) - yOffset;
+        sp.widthCells = ((c[2] >> 2) & 3) + 1;
+        sp.heightCells = (c[2] & 3) + 1;
+        sp.link = c[3] & 0x7F;
+        sp.tile = static_cast<std::uint16_t>(name & 0x7FF);
+        sp.palette = static_cast<std::uint8_t>((name >> 13) & 3);
+        sp.priority = (name & 0x8000) != 0;
+        sp.hflip = (name & 0x0800) != 0;
+        sp.vflip = (name & 0x1000) != 0;
+        out.push_back(sp);
+        if (sp.link == 0 || sp.link >= maxTotal) {
+            break;
+        }
+        idx = sp.link;
+    }
+    return out;
+}
+
+}  // namespace gen::vdp

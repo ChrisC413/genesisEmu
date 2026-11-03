@@ -46,7 +46,8 @@ enum : int { kVarFrame, kVarLine, kVarValue, kVarAddr, kVarHits };
 
 class Expr {
 public:
-    // Parses `text` for `cpu`'s register names. On failure returns nullopt and sets `error` (with the column).
+    // Parses `text` for `cpu`'s register names. On failure returns nullopt and sets `error` (with the
+    // column).
     static std::optional<Expr> compile(std::string_view text, CpuId cpu, std::string& error);
 
     std::int64_t eval(const EvalContext& ctx) const;

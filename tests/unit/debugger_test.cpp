@@ -2,6 +2,8 @@
 // watchpoints, trace from pause, ring buffer, call stack, memory search and the disassembly listing, against
 // a small hand-assembled program (original code; no commercial data).
 
+#include "debug/debugger.hpp"
+
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
@@ -12,7 +14,6 @@
 
 #include "core/cart/rom.hpp"
 #include "core/sched/machine.hpp"
-#include "debug/debugger.hpp"
 #include "debug/expr.hpp"
 #include "debug/listing.hpp"
 #include "debug/memory.hpp"
@@ -57,19 +58,19 @@ void putLong(std::vector<std::uint8_t>& rom, std::uint32_t at, std::uint32_t v) 
 // Program layout (addresses fixed so the tests can name them).
 constexpr std::uint32_t kFault = 0x300;
 constexpr std::uint32_t kVint = 0x340;
-constexpr std::uint32_t kSub = 0x400;         // move.w #$10,d0 ; bsr.w inner ; move.b d0,($F010).w ; rts
+constexpr std::uint32_t kSub = 0x400;  // move.w #$10,d0 ; bsr.w inner ; move.b d0,($F010).w ; rts
 constexpr std::uint32_t kSubBsr = 0x404;
 constexpr std::uint32_t kSubAfterBsr = 0x408;
 constexpr std::uint32_t kSubRts = 0x40C;
-constexpr std::uint32_t kInner = 0x420;       // waits for the next V-int, then rts
+constexpr std::uint32_t kInner = 0x420;  // waits for the next V-int, then rts
 constexpr std::uint32_t kInnerWait = 0x424;
 constexpr std::uint32_t kZ80Code = 0x700;
 constexpr std::uint32_t kCramData = 0x600;
 
 struct Program {
     std::vector<std::uint8_t> rom;
-    std::uint32_t main = 0;       // jsr (kSub).l
-    std::uint32_t afterJsr = 0;   // addq.w #1,($F002).w
+    std::uint32_t main = 0;      // jsr (kSub).l
+    std::uint32_t afterJsr = 0;  // addq.w #1,($F002).w
 };
 
 Program makeProgram() {
@@ -97,18 +98,18 @@ Program makeProgram() {
     e.w({0x47F9, 0x00A0, 0x0000});                                // lea ($A00000).l,a3
     e.w({0x7411});                                                // moveq #17,d2
     const std::uint32_t copy = e.here();
-    e.w({0x16D8});                                                      // move.b (a0)+,(a3)+
+    e.w({0x16D8});                                                     // move.b (a0)+,(a3)+
     e.w({0x51CA, static_cast<std::uint16_t>(copy - (e.here() + 2))});  // dbf d2,copy
-    e.w({0x33FC, 0x0000, 0x00A1, 0x1200});                              // Z80 reset
-    e.w({0x33FC, 0x0000, 0x00A1, 0x1100});                              // release the bus
-    e.w({0x33FC, 0x0100, 0x00A1, 0x1200});                              // Z80 runs
-    e.w({0x43F9, 0x00C0, 0x0004});                                      // lea ($C00004).l,a1
-    e.w({0x45F9, 0x00C0, 0x0000});                                      // lea ($C00000).l,a2
-    e.w({0x32BC, 0x8004});                                              // H-int off
-    e.w({0x32BC, 0x8174});                                              // display, V-int, DMA on
-    e.w({0x32BC, 0x8F02});                                              // auto-increment 2
-    e.w({0x22BC, 0xC002, 0x0000});                                      // CRAM write $0002
-    e.w({0x34BC, 0x0EEE});                                              // move.w #$0EEE,(a2)
+    e.w({0x33FC, 0x0000, 0x00A1, 0x1200});                             // Z80 reset
+    e.w({0x33FC, 0x0000, 0x00A1, 0x1100});                             // release the bus
+    e.w({0x33FC, 0x0100, 0x00A1, 0x1200});                             // Z80 runs
+    e.w({0x43F9, 0x00C0, 0x0004});                                     // lea ($C00004).l,a1
+    e.w({0x45F9, 0x00C0, 0x0000});                                     // lea ($C00000).l,a2
+    e.w({0x32BC, 0x8004});                                             // H-int off
+    e.w({0x32BC, 0x8174});                                             // display, V-int, DMA on
+    e.w({0x32BC, 0x8F02});                                             // auto-increment 2
+    e.w({0x22BC, 0xC002, 0x0000});                                     // CRAM write $0002
+    e.w({0x34BC, 0x0EEE});                                             // move.w #$0EEE,(a2)
     // 68k -> CRAM DMA of one word from kCramData to CRAM 0.
     e.w({0x32BC, 0x9301, 0x32BC, 0x9400, 0x32BC, 0x9500, 0x32BC, 0x9603, 0x32BC, 0x9700});
     e.w({0x22BC, 0xC000, 0x0080});
@@ -116,7 +117,7 @@ Program makeProgram() {
     p.main = e.here();
     e.w({0x4EB9, 0x0000, static_cast<std::uint16_t>(kSub)});  // jsr (kSub).l
     p.afterJsr = e.here();
-    e.w({0x5278, 0xF002});    // addq.w #1,($F002).w
+    e.w({0x5278, 0xF002});     // addq.w #1,($F002).w
     e.branch(0x6000, p.main);  // bra.s main
 
     Emitter fault(rom, kFault);
@@ -128,10 +129,10 @@ Program makeProgram() {
     vint.w({0x4E73});          // rte
 
     Emitter sub(rom, kSub);
-    sub.w({0x303C, 0x0010});                                            // move.w #$10,d0
+    sub.w({0x303C, 0x0010});                                              // move.w #$10,d0
     sub.w({0x6100, static_cast<std::uint16_t>(kInner - (kSubBsr + 2))});  // bsr.w inner
-    sub.w({0x11C0, 0xF010});                                            // move.b d0,($F010).w
-    sub.w({0x4E75});                                                    // rts
+    sub.w({0x11C0, 0xF010});                                              // move.b d0,($F010).w
+    sub.w({0x4E75});                                                      // rts
     Emitter inner(rom, kInner);
     inner.w({0x2238, 0xF004});  // move.l ($F004).w,d1
     inner.w({0xB2B8, 0xF004});  // cmp.l ($F004).w,d1
@@ -209,7 +210,8 @@ TEST_CASE("Expressions: literals, registers, sizes, memory and precedence", "[de
 
 TEST_CASE("Logpoint formats", "[debug][expr]") {
     std::string error;
-    const auto f = Format::compile("obj {a0:x} routine {byte(a0+$24)} d0={d0.w:X4} {{x}}", CpuId::M68k, error);
+    const auto f =
+        Format::compile("obj {a0:x} routine {byte(a0+$24)} d0={d0.w:X4} {{x}}", CpuId::M68k, error);
     REQUIRE(f);
     CHECK(f->render(RegsCtx{}) == "obj ff0000 routine 7 d0=0010 {x}");
     CHECK_FALSE(Format::compile("{d0", CpuId::M68k, error));
@@ -457,7 +459,8 @@ TEST_CASE("Z80 stepping keeps the 68k in sync; Z80 step over and breakpoints", "
     CHECK(m.z80Cpu().state().pc == 0x0008);
 }
 
-TEST_CASE("Memory watchpoints report the accessing PC; VDP, DMA, interrupt, exception, frame", "[debug][watch]") {
+TEST_CASE("Memory watchpoints report the accessing PC; VDP, DMA, interrupt, exception, frame",
+          "[debug][watch]") {
     const Program p = makeProgram();
     Machine m = makeMachine(p);
     Debugger d(m);
@@ -468,8 +471,8 @@ TEST_CASE("Memory watchpoints report the accessing PC; VDP, DMA, interrupt, exce
     REQUIRE(d.add(wp, error) > 0);
     RunResult r = d.run(RunLimit::frames(5));
     REQUIRE(r.reason == StopReason::Watchpoint);
-    CHECK(d.lastStop().pc == kSubAfterBsr);              // move.b d0,($F010).w
-    CHECK(m.cpu().state().pc == kSubRts);                // stopped after it
+    CHECK(d.lastStop().pc == kSubAfterBsr);  // move.b d0,($F010).w
+    CHECK(m.cpu().state().pc == kSubRts);    // stopped after it
     CHECK(d.lastStop().address == 0xFFF010);
     CHECK(d.lastStop().value == 0x10);
     // Mirror addresses are canonical; value conditions work.
@@ -671,7 +674,8 @@ TEST_CASE("Memory: pattern search, region edits and ROM patches", "[debug][memor
     CHECK_FALSE(writeRegion(m, Region::Sram, 0, 0, patches));
 }
 
-TEST_CASE("Disassembly listing: backward scrolling resynchronizes on instruction starts", "[debug][listing]") {
+TEST_CASE("Disassembly listing: backward scrolling resynchronizes on instruction starts",
+          "[debug][listing]") {
     const Program p = makeProgram();
     Machine m = makeMachine(p);
     KnownStarts known;
@@ -698,20 +702,103 @@ TEST_CASE("TMP bisect", "[tmpbisect]") {
     Machine plain = makeMachine(p);
     plain.run(RunLimit::frames(30));
     Machine chunks = makeMachine(p);
-    for (int i = 0; i < 30; ++i) chunks.run(RunLimit::frames(1));
+    for (int i = 0; i < 30; ++i)
+        chunks.run(RunLimit::frames(1));
     CHECK(chunks.stateHash() == plain.stateHash());
     for (int mode = 0; mode < 5; ++mode) {
         Machine m = makeMachine(p);
         Debugger d(m);
         std::string error;
-        if (mode == 0) d.setRingEnabled(true, 1000);
-        if (mode == 1) d.setCallStackTracking(true);
-        if (mode == 2) { Breakpoint bp; bp.kind = BpKind::Exec; bp.start = bp.end = 0x7000; d.add(bp, error); }
-        if (mode == 3) { Breakpoint bp; bp.kind = BpKind::Write; bp.start = bp.end = 0xFF8000; d.add(bp, error); }
-        if (mode == 4) { Breakpoint bp; bp.kind = BpKind::Exec; bp.cpu = CpuId::Z80; bp.start = bp.end = 0x7000; d.add(bp, error); }
+        if (mode == 0)
+            d.setRingEnabled(true, 1000);
+        if (mode == 1)
+            d.setCallStackTracking(true);
+        if (mode == 2) {
+            Breakpoint bp;
+            bp.kind = BpKind::Exec;
+            bp.start = bp.end = 0x7000;
+            d.add(bp, error);
+        }
+        if (mode == 3) {
+            Breakpoint bp;
+            bp.kind = BpKind::Write;
+            bp.start = bp.end = 0xFF8000;
+            d.add(bp, error);
+        }
+        if (mode == 4) {
+            Breakpoint bp;
+            bp.kind = BpKind::Exec;
+            bp.cpu = CpuId::Z80;
+            bp.start = bp.end = 0x7000;
+            d.add(bp, error);
+        }
         int stops = 0;
-        for (int i = 0; i < 30; ++i) stops += d.run(RunLimit::frames(1)).reason != StopReason::LimitReached;
-        INFO("mode " << mode << " stops " << stops << " frame " << m.frame() << " pc " << m.cpu().state().pc << " vs " << plain.cpu().state().pc << " z80 " << m.z80Cpu().state().pc << " vs " << plain.z80Cpu().state().pc << " cpuMclk " << m.cpuMclk() << " vs " << plain.cpuMclk() << " ram " << (int)m.bus().state().ram[0xF005] << " " << (int)plain.bus().state().ram[0xF005]);
+        for (int i = 0; i < 30; ++i)
+            stops += d.run(RunLimit::frames(1)).reason != StopReason::LimitReached;
+        INFO("mode " << mode << " stops " << stops << " frame " << m.frame() << " pc " << m.cpu().state().pc
+                     << " vs " << plain.cpu().state().pc << " z80 " << m.z80Cpu().state().pc << " vs "
+                     << plain.z80Cpu().state().pc << " cpuMclk " << m.cpuMclk() << " vs " << plain.cpuMclk()
+                     << " ram " << (int)m.bus().state().ram[0xF005] << " "
+                     << (int)plain.bus().state().ram[0xF005]);
         CHECK(m.stateHash() == plain.stateHash());
     }
+}
+
+TEST_CASE("Stopping at 68k breakpoints and watchpoints and resuming is exact", "[debug][run]") {
+    const Program p = makeProgram();
+    Machine plain = makeMachine(p);
+    plain.run(RunLimit::frames(20));
+
+    Machine m = makeMachine(p);
+    Debugger d(m);
+    std::string error;
+    Breakpoint bp;
+    bp.kind = BpKind::Exec;
+    bp.start = bp.end = kSubAfterBsr;
+    d.add(bp, error);
+    Breakpoint wp;
+    wp.kind = BpKind::Write;
+    wp.start = wp.end = 0xFFF004;
+    wp.end = 0xFFF007;
+    d.add(wp, error);
+    Breakpoint irq;
+    irq.kind = BpKind::Interrupt;
+    irq.start = irq.end = 6;
+    d.add(irq, error);
+    int stops = 0;
+    while (m.frame() < 20) {
+        const std::uint64_t target = m.frame() + 1;
+        if (d.run(RunLimit::frames(target - m.frame())).reason != StopReason::LimitReached) {
+            ++stops;
+        }
+    }
+    CHECK(stops > 40);  // several stops per frame
+    CHECK(m.stateHash() == plain.stateHash());
+    CHECK(m.vdp().frameHash() == plain.vdp().frameHash());
+    // Single steps through a whole frame end where running does.
+    Machine stepped = makeMachine(p);
+    Debugger ds(stepped);
+    while (stepped.frame() < 20) {
+        ds.stepInto(CpuId::M68k);
+    }
+    stepped.run(RunLimit::frames(1));
+    plain.run(RunLimit::frames(1));
+    CHECK(stepped.stateHash() == plain.stateHash());
+}
+
+TEST_CASE("A register edited while paused is used by the next step", "[debug][step]") {
+    const Program p = makeProgram();
+    Machine m = makeMachine(p);
+    Debugger d(m);
+    d.runTo(CpuId::M68k, kSubAfterBsr);  // move.b d0,($F010).w
+    REQUIRE(m.cpu().state().pc == kSubAfterBsr);
+    m.cpu().state().d[0] = 0x5A;  // what the 68k Registers panel does on Enter
+    d.stepInto(CpuId::M68k);
+    CHECK(m.bus().state().ram[0xF010] == 0x5A);
+    // Editing PC refills the prefetch queue, so execution continues at the new address.
+    m.cpu().state().pc = kSub;
+    m.cpu().refillPrefetch();
+    d.stepInto(CpuId::M68k);
+    CHECK(m.cpu().state().pc == kSubBsr);
+    CHECK((m.cpu().state().d[0] & 0xFFFF) == 0x10);
 }

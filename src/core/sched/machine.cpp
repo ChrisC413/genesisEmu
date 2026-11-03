@@ -112,6 +112,9 @@ void Machine::addCartDevice(std::unique_ptr<cart::ICartDevice> device) {
 void Machine::setHooks(const Hooks& hooks) {
     hooks_ = hooks;
     cpu_->setHooks(hooks_);
+    hooked_ = hooks.onInstr != nullptr || hooks.onAccess != nullptr || hooks.onDma != nullptr ||
+              hooks.onZ80Window != nullptr || hooks.onIrq != nullptr || hooks.onException != nullptr ||
+              hooks.onVdpWrite != nullptr || hooks.onFrameEnd != nullptr;
 }
 
 void Machine::catchUp(std::uint64_t mclk) {
@@ -190,6 +193,7 @@ void Machine::checkVint() {
     }
 }
 
+template <bool kHooked>
 bool Machine::stepCpu(RunResult& result) {
     const std::uint32_t pc = cpu_->state().pc;
     const int cycles = cpu_->step();
@@ -234,16 +238,24 @@ bool Machine::stepCpu(RunResult& result) {
         }
         checkVint();
     }
-    if (stopRequested_) {
-        stopRequested_ = false;
-        result.reason = requestedStop_;
-        result.cpu = requestedStopCpu_;
-        return false;
+    if constexpr (kHooked) {
+        if (stopRequested_) {
+            stopRequested_ = false;
+            result.reason = requestedStop_;
+            result.cpu = requestedStopCpu_;
+            return false;
+        }
     }
     return result.reason != StopReason::Exception;
 }
 
 RunResult Machine::run(RunLimit limit) {
+    stopRequested_ = false;
+    return hooked_ ? runLoop<true>(limit) : runLoop<false>(limit);
+}
+
+template <bool kHooked>
+RunResult Machine::runLoop(RunLimit limit) {
     RunResult result;
     const std::uint64_t targetFrame = frame_ + limit.count;
     const std::uint64_t targetMclk = clock_.cpuMclk + limit.count;
@@ -251,7 +263,6 @@ RunResult Machine::run(RunLimit limit) {
         return frame_ * static_cast<std::uint64_t>(linesPerFrame()) + static_cast<std::uint64_t>(line_);
     };
     const std::uint64_t targetLine = absoluteLine() + limit.count;
-    stopRequested_ = false;
     for (;;) {
         switch (limit.kind) {
             case RunLimit::Kind::Frames:
@@ -277,7 +288,7 @@ RunResult Machine::run(RunLimit limit) {
             case RunLimit::Kind::UntilBreak:
                 break;
         }
-        if (!stepCpu(result)) {
+        if (!stepCpu<kHooked>(result)) {
             return result;
         }
     }
@@ -304,7 +315,11 @@ RunResult Machine::step(CpuId cpu) {
         clock_.cpuMclk += static_cast<std::uint64_t>(z80_.takeM68kStall()) * kM68kDivider;
         return result;
     }
-    stepCpu(result);
+    if (hooked_) {
+        stepCpu<true>(result);
+    } else {
+        stepCpu<false>(result);
+    }
     return result;
 }
 

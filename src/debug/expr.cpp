@@ -10,8 +10,8 @@ namespace gen::debug {
 namespace {
 
 constexpr std::array<std::string_view, kRegZ80Count> kZ80Names{
-    "a", "f", "b", "c", "d", "e", "h", "l", "i", "r", "af", "bc", "de", "hl", "ix", "iy", "sp", "pc",
-    "af'", "bc'", "de'", "hl'"};
+    "a",  "f",  "b",  "c",  "d",  "e",  "h",  "l",   "i",   "r",   "af",
+    "bc", "de", "hl", "ix", "iy", "sp", "pc", "af'", "bc'", "de'", "hl'"};
 
 std::string lower(std::string_view s) {
     std::string out(s);
@@ -170,9 +170,7 @@ private:
     }
     bool shift() { return binary(&Parser::additive, {{"<<", Op::Shl}, {">>", Op::Shr}}); }
     bool additive() { return binary(&Parser::multiplicative, {{"+", Op::Add}, {"-", Op::Sub}}); }
-    bool multiplicative() {
-        return binary(&Parser::unary, {{"*", Op::Mul}, {"/", Op::Div}, {"%", Op::Mod}});
-    }
+    bool multiplicative() { return binary(&Parser::unary, {{"*", Op::Mul}, {"/", Op::Div}, {"%", Op::Mod}}); }
 
     bool unary() {
         if (accept("-")) {
@@ -209,8 +207,8 @@ private:
         }
         if (pos_ + 1 < text_.size() && text_[pos_] == '.') {
             const char s = static_cast<char>(std::tolower(static_cast<unsigned char>(text_[pos_ + 1])));
-            const bool endOfWord = pos_ + 2 >= text_.size() ||
-                                   std::isalnum(static_cast<unsigned char>(text_[pos_ + 2])) == 0;
+            const bool endOfWord =
+                pos_ + 2 >= text_.size() || std::isalnum(static_cast<unsigned char>(text_[pos_ + 2])) == 0;
             if (endOfWord && (s == 'b' || s == 'w' || s == 'l')) {
                 pos_ += 2;
                 emit(Op::Mask, s == 'b' ? 8 : s == 'w' ? 16 : 32);
@@ -367,8 +365,7 @@ std::int64_t Expr::eval(const EvalContext& ctx) const {
                 stack[sp++] = ctx.variable(static_cast<int>(in.imm));
                 continue;
             case Op::Read:
-                stack[sp - 1] =
-                    ctx.read(static_cast<std::uint32_t>(stack[sp - 1]), static_cast<int>(in.imm));
+                stack[sp - 1] = ctx.read(static_cast<std::uint32_t>(stack[sp - 1]), static_cast<int>(in.imm));
                 continue;
             case Op::Mask:
                 stack[sp - 1] &= static_cast<std::int64_t>((std::uint64_t{1} << in.imm) - 1);
