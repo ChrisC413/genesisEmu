@@ -1,7 +1,7 @@
 # M06-09 · Trace from pause, ring buffer and trace on hit
 
 **Milestone:** [M06 – Debugger & freeze execution](README.md)  
-**Status:** Draft  
+**Status:** Done (text output; binary format not done)  
 **Depends on:** M06-03  
 **Spec refs:** [08-debugger](../../docs/specs/08-debugger.md#tracing-trace-from-pause-d-007)
 
@@ -18,10 +18,19 @@ As a **reverse engineer**, I want to begin tracing from a paused state, with fil
 
 ## Acceptance criteria
 
-- [ ] Pause → begin trace → step 10 → stop yields exactly 10 records
-- [ ] Ring dump after a breakpoint shows the path into it
-- [ ] Tracing overhead off when not tracing
+- [x] Pause → begin trace → step 10 → stop yields exactly 10 records: unit test.
+- [x] Ring dump after a breakpoint shows the path into it: unit test (the last 68k entry is the `rts` before
+  the breakpoint).
+- [x] Tracing overhead off when not tracing: the trace hooks are removed when it stops (unit test checks
+  that no hook is installed) and frame time with an idle debugger is unchanged (PR performance table).
 
 ## Test plan
 
 - Unit tests; manual UI flow
+
+## Notes
+
+- Trace panel: file, PC range, first execution only, frames, record limit, begin / stop; ring buffer switch
+  (opt-in, D-030), size and dump. Breakpoints can begin a trace of N frames on hit.
+- The 68k is traced in the M02-06 text format; the ring buffer covers both CPUs. The compact binary format
+  is not implemented yet.
