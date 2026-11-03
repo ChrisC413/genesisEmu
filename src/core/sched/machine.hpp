@@ -10,9 +10,12 @@
 
 #include "core/bus/io.hpp"
 #include "core/bus/system_bus.hpp"
+#include "core/cart/cart_device.hpp"
+#include "core/cart/sram.hpp"
 #include "core/hooks.hpp"
 #include "core/m68k/m68k.hpp"
 #include "core/vdp/vdp.hpp"
+#include "core/z80/z80.hpp"
 #include "core/z80/z80_control.hpp"
 
 namespace gen {
@@ -28,6 +31,7 @@ struct MachineConfig {
     std::optional<bus::Region> region;  // default: from the cartridge header
     bool tmss = false;                  // model a TMSS console (VDP locked until 'SEGA' is written)
     bool stopOnFault = false;           // run() stops with StopReason::Exception on a fault vector
+    z80::WindowTiming z80Window;        // cost of Z80 accesses to the 68k bank window
 };
 
 struct RunLimit {
@@ -46,7 +50,7 @@ enum class StopReason : std::uint8_t {
     Breakpoint,   // onInstr returned Break; the instruction has not executed
     Watchpoint,   // reserved (M06-04)
     Exception,    // a fault exception was taken and MachineConfig::stopOnFault is set
-    Unsupported,  // step() on a CPU that does not execute yet (Z80 until M04)
+    Unsupported,  // reserved
 };
 const char* toString(StopReason reason);
 
@@ -83,8 +87,17 @@ public:
     void hardReset();
 
     RunResult run(RunLimit limit);
-    // Exactly one instruction on `cpu`; line / frame boundaries it crosses are processed.
+    // Exactly one instruction on `cpu`; line / frame boundaries it crosses are processed. A Z80 step while
+    // the Z80 is held (BUSREQ / RESET) executes nothing and reports 0 instructions.
     RunResult step(CpuId cpu);
+
+    // Controller input (M04-01): the buttons (bus::PadButton mask) of pad `port` (0 or 1). Latched into the
+    // I/O chip once per frame, at the start of the next frame, so a run is deterministic (spec 07).
+    void setInput(int port, std::uint16_t buttons) {
+        pendingInput_[static_cast<std::size_t>(port & 1)] = buttons;
+    }
+    std::uint16_t input(int port) const { return pendingInput_[static_cast<std::size_t>(port & 1)]; }
+    void setPadType(int port, bus::PadType type) { io_.setPadType(port, type); }
 
     void setHooks(const Hooks& hooks);
     const Hooks& hooks() const { return hooks_; }
@@ -106,7 +119,16 @@ public:
     bus::Io& io() { return io_; }
     z80::Z80Control& z80() { return z80_; }
     const z80::Z80Control& z80() const { return z80_; }
+    z80::Z80& z80Cpu() { return *z80cpu_; }
+    const z80::Z80& z80Cpu() const { return *z80cpu_; }
+    std::uint64_t z80Mclk() const { return z80Mclk_; }  // master clock the Z80 has run up to
     const std::vector<std::uint8_t>& rom() const { return rom_; }
+
+    // Cartridge device chain (M04-08). The SRAM controller is created from the header's SRAM declaration
+    // (for a lock-on image, the locked-on cartridge's header) and is null when none is declared.
+    void addCartDevice(std::unique_ptr<cart::ICartDevice> device);
+    cart::SramDevice* sram() { return sram_; }
+    const cart::SramDevice* sram() const { return sram_; }
 
     const MachineStats& stats() const { return stats_; }
 
@@ -117,6 +139,8 @@ private:
     bool stepCpu(RunResult& result);  // false when a breakpoint stopped it
     void endLine();
     void catchUp(std::uint64_t mclk);
+    void runZ80(std::uint64_t mclk);
+    static void syncZ80(void* ctx);
 
     std::vector<std::uint8_t> rom_;
     MachineConfig config_;
@@ -128,10 +152,16 @@ private:
     bus::BusClock clock_;
     std::unique_ptr<bus::SystemBus> bus_;
     std::unique_ptr<m68k::M68k> cpu_;
+    std::unique_ptr<z80::Z80> z80cpu_;
+    std::uint64_t z80Mclk_ = 0;
+    bool inZ80_ = false;
     Hooks hooks_;
     std::uint64_t frame_ = 0;
     int line_ = 0;
     MachineStats stats_;
+    std::array<std::uint16_t, 2> pendingInput_{};
+    std::vector<std::unique_ptr<cart::ICartDevice>> devices_;
+    cart::SramDevice* sram_ = nullptr;
 };
 
 }  // namespace gen

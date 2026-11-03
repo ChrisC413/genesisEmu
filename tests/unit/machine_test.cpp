@@ -61,7 +61,7 @@ TEST_CASE("Instruction limits, single steps and breakpoints", "[sched]") {
     const std::uint32_t pc = m.cpu().state().pc;
     CHECK(m.step(CpuId::M68k).instructions == 1);
     CHECK(m.cpu().state().pc != pc);
-    CHECK(m.step(CpuId::Z80).reason == StopReason::Unsupported);
+    CHECK(m.step(CpuId::Z80).instructions == 0);  // held in reset since power on
 
     struct Ctx {
         std::uint32_t target;

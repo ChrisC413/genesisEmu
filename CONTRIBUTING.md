@@ -35,8 +35,10 @@ Tests that write user data set `GENESISEMU_HOME` so they never touch your real c
 Test suites are downloaded, never committed (spec 13):
 
 ```sh
-python tools/fetch-test-data.py              # SingleStepTests 68000 vectors (~200 MB download) + AS (Windows)
-python tools/fetch-test-data.py --only m68k  # just the CPU vectors
+python tools/fetch-test-data.py              # everything: 68000 + Z80 vectors, ZEXDOC/ZEXALL, AS (Windows)
+python tools/fetch-test-data.py --only m68k  # just the 68000 vectors (~200 MB download)
+python tools/fetch-test-data.py --only z80   # just the Z80 vectors (~1.4 GB download, ~170 MB converted)
+python tools/fetch-test-data.py --only zex   # just ZEXDOC / ZEXALL
 ```
 
 Everything is pinned in `tools/test-data.lock.json` and lands in the ignored `test-data/` folder. Without it the
@@ -46,7 +48,13 @@ macOS, build AS from source and point `GENESIS_ASL` at the `asl` binary. Useful 
 ```sh
 build/win-release/tests/Release/gen_m68k_sst --only MOVE.w --show 3   # one file, print 3 failure diffs
 build/win-release/tests/Release/gen_m68k_bench 100                    # 68000 throughput (MIPS)
+build/win-release/tests/Release/gen_z80_sst --only "ed b" --show 3     # Z80 vectors of some ED opcodes
+build/win-release/tests/Release/gen_z80_zex zexall                     # ZEXALL (~80 s; nightly in CI)
 ```
+
+Scripted-input regressions live in `tests/scripts/` (format in spec 13). Re-record their hashes after an
+intended behavior change with `gen_cli run --rom <image> --input tests/scripts/<name>.txt --update-script`
+and commit with `[golden-update]` and a reason.
 
 ## Formatting
 

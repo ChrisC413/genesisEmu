@@ -1,0 +1,20 @@
+# Sonic 1 REV01: start a game from the title screen and run right through the start of Green Hill Zone act 1.
+# Scripted-input regression (M04-03 / M04-09, spec 13). Hashes only; recorded with --update-script.
+# frame  port  buttons
+rom 69e102855d4389c3fd1a8f3dc7d193f8eee5fe5b
+0        1     -
+620      1     START
+630      1     -
+900      1     RIGHT
+1000     1     RIGHT+C
+1010     1     RIGHT
+1100     1     RIGHT+C
+1110     1     RIGHT
+1200     1     RIGHT+C
+1210     1     RIGHT
+1300     1     -
+checkpoint 640 frame_hash 0b95e176bc48d644
+checkpoint 900 frame_hash c3c9f4ba94dc908c
+checkpoint 1000 frame_hash 8d37ecc594c90656
+checkpoint 1300 frame_hash a2d2f18c8060dd97
+checkpoint 1300 state_hash 15b46a9039a14505

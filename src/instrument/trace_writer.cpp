@@ -185,7 +185,10 @@ void TraceWriter::complete() {
     }
 }
 
-Action TraceWriter::onInstr(void* ctx, CpuId, std::uint32_t pc, std::uint16_t) {
+Action TraceWriter::onInstr(void* ctx, CpuId cpu, std::uint32_t pc, std::uint16_t) {
+    if (cpu != CpuId::M68k) {
+        return Action::Continue;  // the trace format covers the 68k only (Z80 traces arrive with M06)
+    }
     auto& t = *static_cast<TraceWriter*>(ctx);
     t.complete();
     if (!t.frameInRange()) {
@@ -206,15 +209,18 @@ Action TraceWriter::onInstr(void* ctx, CpuId, std::uint32_t pc, std::uint16_t) {
     return Action::Continue;
 }
 
-void TraceWriter::onAccess(void* ctx, CpuId, AccessKind kind, std::uint32_t addr, std::uint8_t size,
+void TraceWriter::onAccess(void* ctx, CpuId cpu, AccessKind kind, std::uint32_t addr, std::uint8_t size,
                            std::uint32_t value, std::uint32_t) {
     auto& t = *static_cast<TraceWriter*>(ctx);
-    if (t.open_ && kind == AccessKind::Write) {
+    if (cpu == CpuId::M68k && t.open_ && kind == AccessKind::Write) {
         t.writes_.push_back(Write{addr, value, size});
     }
 }
 
-void TraceWriter::onIrq(void* ctx, CpuId, int level) {
+void TraceWriter::onIrq(void* ctx, CpuId cpu, int level) {
+    if (cpu != CpuId::M68k) {
+        return;
+    }
     auto& t = *static_cast<TraceWriter*>(ctx);
     t.complete();
     if (t.frameInRange() && !t.config_.pcRange) {

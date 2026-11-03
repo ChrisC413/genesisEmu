@@ -11,7 +11,9 @@
 
 #include "app/panels/panels.hpp"
 #include "common/logging.hpp"
+#include "common/sram_file.hpp"
 #include "core/state/state_hash.hpp"
+#include "core/util/hash.hpp"
 #include "core/version.hpp"
 
 namespace gen::app {
@@ -55,6 +57,15 @@ int App::run(const AppOptions& options) {
         layoutLoaded_ = true;
         layoutRestored_ = true;
     }
+    input_.configure(config_.config.input);
+    {
+        auto& v = gameView_.settings();
+        const auto& cv = config_.config.view;
+        v.scale = cv.scale == "integer" ? GameViewSettings::Scale::Integer : GameViewSettings::Scale::Fit;
+        v.aspectCorrect = cv.aspectCorrect;
+        v.linearFilter = cv.linearFilter;
+        v.showOverlay = cv.showOverlay;
+    }
     lockOnPath_ = options.lockOn;
     fastForwardLatched_ = options.fastForward;
     if (options.rom && !openRom(*options.rom) && options.smokeFrames > 0) {
@@ -67,6 +78,7 @@ int App::run(const AppOptions& options) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL3_ProcessEvent(&event);
+            input_.handleEvent(event, !ImGui::GetIO().WantTextInput);
             switch (event.type) {
                 case SDL_EVENT_QUIT:
                     quit_ = true;
@@ -93,12 +105,10 @@ int App::run(const AppOptions& options) {
             continue;
         }
 
+        handleHotkeys();
         stepEmulation(options.smokeFrames > 0);
         window_.beginFrame();
-        if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
-            running_ = !running_;
-        }
-        fastForwardActive_ = !ImGui::GetIO().WantTextInput && ImGui::IsKeyDown(ImGuiKey_Tab);
+        fastForwardActive_ = input_.hotkeyHeld("fast-forward", !ImGui::GetIO().WantTextInput);
         if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_O, ImGuiInputFlags_RouteGlobal)) {
             romDialog_.open(window_.handle(),
                             romPath_.empty() ? std::nullopt : std::optional(romPath_.parent_path()));
@@ -107,6 +117,11 @@ int App::run(const AppOptions& options) {
         drawMenuBar();
         gameView_.draw(&showGameView_, rom_, overlayText());
         drawRomInfo(&showRomInfo_, rom_);
+        if (input_.drawPanel(&showInput_)) {
+            config_.config.input = input_.config();
+            applyPadTypes();
+            saveConfig();
+        }
         drawPopups();
         const bool lastSmokeFrame = options.smokeFrames > 0 && frame + 1 >= options.smokeFrames;
         if (!window_.endFrame(lastSmokeFrame && options.screenshot ? &*options.screenshot : nullptr)) {
@@ -127,6 +142,7 @@ int App::run(const AppOptions& options) {
                       emulatedFrames_, coreMsTotal_ / static_cast<double>(emulatedFrames_), peakFps_);
     }
     const int result = options.smokeFrames > 0 ? smokeCheck(options) : kAppOk;
+    flushSram();
     persistLayout();
     window_.logicalSize(config_.config.ui.windowWidth, config_.config.ui.windowHeight,
                         config_.config.ui.windowMaximized);
@@ -238,6 +254,11 @@ void App::drawMenuBar() {
             accumulator_ = 0;
         }
         ImGui::MenuItem("Fast-forward", "hold Tab", &fastForwardLatched_, machine_ != nullptr);
+        if (ImGui::MenuItem("Step Frame", "F6", false, machine_ != nullptr && !running_)) {
+            stepFrame_ = true;
+        }
+        ImGui::Separator();
+        ImGui::MenuItem("Input...", nullptr, &showInput_);
         if (ImGui::BeginMenu("Region", false)) {
             ImGui::EndMenu();
         }
@@ -307,6 +328,12 @@ void App::persistLayout() {
 }
 
 void App::saveConfig() {
+    const auto& v = gameView_.settings();
+    auto& cv = config_.config.view;
+    cv.scale = v.scale == GameViewSettings::Scale::Integer ? "integer" : "fit";
+    cv.aspectCorrect = v.aspectCorrect;
+    cv.linearFilter = v.linearFilter;
+    cv.showOverlay = v.showOverlay;
     if (!config_.save()) {
         log::get(log::Subsystem::Config).error("{}", config_.warnings.back());
     }
@@ -359,7 +386,16 @@ void App::startMachine() {
             logger().error("lock-on: {}", locked.error);
         }
     }
+    flushSram();  // the previous game's battery save
+    machineSha1_ = toHex(sha1(image));
     machine_ = std::make_unique<Machine>(std::move(image), regions);
+    applyPadTypes();
+    if (cart::SramDevice* sram = machine_->sram()) {
+        const auto path = common::sramPath(paths_, machineSha1_);
+        if (common::loadSram(*sram, path)) {
+            logger().info("battery save loaded from '{}'", common::toUtf8(path));
+        }
+    }
     gameView_.clear();
     running_ = true;
     accumulator_ = 0;
@@ -378,6 +414,17 @@ void App::stepEmulation(bool smoke) {
         fpsFrames_ = 0;
         fpsStart_ = now;
     }
+    if (machine_ && !running_ && stepFrame_) {
+        machine_->setInput(0, input_.buttons(0, true));
+        machine_->setInput(1, input_.buttons(1, true));
+        machine_->run(RunLimit::frames(1));
+        gameView_.upload(machine_->vdp());
+    }
+    stepFrame_ = false;
+    if (machine_ && now - lastSramCheck_ > static_cast<std::uint64_t>(freq * 2)) {
+        lastSramCheck_ = now;
+        flushSram();  // periodically while dirty (spec 04)
+    }
     if (!machine_ || !running_) {
         accumulator_ = 0;
         return;
@@ -385,7 +432,10 @@ void App::stepEmulation(bool smoke) {
     const double period = machine_->pal() ? 1.0 / 49.70 : 1.0 / 59.92;
     const auto elapsed = [&] { return static_cast<double>(SDL_GetPerformanceCounter() - now) / freq; };
     int frames = 0;
+    const bool keyboardFree = !ImGui::GetIO().WantTextInput;
     const auto runFrame = [&] {
+        machine_->setInput(0, input_.buttons(0, keyboardFree));
+        machine_->setInput(1, input_.buttons(1, keyboardFree));
         machine_->run(RunLimit::frames(1));
         ++frames;
     };
@@ -437,6 +487,40 @@ std::string App::overlayText() const {
         text += std::format(" | fast-forward {:.1f}x", framesPerSecond_ / 59.92);
     }
     return text;
+}
+
+void App::handleHotkeys() {
+    for (const std::string& action : input_.takeHotkeys()) {
+        if (action == "pause") {
+            running_ = !running_;
+        } else if (action == "step-frame") {
+            stepFrame_ = !running_;
+        } else {
+            // Step instruction / step over / save and load state arrive with the debugger and save states
+            // (M06).
+            logger().info("hotkey '{}' is not available yet", action);
+        }
+    }
+}
+
+void App::applyPadTypes() {
+    if (machine_) {
+        machine_->setPadType(0, input_.padType(0));
+        machine_->setPadType(1, input_.padType(1));
+    }
+}
+
+void App::flushSram() {
+    cart::SramDevice* sram = machine_ ? machine_->sram() : nullptr;
+    if (sram == nullptr || !sram->dirty() || machineSha1_.empty()) {
+        return;
+    }
+    const auto path = common::sramPath(paths_, machineSha1_);
+    if (common::saveSram(*sram, path)) {
+        logger().info("battery save written to '{}'", common::toUtf8(path));
+    } else {
+        logger().error("cannot write battery save '{}'", common::toUtf8(path));
+    }
 }
 
 }  // namespace gen::app

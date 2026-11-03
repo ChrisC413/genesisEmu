@@ -1,0 +1,22 @@
+# Sonic 3 & Knuckles (S&K + Sonic 3 USA lock-on): start from the title screen, pick NO SAVE on the data
+# select screen and run right through the start of Angel Island Zone act 1 (after the intro cutscene).
+# Scripted-input regression (M04-03 / M04-09, spec 13). Hashes only; recorded with --update-script.
+# frame  port  buttons
+rom cfbf98c36c776677290a872547ac47c53d2761d6
+0        1     -
+620      1     START
+630      1     -
+800      1     START
+810      1     -
+1500     1     RIGHT
+2000     1     RIGHT+C
+2010     1     RIGHT
+2200     1     RIGHT+C
+2210     1     RIGHT
+2400     1     -
+checkpoint 640 frame_hash fad65dd9698296af
+checkpoint 820 frame_hash 35d574f77baaa7e9
+checkpoint 1500 frame_hash 1d5654ea8284405a
+checkpoint 2000 frame_hash 94ee8cb63d3e7c0a
+checkpoint 2400 frame_hash 11d9e87652e8206d
+checkpoint 2400 state_hash 0d37721054ea2e76

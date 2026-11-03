@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 
+#include "app/input.hpp"
 #include "app/panels/panels.hpp"
 #include "app/platform/file_dialog.hpp"
 #include "app/platform/window.hpp"
@@ -49,6 +50,9 @@ private:
     int smokeCheck(const AppOptions& options) const;
     void startMachine();
     void stepEmulation(bool smoke);
+    void handleHotkeys();
+    void applyPadTypes();
+    void flushSram();  // writes dirty battery SRAM to <sha1>.srm
     std::string overlayText() const;
 
     common::AppPaths paths_;
@@ -60,6 +64,11 @@ private:
     std::optional<std::filesystem::path> lockOnPath_;
     std::unique_ptr<Machine> machine_;
     GameView gameView_;
+    InputManager input_;
+    std::string machineSha1_;  // SHA-1 of the running image (lock-on: combined), keys the .srm file
+    std::uint64_t lastSramCheck_ = 0;
+    bool showInput_ = false;
+    bool stepFrame_ = false;
 
     // Emulation pacing (M03-10): one emulated frame per host vsync when the display runs at ~60 Hz,
     // otherwise an accumulator against the 59.92 / 49.70 Hz frame period. Tab or the menu fast-forwards.

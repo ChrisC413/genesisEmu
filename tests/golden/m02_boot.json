@@ -2,8 +2,8 @@
   "emulatorVersion": "0.0.1",
   "description": "M02-07 boot smoke tests: per canonical ROM (D-023) the SHA-1, the address window (decimal) the V-int interrupts in the wait loop, and the state hash after 600 frames. Numbers only; no ROM bytes. Changing them needs a [golden-update] commit with a reason (spec 13).",
   "games": [
-    { "name": "Sonic 1 REV01", "sha1": "69e102855d4389c3fd1a8f3dc7d193f8eee5fe5b", "waitLoop": [10660, 10664], "stateHash": "793eb5e74712ec60" },
-    { "name": "Sonic 2 REV01", "sha1": "8bca5dcef1af3e00098666fd892dc1c2a76333f9", "waitLoop": [13192, 13196], "stateHash": "ad60856426fb4a4b" },
-    { "name": "Sonic 3 & Knuckles (S&K + Sonic 3 USA)", "sha1": "cfbf98c36c776677290a872547ac47c53d2761d6", "waitLoop": [7452, 7456], "stateHash": "85c08ab0a41ce5ee" }
+    { "name": "Sonic 1 REV01", "sha1": "69e102855d4389c3fd1a8f3dc7d193f8eee5fe5b", "waitLoop": [10660, 10664], "stateHash": "26d542910c3bb522" },
+    { "name": "Sonic 2 REV01", "sha1": "8bca5dcef1af3e00098666fd892dc1c2a76333f9", "waitLoop": [13192, 13196], "stateHash": "73b09841010c2b4c" },
+    { "name": "Sonic 3 & Knuckles (S&K + Sonic 3 USA)", "sha1": "cfbf98c36c776677290a872547ac47c53d2761d6", "waitLoop": [7452, 7456], "stateHash": "bc1fc1ee9815037e" }
   ]
 }

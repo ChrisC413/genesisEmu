@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "core/bus/io.hpp"
+#include "core/cart/cart_device.hpp"
 #include "core/m68k/m68k.hpp"
 #include "core/vdp/vdp.hpp"
 #include "core/z80/z80_control.hpp"
@@ -17,7 +18,8 @@ namespace gen::bus {
 
 inline constexpr std::size_t kWorkRamSize = 0x10000;
 
-enum class PageKind : std::uint8_t { Unmapped, Rom, Ram, Z80, Io, Vdp };
+// Cart: ROM pages a cartridge device overlays (SRAM); accesses go through the device chain first.
+enum class PageKind : std::uint8_t { Unmapped, Rom, Ram, Z80, Io, Vdp, Cart };
 
 enum class BusIssue : std::uint8_t {
     Unmapped,     // nothing decodes the address (open bus on read, dropped on write)
@@ -46,7 +48,6 @@ struct BusClock {
 struct BusState {
     std::array<std::uint8_t, kWorkRamSize> ram{};
     std::uint32_t tmssRegister = 0;  // $A14000 (long)
-    std::uint8_t sramControl = 0;    // $A130F1
 };
 
 class SystemBus final : public m68k::Bus68k {
@@ -55,6 +56,8 @@ public:
 
     // `rom` must outlive the bus. Rebuilds the page table.
     void attach(const std::vector<std::uint8_t>& rom, m68k::M68k& cpu, bool tmss);
+    // The cartridge device chain (owned by the Machine), in priority order. Rebuilds the page table.
+    void setCartDevices(std::vector<cart::ICartDevice*> devices);
     void reset();
 
     std::uint8_t read8(std::uint32_t addr) override;
@@ -65,6 +68,12 @@ public:
 
     // Recomputes the 68k IPL from the VDP (after line events and VDP register writes).
     void updateIrq();
+
+    // Called before the 68k changes BUSREQ / RESET so the Z80 can first run up to the current time.
+    void setZ80Sync(void (*fn)(void*), void* ctx) {
+        z80Sync_ = fn;
+        z80SyncCtx_ = ctx;
+    }
 
     PageKind pageKind(std::uint32_t addr) const { return pages_[(addr >> 16) & 0xFF]; }
     bool vdpLocked() const { return tmss_ && state_.tmssRegister != 0x53454741; }  // 'SEGA'
@@ -83,6 +92,9 @@ private:
     void report(BusIssue issue, std::uint32_t addr, std::uint8_t size, std::uint32_t value, bool write);
     int lineMclk() const { return static_cast<int>(clock_.cpuMclk - clock_.lineStart); }
 
+    void buildPages();
+    std::uint8_t cartRead8(std::uint32_t addr);
+    bool cartWrite8(std::uint32_t addr, std::uint8_t value);  // false: nothing consumed it (ROM write)
     std::uint16_t readZ80(std::uint32_t addr, std::uint8_t size);
     void writeZ80(std::uint32_t addr, std::uint8_t value, std::uint8_t size);
     std::uint16_t readIo(std::uint32_t addr, std::uint8_t size);
@@ -101,7 +113,10 @@ private:
     std::array<PageKind, 256> pages_{};
     BusState state_;
     std::vector<BusIssueRecord> issues_;
+    std::vector<cart::ICartDevice*> devices_;
     std::array<std::uint64_t, kBusIssueCount> issueCounts_{};
+    void (*z80Sync_)(void*) = nullptr;
+    void* z80SyncCtx_ = nullptr;
 };
 
 }  // namespace gen::bus

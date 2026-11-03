@@ -71,7 +71,8 @@
       "name": "test-base",
       "hidden": true,
       "output": { "outputOnFailure": true },
-      "execution": { "noTestsAction": "error" }
+      "execution": { "noTestsAction": "error" },
+      "filter": { "exclude": { "label": "z80-zex" } }
     },
     { "name": "win-debug", "inherits": "test-base", "configurePreset": "win-debug", "configuration": "Debug" },
     { "name": "win-release", "inherits": "test-base", "configurePreset": "win-release", "configuration": "Release" },

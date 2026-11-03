@@ -73,10 +73,11 @@ jobs:
           restore-keys: vcpkg-x64-windows-static-md-${{ env.VCPKG_COMMIT }}-
 
       - name: Configure
-        # Release runs all ~1M SingleStepTests vectors (a few seconds); Debug the first 250 per file.
+        # Release runs all ~1M 68000 and 1.6M Z80 SingleStepTests vectors (a few seconds); Debug a subset.
         run: >-
           cmake --preset win-${{ matrix.config }} -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
           -DGENESIS_SST_LIMIT=${{ matrix.config == 'release' && '0' || '250' }}
+          -DGENESIS_Z80_SST_LIMIT=${{ matrix.config == 'release' && '0' || '100' }}
 
       - name: Save vcpkg binary cache
         # Also after a failed configure: vcpkg has usually finished building by then.
@@ -106,6 +107,22 @@ jobs:
         with:
           path: test-data/m68k
           key: sst-${{ hashFiles('tools/test-data.lock.json', 'tools/fetch-test-data.py') }}
+      - name: Restore SingleStepTests Z80 vectors
+        id: z80-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: test-data/z80
+          key: z80-${{ hashFiles('tools/test-data.lock.json', 'tools/fetch-test-data.py') }}
+      - name: Fetch SingleStepTests Z80 vectors
+        if: steps.z80-cache.outputs.cache-hit != 'true'
+        run: python tools/fetch-test-data.py --only z80
+      - name: Save SingleStepTests Z80 vectors
+        if: steps.z80-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: test-data/z80
+          key: z80-${{ hashFiles('tools/test-data.lock.json', 'tools/fetch-test-data.py') }}
       - name: Restore AS assembler
         id: as-cache
         uses: actions/cache/restore@v5
