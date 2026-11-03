@@ -83,9 +83,11 @@ TEST_CASE("Instruction limits, single steps and breakpoints", "[sched]") {
     CHECK(r.reason == StopReason::Breakpoint);
     CHECK(m.cpu().state().pc == test::kBootVintHandler);
     CHECK(ctx.hits == 1);
-    // Resumable: the next run executes the instruction and stops at the next V-int.
+    // Resumable: the next run executes the instruction (the hook sees it again but cannot break it twice)
+    // and stops at the next V-int.
     CHECK(m.run(RunLimit::untilBreak()).reason == StopReason::Breakpoint);
-    CHECK(ctx.hits == 2);
+    CHECK(m.cpu().state().pc == test::kBootVintHandler);
+    CHECK(ctx.hits == 3);
 }
 
 TEST_CASE("Boot ROM: Z80 upload, VDP memories, one V-int per frame, wait loop", "[sched][boot]") {

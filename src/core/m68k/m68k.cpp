@@ -199,8 +199,9 @@ int M68k::step() {
         return 4;
     }
 
-    if (c.hooks.onInstr != nullptr && !c.skipBreak) {
-        if (c.hooks.onInstr(c.hooks.ctx, CpuId::M68k, c.s.pc, c.s.ir) == Action::Break) {
+    // After a break the hook still sees the instruction (tracers log it) but cannot stop it a second time.
+    if (c.hooks.onInstr != nullptr) {
+        if (c.hooks.onInstr(c.hooks.ctx, CpuId::M68k, c.s.pc, c.s.ir) == Action::Break && !c.skipBreak) {
             c.broke = true;
             c.skipBreak = true;
             return 0;

@@ -105,7 +105,7 @@ public:
 
     // Executes one instruction, or takes a pending interrupt / exception, and returns the cycles used. If the
     // onInstr hook asks to break, nothing executes, 0 is returned and breakHit() is true; the next step()
-    // then runs that instruction without consulting the hook again.
+    // then runs that instruction: the hook is called again but a second Break is ignored.
     int step();
     bool breakHit() const;
 

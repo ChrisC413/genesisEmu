@@ -45,20 +45,22 @@ struct MachineConfig {
 };
 
 struct RunLimit {
-    enum class Kind : std::uint8_t { Frames, Instructions, Mclk, UntilBreak };
+    enum class Kind : std::uint8_t { Frames, Instructions, Mclk, Lines, UntilBreak };
     Kind kind = Kind::Frames;
     std::uint64_t count = 1;
 
     static RunLimit frames(std::uint64_t n) { return {Kind::Frames, n}; }
     static RunLimit instructions(std::uint64_t n) { return {Kind::Instructions, n}; }
     static RunLimit mclk(std::uint64_t n) { return {Kind::Mclk, n}; }
+    // Until `n` scanline boundaries have passed (the 68k stops at the first instruction of the new line).
+    static RunLimit lines(std::uint64_t n) { return {Kind::Lines, n}; }
     static RunLimit untilBreak() { return {Kind::UntilBreak, 0}; }
 };
 
 enum class StopReason : std::uint8_t {
     LimitReached,
-    Breakpoint,   // onInstr returned Break; the instruction has not executed
-    Watchpoint,   // reserved (M06-04)
+    Breakpoint,   // onInstr returned Break (on RunResult::cpu); that instruction has not executed
+    Watchpoint,   // requestStop(): stopped after the 68k instruction during which the request was made
     Exception,    // a fault exception was taken and MachineConfig::stopOnFault is set
     Unsupported,  // reserved
 };
@@ -68,6 +70,7 @@ struct RunResult {
     StopReason reason = StopReason::LimitReached;
     std::uint64_t instructions = 0;  // 68k instructions (and exception entries) executed
     int vector = -1;                 // for StopReason::Exception
+    CpuId cpu = CpuId::M68k;         // the CPU that broke (Breakpoint) or the request named (Watchpoint)
 };
 
 // True for exception vectors that indicate a program error: bus/address error, illegal, divide by zero,
@@ -95,6 +98,9 @@ public:
     Machine& operator=(const Machine&) = delete;
 
     void hardReset();
+    // The console's reset button: only the 68k takes its reset exception (SSP and PC from the vectors);
+    // memory, the VDP, the Z80 side and the sound chips keep running state.
+    void softReset();
 
     RunResult run(RunLimit limit);
     // Exactly one instruction on `cpu`; line / frame boundaries it crosses are processed. A Z80 step while
@@ -111,6 +117,13 @@ public:
 
     void setHooks(const Hooks& hooks);
     const Hooks& hooks() const { return hooks_; }
+    // Debugger (M06-04): make run() / step() return `reason` once the current 68k instruction is complete.
+    // Called from a hook (a watchpoint in onAccess, a Z80 or VDP event); harmless outside run().
+    void requestStop(StopReason reason, CpuId cpu) {
+        stopRequested_ = true;
+        requestedStop_ = reason;
+        requestedStopCpu_ = cpu;
+    }
 
     std::uint64_t frame() const { return frame_; }
     int line() const { return line_; }
@@ -136,6 +149,12 @@ public:
     audio::SoundSystem& sound() { return sound_; }
     const audio::SoundSystem& sound() const { return sound_; }
     const std::vector<std::uint8_t>& rom() const { return rom_; }
+    // Debugger ROM patch (M06-06): changes one byte of the cartridge image in place (not part of a state).
+    void patchRom(std::uint32_t addr, std::uint8_t value) {
+        if (addr < rom_.size()) {
+            rom_[addr] = value;
+        }
+    }
     // SHA-1 of the image as passed to the constructor (before padding); save states are tied to it.
     const Sha1Digest& romSha1() const { return romSha1_; }
 
@@ -188,6 +207,9 @@ private:
     std::uint64_t z80Mclk_ = 0;
     std::uint64_t vintAt_ = 0;  // master clock the armed V-int is raised at (see endLine)
     bool inZ80_ = false;
+    bool stopRequested_ = false;
+    StopReason requestedStop_ = StopReason::Watchpoint;
+    CpuId requestedStopCpu_ = CpuId::M68k;
     Hooks hooks_;
     std::uint64_t frame_ = 0;
     int line_ = 0;

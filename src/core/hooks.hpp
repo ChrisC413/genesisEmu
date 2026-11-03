@@ -16,6 +16,9 @@ enum class AccessKind : std::uint8_t {
 
 enum class Action : std::uint8_t { Continue, Break };
 
+// What a VDP write reached (onVdpWrite).
+enum class VdpWriteKind : std::uint8_t { Register, Vram, Cram, Vsram };
+
 struct DmaEvent;  // defined with the VDP (M03)
 
 struct Hooks {
@@ -33,6 +36,14 @@ struct Hooks {
                         std::uint8_t value, std::uint16_t pc) = nullptr;
     // An interrupt was accepted at `level` (1-7).
     void (*onIrq)(void* ctx, CpuId cpu, int level) = nullptr;
+    // The 68k entered an exception, trap or interrupt (`vector`, e.g. 30 = V-int); raised by the scheduler
+    // after the entry, so the PC is the handler's first instruction. `pc` is the instruction (or the
+    // interrupted PC) that caused it.
+    void (*onException)(void* ctx, CpuId cpu, int vector, std::uint32_t pc) = nullptr;
+    // A VDP register write (`addr` = register number) or a write to VRAM / CRAM / VSRAM through the data
+    // port or a 68k -> VDP DMA (`addr` = byte address in that memory), before it is stored. Fill and copy
+    // DMAs are reported through onDma only.
+    void (*onVdpWrite)(void* ctx, VdpWriteKind kind, std::uint32_t addr, std::uint16_t value) = nullptr;
     void (*onFrameEnd)(void* ctx, std::uint64_t frame) = nullptr;
 };
 

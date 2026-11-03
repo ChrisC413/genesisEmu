@@ -78,6 +78,9 @@ void Vdp::writeVram(std::uint16_t addr, std::uint8_t value) {
 }
 
 void Vdp::writeTarget(std::uint16_t value) {
+    if (hooks_ != nullptr && hooks_->onVdpWrite != nullptr) {
+        reportWrite(value);
+    }
     switch (s_.code & 0x0F) {
         case kCodeVramWrite: {  // an odd address swaps the bytes
             const std::uint16_t v =
@@ -103,6 +106,22 @@ void Vdp::writeTarget(std::uint16_t value) {
             break;
     }
     s_.address = static_cast<std::uint16_t>(s_.address + autoIncrement());
+}
+
+void Vdp::reportWrite(std::uint16_t value) const {
+    switch (s_.code & 0x0F) {
+        case kCodeVramWrite:
+            hooks_->onVdpWrite(hooks_->ctx, VdpWriteKind::Vram, s_.address & 0xFFFEu, value);
+            break;
+        case kCodeCramWrite:
+            hooks_->onVdpWrite(hooks_->ctx, VdpWriteKind::Cram, s_.address & 0x7Eu, value);
+            break;
+        case kCodeVsramWrite:
+            hooks_->onVdpWrite(hooks_->ctx, VdpWriteKind::Vsram, s_.address & 0x7Eu, value);
+            break;
+        default:
+            break;
+    }
 }
 
 std::uint16_t Vdp::readData() {
@@ -266,6 +285,10 @@ void Vdp::writeControl(std::uint16_t value) {
     }
     if ((value & 0xC000) == 0x8000) {  // register write: 10?R RRRR DDDD DDDD
         const int reg = (value >> 8) & 0x1F;
+        if (hooks_ != nullptr && hooks_->onVdpWrite != nullptr) {
+            hooks_->onVdpWrite(hooks_->ctx, VdpWriteKind::Register, static_cast<std::uint32_t>(reg),
+                               static_cast<std::uint16_t>(value & 0xFF));
+        }
         if (reg < kRegisterCount) {
             s_.regs[static_cast<std::size_t>(reg)] = static_cast<std::uint8_t>(value);
         }

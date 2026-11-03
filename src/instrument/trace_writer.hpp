@@ -48,6 +48,13 @@ public:
     void finish();
 
     std::uint64_t records() const { return records_; }
+    // True once maxRecords have been written or the frame range is over (nothing more will be logged).
+    bool done() const;
+
+    // Driven use (M06-09): a debugger that owns the hooks forwards its 68k events here instead of attach().
+    void instr(std::uint32_t pc);
+    void write(std::uint32_t addr, std::uint8_t size, std::uint32_t value);
+    void irq(int level);
 
     static constexpr const char* kHeader = "# genesisEmu trace v1";
 

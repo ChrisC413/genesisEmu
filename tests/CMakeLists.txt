@@ -15,6 +15,7 @@ add_executable(gen_unit_tests
   unit/bus_test.cpp
   unit/cart_device_test.cpp
   unit/config_test.cpp
+  unit/debugger_test.cpp
   unit/disasm68k_test.cpp
   unit/disasmz80_test.cpp
   unit/hash_test.cpp
@@ -33,7 +34,7 @@ add_executable(gen_unit_tests
   unit/z80_system_test.cpp
 )
 target_include_directories(gen_unit_tests PRIVATE unit)
-target_link_libraries(gen_unit_tests PRIVATE gen_analysis gen_common gen_test_support Catch2::Catch2WithMain)
+target_link_libraries(gen_unit_tests PRIVATE gen_debug gen_analysis gen_common gen_test_support Catch2::Catch2WithMain)
 genesis_set_warnings(gen_unit_tests)
 catch_discover_tests(gen_unit_tests DISCOVERY_MODE PRE_TEST PROPERTIES LABELS unit)
 

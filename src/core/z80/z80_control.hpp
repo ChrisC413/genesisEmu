@@ -81,6 +81,10 @@ public:
 
     // BusZ80: the Z80's own view.
     std::uint8_t read8(std::uint16_t addr) override;
+    // Z80 RAM only; the YM, the bank window and the VDP read as $FF (reading them has side effects).
+    std::uint8_t peek8(std::uint16_t addr) override {
+        return addr < 0x4000 ? s_.ram[addr & (kRamSize - 1)] : 0xFF;
+    }
     void write8(std::uint16_t addr, std::uint8_t value) override;
 
     // 68k cycles the 68k loses to Z80 window accesses since the last call.

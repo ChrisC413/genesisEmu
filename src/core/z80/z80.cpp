@@ -448,7 +448,7 @@ int Z80::step() {
     }
     pc0_ = s_.pc;
     if (hooks_ != nullptr && hooks_->onInstr != nullptr) {
-        const std::uint8_t peek = bus_.read8(s_.pc);
+        const std::uint8_t peek = bus_.peek8(s_.pc);
         if (hooks_->onInstr(hooks_->ctx, CpuId::Z80, s_.pc, peek) == Action::Break) {
             breakHit_ = true;
             return 0;
