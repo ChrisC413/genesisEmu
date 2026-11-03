@@ -1,7 +1,7 @@
 # M06-08 · Save states
 
 **Milestone:** [M06 – Debugger & freeze execution](README.md)  
-**Status:** Draft  
+**Status:** In progress (all but the coverage criterion)  
 **Depends on:** M06-01  
 **Spec refs:** [08-debugger](../../docs/specs/08-debugger.md#save-states)
 
@@ -28,9 +28,18 @@ once coverage exists (M07), and reading older chunk versions when a chunk first 
 
 - [x] Determinism: save → run 600 frames → hash equals load → run 600 frames → hash (M06-00a)
 - [x] State from another ROM refused (M06-00a)
-- [ ] Coverage unaffected by loading
+- [ ] Coverage unaffected by loading: coverage does not exist yet (M07).
+- [x] Named states with 160×112 thumbnails: optional `THMB` chunk, unit test (thumbnail matches the
+  framebuffer, loading ignores it, a corrupt one is just missing); the Save States panel lists slots and named
+  states with their pictures (checked in a screenshot); File > Save State As / Load State File.
 
 ## Test plan
 
 - `[rom]` determinism test
 - Unit tests for chunk versioning
+
+## Notes
+
+- M06-08 remainder (this PR): `Machine::saveState(timestamp, thumbnail)`, `state::peekThumbnail`, the Save
+  States panel, a state file dialog. The app and `gen_cli --save-state-at` write thumbnails.
+- Reading older chunk versions: nothing to do until a chunk version changes (all are still version 1).
