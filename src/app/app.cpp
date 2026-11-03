@@ -1033,9 +1033,15 @@ void App::drawStatesPanel() {
             } else {
                 ImGui::Text("frame %llu", static_cast<unsigned long long>(e.frame));
                 if (e.timestamp != 0) {
-                    const auto when = std::chrono::floor<std::chrono::seconds>(
-                        std::chrono::system_clock::from_time_t(static_cast<std::time_t>(e.timestamp)));
-                    ImGui::TextDisabled("%s UTC", std::format("{:%Y-%m-%d %H:%M:%S}", when).c_str());
+                    // Calendar arithmetic only (no chrono formatters, which older libc++ lacks).
+                    const auto secs = static_cast<std::int64_t>(e.timestamp);
+                    const std::chrono::sys_days day{std::chrono::days{secs / 86400}};
+                    const std::chrono::year_month_day ymd{day};
+                    const std::int64_t rest = secs % 86400;
+                    ImGui::TextDisabled("%04d-%02u-%02u %02d:%02d:%02d UTC", static_cast<int>(ymd.year()),
+                                        static_cast<unsigned>(ymd.month()), static_cast<unsigned>(ymd.day()),
+                                        static_cast<int>(rest / 3600), static_cast<int>(rest / 60 % 60),
+                                        static_cast<int>(rest % 60));
                 }
             }
             ImGui::TableNextColumn();
