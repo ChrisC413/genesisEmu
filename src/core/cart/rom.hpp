@@ -106,8 +106,7 @@ LoadResult loadRom(std::vector<std::uint8_t> file, std::string_view fileName);
 LoadResult loadRomFile(const std::filesystem::path& path);
 
 // Sonic & Knuckles lock-on: the combined image is the locking cartridge (S&K, 2 MB) followed by the
-// locked-on cartridge (e.g. Sonic 3). Loading lock-on pairs is backlog BL-03; these helpers only identify
-// one.
+// locked-on cartridge (e.g. Sonic 3). The app and CLI load a pair with --lock-on=<file>.
 std::vector<std::uint8_t> lockOnImage(std::span<const std::uint8_t> lockingCart,
                                       std::span<const std::uint8_t> lockedOnCart);
 const KnownRom* identifyLockOn(std::span<const std::uint8_t> lockingCart,

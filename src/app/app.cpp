@@ -58,6 +58,9 @@ int App::run(const AppOptions& options) {
         layoutRestored_ = true;
     }
     input_.configure(config_.config.input);
+    if (std::string audioError; !audio_.open(audioError)) {
+        log::get(log::Subsystem::Audio).warn("{}; running without sound", audioError);
+    }
     {
         auto& v = gameView_.settings();
         const auto& cv = config_.config.view;
@@ -117,6 +120,7 @@ int App::run(const AppOptions& options) {
         drawMenuBar();
         gameView_.draw(&showGameView_, rom_, overlayText());
         drawRomInfo(&showRomInfo_, rom_);
+        drawSoundPanel();
         if (input_.drawPanel(&showInput_)) {
             config_.config.input = input_.config();
             applyPadTypes();
@@ -259,6 +263,7 @@ void App::drawMenuBar() {
         }
         ImGui::Separator();
         ImGui::MenuItem("Input...", nullptr, &showInput_);
+        ImGui::MenuItem("Sound...", nullptr, &showSound_);
         if (ImGui::BeginMenu("Region", false)) {
             ImGui::EndMenu();
         }
@@ -390,6 +395,10 @@ void App::startMachine() {
     machineSha1_ = toHex(sha1(image));
     machine_ = std::make_unique<Machine>(std::move(image), regions);
     applyPadTypes();
+    audio_.setSourceRate(machine_->sound().sampleRate());
+    if (wav_.isOpen()) {
+        wav_.close();
+    }
     if (cart::SramDevice* sram = machine_->sram()) {
         const auto path = common::sramPath(paths_, machineSha1_);
         if (common::loadSram(*sram, path)) {
@@ -418,6 +427,7 @@ void App::stepEmulation(bool smoke) {
         machine_->setInput(0, input_.buttons(0, true));
         machine_->setInput(1, input_.buttons(1, true));
         machine_->run(RunLimit::frames(1));
+        machine_->sound().clearSamples();  // a single stepped frame is not played
         gameView_.upload(machine_->vdp());
     }
     stepFrame_ = false;
@@ -425,6 +435,8 @@ void App::stepEmulation(bool smoke) {
         lastSramCheck_ = now;
         flushSram();  // periodically while dirty (spec 04)
     }
+    audio_.setPaused(!machine_ || !running_);
+    audio_.setMuted(fastForwardActive_ || fastForwardLatched_);  // spec 06: mute while fast-forwarding
     if (!machine_ || !running_) {
         accumulator_ = 0;
         return;
@@ -436,7 +448,11 @@ void App::stepEmulation(bool smoke) {
     const auto runFrame = [&] {
         machine_->setInput(0, input_.buttons(0, keyboardFree));
         machine_->setInput(1, input_.buttons(1, keyboardFree));
+        machine_->sound().setChannelMask(channelMask());
         machine_->run(RunLimit::frames(1));
+        audio_.push(machine_->sound().samples());
+        wav_.write(machine_->sound().samples());
+        machine_->sound().clearSamples();
         ++frames;
     };
     if (fastForwardActive_ || fastForwardLatched_) {

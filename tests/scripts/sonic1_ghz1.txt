@@ -14,7 +14,9 @@ rom 69e102855d4389c3fd1a8f3dc7d193f8eee5fe5b
 1210     1     RIGHT
 1300     1     -
 checkpoint 640 frame_hash 0b95e176bc48d644
-checkpoint 900 frame_hash c3c9f4ba94dc908c
-checkpoint 1000 frame_hash 8d37ecc594c90656
-checkpoint 1300 frame_hash a2d2f18c8060dd97
-checkpoint 1300 state_hash 15b46a9039a14505
+checkpoint 900 frame_hash c4e8401a9e4252da
+checkpoint 1000 frame_hash 9a459c87cf1ec397
+checkpoint 1300 frame_hash f80ee54d59df6778
+checkpoint 1300 state_hash e65ddceb139e630e
+checkpoint 600 audio_hash 7f918422fb08ab4e  # SEGA chant + title music (M05-06)
+checkpoint 1300 audio_hash 0dacd6c229bcddd0
