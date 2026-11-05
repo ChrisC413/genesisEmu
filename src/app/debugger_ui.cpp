@@ -21,6 +21,14 @@ constexpr ImU32 kDim = IM_COL32(140, 140, 150, 255);
 constexpr ImU32 kPcRow = IM_COL32(70, 90, 160, 160);
 constexpr ImU32 kBpDot = IM_COL32(220, 50, 50, 255);
 constexpr ImU32 kBpDotOff = IM_COL32(220, 50, 50, 90);
+constexpr const char* kHistoryTip =
+    "Keeps the last instructions of both CPUs, to see how you got to a stop.\n"
+    "Off by default: while on, it costs a hook call per instruction (about 0.6 ms per frame in Sonic 1).";
+constexpr const char* kZ80StopTip =
+    "A Z80 breakpoint or watchpoint freezes the Z80 and stops the 68000 after its current instruction.\n"
+    "Resuming can differ slightly from an uninterrupted run, because the 68000 may touch the Z80 side in "
+    "between.\n"
+    "68000 stops resume exactly.";
 
 std::optional<std::uint32_t> parseHex(const char* text) {
     std::string_view s(text);
@@ -278,6 +286,12 @@ void DebuggerUi::drawMenu() {
     ImGui::MenuItem(kPlanesWindow, nullptr, &showPlanes_);
     ImGui::MenuItem(kSpritesWindow, nullptr, &showSprites_);
     ImGui::MenuItem(kPaletteWindow, nullptr, &showPalette_);
+    ImGui::Separator();
+    bool history = d_ != nullptr && d_->ringEnabled();
+    if (ImGui::MenuItem("Instruction History", nullptr, &history, d_ != nullptr)) {
+        d_->setRingEnabled(history, static_cast<std::size_t>(ringSize_));
+    }
+    ImGui::SetItemTooltip("%s", kHistoryTip);
 }
 
 void DebuggerUi::draw(bool running) {
@@ -350,6 +364,7 @@ void DebuggerUi::drawRunControl(bool running) {
     ImGui::RadioButton("68000", &focus, 0);
     ImGui::SameLine();
     ImGui::RadioButton("Z80", &focus, 1);
+    ImGui::SetItemTooltip("Stepping and the disassembly follow the Z80.\n%s", kZ80StopTip);
     focus_ = focus == 1 ? CpuId::Z80 : CpuId::M68k;
     ImGui::Separator();
     ImGui::Text("%s | frame %llu  line %d  MCLK %llu", running ? "running" : "paused",
@@ -360,6 +375,10 @@ void DebuggerUi::drawRunControl(bool running) {
     const debug::StopInfo& stop = d_->lastStop();
     if (!stop.text.empty()) {
         ImGui::TextColored(ImVec4(1, 0.85f, 0.4f, 1), "last stop: %s", stop.text.c_str());
+        if (stop.cpu == CpuId::Z80 && (stop.kind == debug::StopInfo::Kind::Breakpoint ||
+                                       stop.kind == debug::StopInfo::Kind::Watchpoint)) {
+            ImGui::SetItemTooltip("%s", kZ80StopTip);
+        }
     }
     if (d_->stepPending()) {
         ImGui::TextColored(ImVec4(0.6f, 0.8f, 1, 1), "step in progress (Pause cancels it)");
@@ -482,6 +501,9 @@ void DebuggerUi::drawDisassembly(bool running) {
             ImGui::PushID(static_cast<int>(l.addr));
             if (ImGui::InvisibleButton("gutter", ImVec2(gutter, lineH))) {
                 d_->toggleExec(cpu, l.addr);
+            }
+            if (cpu == CpuId::Z80) {
+                ImGui::SetItemTooltip("%s", kZ80StopTip);
             }
             ImGui::SameLine(0, 0);
             const std::string row = cpu == CpuId::Z80
@@ -912,6 +934,7 @@ void DebuggerUi::drawBreakpoints(bool running) {
     if (ImGui::Combo("##cpu", &cpu, "68000\0Z80\0")) {
         form_.cpu = cpu == 1 ? CpuId::Z80 : CpuId::M68k;
     }
+    ImGui::SetItemTooltip("%s", kZ80StopTip);
     const bool decimal = form_.kind == debug::BpKind::Interrupt || form_.kind == debug::BpKind::Exception ||
                          form_.kind == debug::BpKind::Frame || form_.kind == debug::BpKind::VdpReg;
     ImGui::SameLine();
@@ -1165,23 +1188,24 @@ void DebuggerUi::drawTrace(bool running) {
         ImGui::TextDisabled("%s", traceStatus_.c_str());
     }
     ImGui::Separator();
-    ImGui::TextUnformatted("Ring buffer: the last N instructions of both CPUs");
+    ImGui::TextUnformatted("Instruction history: the last N instructions of both CPUs");
     bool ring = d_->ringEnabled();
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
     ImGui::InputInt("entries", &ringSize_, 10000);
     ringSize_ = std::clamp(ringSize_, 16, 10000000);
     ImGui::SameLine();
     if (ImGui::Checkbox("capture", &ring)) {
         d_->setRingEnabled(ring, static_cast<std::size_t>(ringSize_));
     }
+    ImGui::SetItemTooltip("%s", kHistoryTip);
     ImGui::SetNextItemWidth(-ImGui::GetFontSize() * 6);
     ImGui::InputText("dump file", ringPath_.data(), ringPath_.size());
     ImGui::BeginDisabled(!ring || running);
-    if (ImGui::Button("Dump ring")) {
+    if (ImGui::Button("Dump history")) {
         std::ofstream out(ringPath_.data(), std::ios::binary);
         d_->dumpRing(out);
         traceStatus_ =
-            out ? std::format("ring ({} entries) written to {}", d_->ring().size(), ringPath_.data())
+            out ? std::format("history ({} entries) written to {}", d_->ring().size(), ringPath_.data())
                 : std::string("cannot write ") + ringPath_.data();
     }
     ImGui::EndDisabled();

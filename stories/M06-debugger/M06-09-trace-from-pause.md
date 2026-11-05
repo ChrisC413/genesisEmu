@@ -30,7 +30,7 @@ As a **reverse engineer**, I want to begin tracing from a paused state, with fil
 
 ## Notes
 
-- Trace panel: file, PC range, first execution only, frames, record limit, begin / stop; ring buffer switch
-  (opt-in, D-030), size and dump. Breakpoints can begin a trace of N frames on hit.
+- Trace panel: file, PC range, first execution only, frames, record limit, begin / stop; instruction history
+  (the ring buffer: off by default, D-030; also switched from Debug > Instruction History), size and dump. Breakpoints can begin a trace of N frames on hit.
 - The 68k is traced in the M02-06 text format; the ring buffer covers both CPUs. The compact binary format
   is not implemented yet.

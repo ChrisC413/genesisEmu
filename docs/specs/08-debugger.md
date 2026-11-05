@@ -113,7 +113,7 @@ Typical flow: **pause → configure → begin trace → resume/step → stop tra
 - Configuration: CPU(s), optional address-range filter (only log instructions whose PC is in range), optional "only first execution of each PC" mode, max size.
 - Each record: frame, scanline, MCLK, CPU, PC, opcode bytes, disassembly text, register deltas (only registers that changed), memory writes made by the instruction.
 - Output: text (human-diffable; one line per instruction) and a compact binary format (for tooling). Writing is buffered off the hot path.
-- **Ring-buffer mode**: capture of the last N (default 100,000) instructions of both CPUs in memory; dumpable after a breakpoint hits — answers "how did we get here?". It is switched on in the Trace panel rather than always on (D-030): capturing costs a hook call per instruction.
+- **Ring-buffer mode**: capture of the last N (default 100,000) instructions of both CPUs in memory; dumpable after a breakpoint hits — answers "how did we get here?". It is off by default and switched on from Debug > Instruction History or the Trace panel (D-030): capturing costs a hook call per instruction.
 - Traces can be started from a breakpoint action ("on hit: begin trace for 2 frames").
 - Text trace format is stable and documented so traces from two runs can be diffed with standard tools.
 

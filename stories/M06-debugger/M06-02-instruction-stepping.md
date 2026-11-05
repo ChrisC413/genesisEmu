@@ -21,7 +21,8 @@ As a **reverse engineer**, I want step into/over/out and run-to-cursor on the 68
 - [x] Step over a `jsr` lands on the following instruction even with interrupts in between: unit test (the
   called routine waits for the next V-int) and `[rom]` test in Sonic 1 (a real `jsr` mid-level).
 - [x] Stepping the Z80 keeps the 68k in sync: unit test (the 68k never runs ahead by more than the catch-up
-  window; step over `call` and step out of the callee on the Z80); semantics in D-031.
+  window; step over `call` and step out of the callee on the Z80); semantics in D-031, explained by a tooltip on the Z80 focus button,
+  the breakpoint CPU selector, the Z80 disassembly gutter and the "last stop" line.
 
 ## Test plan
 

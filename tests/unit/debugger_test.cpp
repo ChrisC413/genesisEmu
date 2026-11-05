@@ -250,6 +250,7 @@ TEST_CASE("Idle debugger installs no hooks and never changes results", "[debug][
     Machine m = makeMachine(p);
     Debugger d(m);
     CHECK_FALSE(d.hooksInstalled());
+    CHECK_FALSE(d.ringEnabled());  // instruction history is opt-in (D-030)
     for (int i = 0; i < 10; ++i) {
         d.run(RunLimit::frames(1));
     }
