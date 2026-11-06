@@ -1,6 +1,13 @@
 find_package(SDL3 CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
-find_package(OpenGL REQUIRED)
+if(APPLE)
+  # vcpkg's toolchain searches frameworks last, so FindOpenGL would pick XQuartz's libGL where it is
+  # installed. That library cannot see the context SDL creates through Apple's OpenGL.
+  set(gl_library "-framework OpenGL")
+else()
+  find_package(OpenGL REQUIRED)
+  set(gl_library OpenGL::GL)
+endif()
 
 set(app_sources
   app.cpp
@@ -34,5 +41,5 @@ endif()
 
 set_target_properties(gen_app PROPERTIES OUTPUT_NAME genesisEmu)
 target_include_directories(gen_app PRIVATE "${PROJECT_SOURCE_DIR}/src")
-target_link_libraries(gen_app PRIVATE gen_analysis gen_common SDL3::SDL3 imgui::imgui OpenGL::GL)
+target_link_libraries(gen_app PRIVATE gen_analysis gen_common SDL3::SDL3 imgui::imgui ${gl_library})
 genesis_set_warnings(gen_app)
