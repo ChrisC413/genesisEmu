@@ -44,7 +44,8 @@ void GameView::upload(const vdp::Vdp& vdp) {
     ++uploads_;
 }
 
-void GameView::draw(bool* open, const std::optional<cart::Rom>& rom, const std::string& overlay) {
+void GameView::draw(bool* open, const std::optional<cart::Rom>& rom, const std::string& overlay,
+                    const std::vector<Box>& boxes) {
     if (!*open) {
         return;
     }
@@ -78,6 +79,16 @@ void GameView::draw(bool* open, const std::optional<cart::Rom>& rom, const std::
         const ImVec2 uv1(static_cast<float>(width_) / vdp::kFbWidth,
                          static_cast<float>(height_) / vdp::kFbHeight);
         draw->AddImage(static_cast<ImTextureID>(texture_), tl, br, ImVec2(0, 0), uv1);
+        const float sx = w / static_cast<float>(width_);
+        const float sy = h / lines;
+        draw->PushClipRect(tl, br, true);
+        for (const Box& b : boxes) {
+            draw->AddRect(
+                ImVec2(tl.x + static_cast<float>(b.x) * sx, tl.y + static_cast<float>(b.y) * sy),
+                ImVec2(tl.x + static_cast<float>(b.x + b.w) * sx, tl.y + static_cast<float>(b.y + b.h) * sy),
+                b.colour);
+        }
+        draw->PopClipRect();
     } else {
         draw->AddRectFilled(tl, br, IM_COL32(0, 0, 0, 255));
         const char* line1 = rom ? (rom->known ? rom->known->title.data() : rom->header.overseasTitle.c_str())

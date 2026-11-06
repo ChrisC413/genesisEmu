@@ -185,46 +185,59 @@ void TraceWriter::complete() {
     }
 }
 
-Action TraceWriter::onInstr(void* ctx, CpuId cpu, std::uint32_t pc, std::uint16_t) {
-    if (cpu != CpuId::M68k) {
-        return Action::Continue;  // the trace format covers the 68k only (Z80 traces arrive with M06)
+bool TraceWriter::done() const {
+    return records_ >= config_.maxRecords || machine_.frame() >= config_.endFrame;
+}
+
+void TraceWriter::instr(std::uint32_t pc) {
+    complete();
+    if (!frameInRange()) {
+        return;
     }
-    auto& t = *static_cast<TraceWriter*>(ctx);
-    t.complete();
-    if (!t.frameInRange()) {
-        return Action::Continue;
+    if (config_.pcRange && (pc < config_.pcRange->first || pc > config_.pcRange->second)) {
+        return;
     }
-    if (t.config_.pcRange && (pc < t.config_.pcRange->first || pc > t.config_.pcRange->second)) {
-        return Action::Continue;
-    }
-    if (t.config_.firstExecutionOnly) {
-        std::uint8_t& bits = t.seen_[(pc & 0xFFFFFF) >> 3];
+    if (config_.firstExecutionOnly) {
+        std::uint8_t& bits = seen_[(pc & 0xFFFFFF) >> 3];
         const auto bit = static_cast<std::uint8_t>(1u << (pc & 7));
         if ((bits & bit) != 0) {
-            return Action::Continue;
+            return;
         }
         bits |= bit;
     }
-    t.begin(pc, 0);
+    begin(pc, 0);
+}
+
+void TraceWriter::write(std::uint32_t addr, std::uint8_t size, std::uint32_t value) {
+    if (open_) {
+        writes_.push_back(Write{addr, value, size});
+    }
+}
+
+void TraceWriter::irq(int level) {
+    complete();
+    if (frameInRange() && !config_.pcRange) {
+        begin(machine_.cpu().currentPc(), level);
+    }
+}
+
+Action TraceWriter::onInstr(void* ctx, CpuId cpu, std::uint32_t pc, std::uint16_t) {
+    if (cpu == CpuId::M68k) {  // the trace format covers the 68k only
+        static_cast<TraceWriter*>(ctx)->instr(pc);
+    }
     return Action::Continue;
 }
 
 void TraceWriter::onAccess(void* ctx, CpuId cpu, AccessKind kind, std::uint32_t addr, std::uint8_t size,
                            std::uint32_t value, std::uint32_t) {
-    auto& t = *static_cast<TraceWriter*>(ctx);
-    if (cpu == CpuId::M68k && t.open_ && kind == AccessKind::Write) {
-        t.writes_.push_back(Write{addr, value, size});
+    if (cpu == CpuId::M68k && kind == AccessKind::Write) {
+        static_cast<TraceWriter*>(ctx)->write(addr, size, value);
     }
 }
 
 void TraceWriter::onIrq(void* ctx, CpuId cpu, int level) {
-    if (cpu != CpuId::M68k) {
-        return;
-    }
-    auto& t = *static_cast<TraceWriter*>(ctx);
-    t.complete();
-    if (t.frameInRange() && !t.config_.pcRange) {
-        t.begin(t.machine_.cpu().currentPc(), level);
+    if (cpu == CpuId::M68k) {
+        static_cast<TraceWriter*>(ctx)->irq(level);
     }
 }
 

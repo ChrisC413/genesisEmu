@@ -7,6 +7,7 @@
 #include <string>
 
 #include "app/audio_output.hpp"
+#include "app/debugger_ui.hpp"
 #include "app/input.hpp"
 #include "app/panels/panels.hpp"
 #include "app/platform/file_dialog.hpp"
@@ -16,10 +17,12 @@
 #include "common/wav.hpp"
 #include "core/cart/rom.hpp"
 #include "core/sched/machine.hpp"
+#include "debug/debugger.hpp"
 
 namespace gen::app {
 
 inline constexpr const char* kSoundWindow = "Sound";
+inline constexpr const char* kStatesWindow = "Save States";
 
 enum AppExit : int {
     kAppOk = 0,
@@ -37,6 +40,11 @@ struct AppOptions {
     std::optional<std::filesystem::path> lockOn;      // cartridge locked onto the ROM (S&K + Sonic 3)
     bool fastForward = false;                         // start in fast-forward (benchmarks, smoke tests)
     std::optional<std::filesystem::path> state;       // save state to load right after the ROM (M06-00a)
+    bool debugger = false;                            // open the debugger panels in the debugger layout
+    std::optional<std::uint64_t> pauseAt;             // pause once this frame is reached (M06-01)
+    std::vector<std::uint32_t> breakAt;               // 68k exec breakpoints to set at start
+    std::vector<std::string> focusWindows;            // windows brought to the front (screenshots)
+    bool spriteBoxes = false;                         // outline sprites on the game view
 };
 
 class App {
@@ -69,15 +77,46 @@ private:
     bool saveState(const std::filesystem::path& path, const std::string& label);
     bool loadState(const std::filesystem::path& path, const std::string& label);
     void notify(std::string text);  // shown in the overlay for a few seconds
+    // State browser (M06-08): slots and named states with thumbnails.
+    struct StateEntry {
+        std::filesystem::path path;
+        std::string label;
+        int slot = 0;  // 1-9, or 0 for a named state
+        bool exists = false;
+        bool valid = false;
+        std::uint64_t frame = 0;
+        std::uint64_t timestamp = 0;
+        std::filesystem::file_time_type mtime{};
+        std::unique_ptr<Texture> thumb;
+    };
+    std::filesystem::path statesDir() const;
+    void scanStates();
+    void drawStatesPanel();
+    void pollStateDialogs();
+
+    // Debugger (M06): commands from the panels / hotkeys, run between frames.
+    void runDebugCommand(DebugCommand command);
+    void onDebugStop(const RunResult& result);
+    void drawStatusBar();
+    void buildDebuggerLayout(unsigned dockspace);
 
     common::AppPaths paths_;
     common::ConfigFile config_;
     Window window_;
     RomFileDialog romDialog_;
+    RomFileDialog stateOpenDialog_{RomFileDialog::Kind::State};
+    RomFileDialog stateSaveDialog_{RomFileDialog::Kind::State};
+    bool showStates_ = false;
+    std::array<char, 64> stateName_{};
+    std::vector<StateEntry> stateEntries_;
+    std::uint64_t lastStateScan_ = 0;
     std::optional<cart::Rom> rom_;
     std::filesystem::path romPath_;
     std::optional<std::filesystem::path> lockOnPath_;
     std::unique_ptr<Machine> machine_;
+    std::unique_ptr<debug::Debugger> debugger_;  // destroyed before machine_ (it owns its hooks)
+    DebuggerUi debugUi_;
+    bool debugLayout_ = false;  // build the debugger dock layout on the next frame
     GameView gameView_;
     InputManager input_;
     AudioOutput audio_;

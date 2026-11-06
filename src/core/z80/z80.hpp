@@ -79,6 +79,9 @@ public:
     virtual ~BusZ80() = default;
     virtual std::uint8_t read8(std::uint16_t addr) = 0;
     virtual void write8(std::uint16_t addr, std::uint8_t value) = 0;
+    // A read without side effects or wait states (the opcode handed to onInstr). Buses whose reads have
+    // side effects must override it.
+    virtual std::uint8_t peek8(std::uint16_t addr) { return read8(addr); }
     virtual std::uint8_t in8(std::uint16_t port) {
         (void)port;
         return 0xFF;

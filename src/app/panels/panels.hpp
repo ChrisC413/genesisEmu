@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "core/cart/rom.hpp"
 
@@ -36,7 +37,13 @@ public:
     void upload(const vdp::Vdp& vdp);
     void clear() { hasFrame_ = false; }
     // `status` is shown when there is no frame; `overlay` is the frame-time text.
-    void draw(bool* open, const std::optional<cart::Rom>& rom, const std::string& overlay);
+    // `boxes` (x, y, w, h, IM_COL32 colour in emulated screen pixels) are outlined over the picture.
+    struct Box {
+        int x, y, w, h;
+        std::uint32_t colour;
+    };
+    void draw(bool* open, const std::optional<cart::Rom>& rom, const std::string& overlay,
+              const std::vector<Box>& boxes = {});
 
     GameViewSettings& settings() { return settings_; }
     bool hasFrame() const { return hasFrame_; }

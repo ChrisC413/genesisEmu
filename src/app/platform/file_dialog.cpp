@@ -11,16 +11,21 @@ namespace gen::app {
 
 namespace {
 
-constexpr SDL_DialogFileFilter kFilters[] = {
+constexpr SDL_DialogFileFilter kRomFilters[] = {
     {"Genesis / Mega Drive ROMs", "bin;md;gen;smd"},
+    {"All files", "*"},
+};
+constexpr SDL_DialogFileFilter kStateFilters[] = {
+    {"genesisEmu save states", "gst"},
     {"All files", "*"},
 };
 
 }  // namespace
 
-RomFileDialog::RomFileDialog() : shared_(std::make_shared<Shared>()) {}
+RomFileDialog::RomFileDialog(Kind kind) : kind_(kind), shared_(std::make_shared<Shared>()) {}
 
-void RomFileDialog::open(SDL_Window* parent, const std::optional<std::filesystem::path>& startDir) {
+void RomFileDialog::open(SDL_Window* parent, const std::optional<std::filesystem::path>& startDir,
+                         bool save) {
     {
         std::lock_guard lock(shared_->mutex);
         if (shared_->open) {
@@ -31,8 +36,15 @@ void RomFileDialog::open(SDL_Window* parent, const std::optional<std::filesystem
     startLocation_ = startDir ? common::toUtf8(*startDir) : std::string();
     // The callback receives a heap-allocated reference so the shared state outlives this object if needed.
     auto* ref = new std::shared_ptr<Shared>(shared_);
-    SDL_ShowOpenFileDialog(&RomFileDialog::onComplete, ref, parent, kFilters, SDL_arraysize(kFilters),
-                           startLocation_.empty() ? nullptr : startLocation_.c_str(), false);
+    const SDL_DialogFileFilter* filters = kind_ == Kind::State ? kStateFilters : kRomFilters;
+    const int count = kind_ == Kind::State ? static_cast<int>(SDL_arraysize(kStateFilters))
+                                           : static_cast<int>(SDL_arraysize(kRomFilters));
+    const char* location = startLocation_.empty() ? nullptr : startLocation_.c_str();
+    if (save) {
+        SDL_ShowSaveFileDialog(&RomFileDialog::onComplete, ref, parent, filters, count, location);
+    } else {
+        SDL_ShowOpenFileDialog(&RomFileDialog::onComplete, ref, parent, filters, count, location, false);
+    }
 }
 
 bool RomFileDialog::isOpen() const {

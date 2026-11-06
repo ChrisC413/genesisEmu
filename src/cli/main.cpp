@@ -378,7 +378,7 @@ bool parseStateSaves(const Args& a, std::uint64_t start, std::vector<StateSave>&
 }
 
 bool writeState(gen::Machine& m, const std::filesystem::path& path) {
-    const auto bytes = m.saveState(static_cast<std::uint64_t>(std::time(nullptr)));
+    const auto bytes = m.saveState(static_cast<std::uint64_t>(std::time(nullptr)), true);  // with a thumbnail
     std::ofstream f(path, std::ios::binary);
     f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     if (!f) {

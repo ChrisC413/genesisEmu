@@ -150,4 +150,63 @@ std::optional<StateInfo> peekStateInfo(std::span<const std::uint8_t> bytes, std:
     return decodeInfo(*info, error);
 }
 
+Thumbnail makeThumbnail(const std::uint32_t* pixels, int width, int height, int stride) {
+    Thumbnail t;
+    t.width = kThumbnailWidth;
+    t.height = kThumbnailHeight;
+    t.rgba.resize(static_cast<std::size_t>(t.width * t.height));
+    for (int y = 0; y < t.height; ++y) {
+        const int sy = y * height / t.height;
+        for (int x = 0; x < t.width; ++x) {
+            const int sx = x * width / t.width;
+            t.rgba[static_cast<std::size_t>(y * t.width + x)] = pixels[sy * stride + sx] | 0xFF000000u;
+        }
+    }
+    return t;
+}
+
+std::vector<std::uint8_t> encodeThumbnail(const Thumbnail& thumbnail) {
+    std::vector<std::uint8_t> out;
+    auto w = static_cast<std::uint16_t>(thumbnail.width);
+    auto h = static_cast<std::uint16_t>(thumbnail.height);
+    Archive ar(out, 1);
+    ar.u16(w);
+    ar.u16(h);
+    for (const std::uint32_t p : thumbnail.rgba) {
+        out.push_back(static_cast<std::uint8_t>(p));
+        out.push_back(static_cast<std::uint8_t>(p >> 8));
+        out.push_back(static_cast<std::uint8_t>(p >> 16));
+    }
+    return out;
+}
+
+std::optional<Thumbnail> decodeThumbnail(const StateChunk& chunk) {
+    if (chunk.version != 1 || chunk.payload.size() < 4) {
+        return std::nullopt;
+    }
+    Thumbnail t;
+    t.width = chunk.payload[0] | (chunk.payload[1] << 8);
+    t.height = chunk.payload[2] | (chunk.payload[3] << 8);
+    const auto n = static_cast<std::size_t>(t.width) * static_cast<std::size_t>(t.height);
+    if (t.width == 0 || t.height == 0 || chunk.payload.size() != 4 + n * 3) {
+        return std::nullopt;
+    }
+    t.rgba.resize(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const std::uint8_t* p = &chunk.payload[4 + i * 3];
+        t.rgba[i] = p[0] | (p[1] << 8) | (static_cast<std::uint32_t>(p[2]) << 16) | 0xFF000000u;
+    }
+    return t;
+}
+
+std::optional<Thumbnail> peekThumbnail(std::span<const std::uint8_t> bytes) {
+    std::string error;
+    const auto file = decodeStateFile(bytes, error);
+    if (!file) {
+        return std::nullopt;
+    }
+    const StateChunk* chunk = file->find("THMB");
+    return chunk != nullptr ? decodeThumbnail(*chunk) : std::nullopt;
+}
+
 }  // namespace gen::state

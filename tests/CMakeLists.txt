@@ -15,6 +15,7 @@ add_executable(gen_unit_tests
   unit/bus_test.cpp
   unit/cart_device_test.cpp
   unit/config_test.cpp
+  unit/debugger_test.cpp
   unit/disasm68k_test.cpp
   unit/disasmz80_test.cpp
   unit/hash_test.cpp
@@ -33,20 +34,21 @@ add_executable(gen_unit_tests
   unit/z80_system_test.cpp
 )
 target_include_directories(gen_unit_tests PRIVATE unit)
-target_link_libraries(gen_unit_tests PRIVATE gen_analysis gen_common gen_test_support Catch2::Catch2WithMain)
+target_link_libraries(gen_unit_tests PRIVATE gen_debug gen_analysis gen_common gen_test_support Catch2::Catch2WithMain)
 genesis_set_warnings(gen_unit_tests)
 catch_discover_tests(gen_unit_tests DISCOVERY_MODE PRE_TEST PROPERTIES LABELS unit)
 
 # Tests against the user's commercial ROMs (GENESIS_ROM_DIR); they report "skipped" when it is unset.
 add_executable(gen_rom_tests
   roms/boot_test.cpp
+  roms/debugger_test.cpp
   roms/frame_test.cpp
   roms/rom_scan.cpp
   roms/rom_identify_test.cpp
   roms/save_state_test.cpp
   roms/script_test.cpp
 )
-target_link_libraries(gen_rom_tests PRIVATE gen_common Catch2::Catch2WithMain)
+target_link_libraries(gen_rom_tests PRIVATE gen_debug gen_common Catch2::Catch2WithMain)
 target_compile_definitions(gen_rom_tests PRIVATE GENESIS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 genesis_set_warnings(gen_rom_tests)
 catch_discover_tests(gen_rom_tests DISCOVERY_MODE PRE_TEST PROPERTIES LABELS rom SKIP_RETURN_CODE 4)

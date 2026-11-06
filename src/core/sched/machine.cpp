@@ -65,6 +65,13 @@ Machine::Machine(std::vector<std::uint8_t> rom, std::uint8_t headerRegions, cons
 
 Machine::~Machine() = default;
 
+void Machine::softReset() {
+    cpu_->setIrqLevel(0);
+    const int cycles = cpu_->reset();
+    clock_.cpuMclk += static_cast<std::uint64_t>(cycles) * kM68kDivider;
+    bus_->updateIrq();
+}
+
 void Machine::hardReset() {
     clock_ = bus::BusClock{};
     frame_ = 0;
@@ -105,6 +112,9 @@ void Machine::addCartDevice(std::unique_ptr<cart::ICartDevice> device) {
 void Machine::setHooks(const Hooks& hooks) {
     hooks_ = hooks;
     cpu_->setHooks(hooks_);
+    hooked_ = hooks.onInstr != nullptr || hooks.onAccess != nullptr || hooks.onDma != nullptr ||
+              hooks.onZ80Window != nullptr || hooks.onIrq != nullptr || hooks.onException != nullptr ||
+              hooks.onVdpWrite != nullptr || hooks.onFrameEnd != nullptr;
 }
 
 void Machine::catchUp(std::uint64_t mclk) {
@@ -135,7 +145,11 @@ void Machine::runZ80(std::uint64_t mclk) {
         }
         const int t = z80cpu_->step();
         if (t == 0) {
-            break;  // breakpoint (M06 surfaces Z80 breaks in run())
+            // A Z80 breakpoint: run() stops once the current 68k instruction is complete.
+            if (!stopRequested_) {
+                requestStop(StopReason::Breakpoint, CpuId::Z80);
+            }
+            break;
         }
         z80Mclk_ += static_cast<std::uint64_t>(t) * kZ80Divider;
     }
@@ -179,6 +193,7 @@ void Machine::checkVint() {
     }
 }
 
+template <bool kHooked>
 bool Machine::stepCpu(RunResult& result) {
     const std::uint32_t pc = cpu_->state().pc;
     const int cycles = cpu_->step();
@@ -190,6 +205,9 @@ bool Machine::stepCpu(RunResult& result) {
     clock_.cpuMclk += static_cast<std::uint64_t>(cycles) * kM68kDivider;
     const int vector = cpu_->lastException();
     if (vector >= 0) {
+        if (hooks_.onException != nullptr) {
+            hooks_.onException(hooks_.ctx, CpuId::M68k, vector, pc);
+        }
         ++stats_.exceptions[static_cast<std::size_t>(vector & 0xFF)];
         if (vector == kVintVector) {
             ++stats_.vints;
@@ -220,13 +238,31 @@ bool Machine::stepCpu(RunResult& result) {
         }
         checkVint();
     }
+    if constexpr (kHooked) {
+        if (stopRequested_) {
+            stopRequested_ = false;
+            result.reason = requestedStop_;
+            result.cpu = requestedStopCpu_;
+            return false;
+        }
+    }
     return result.reason != StopReason::Exception;
 }
 
 RunResult Machine::run(RunLimit limit) {
+    stopRequested_ = false;
+    return hooked_ ? runLoop<true>(limit) : runLoop<false>(limit);
+}
+
+template <bool kHooked>
+RunResult Machine::runLoop(RunLimit limit) {
     RunResult result;
     const std::uint64_t targetFrame = frame_ + limit.count;
     const std::uint64_t targetMclk = clock_.cpuMclk + limit.count;
+    const auto absoluteLine = [this] {
+        return frame_ * static_cast<std::uint64_t>(linesPerFrame()) + static_cast<std::uint64_t>(line_);
+    };
+    const std::uint64_t targetLine = absoluteLine() + limit.count;
     for (;;) {
         switch (limit.kind) {
             case RunLimit::Kind::Frames:
@@ -244,10 +280,15 @@ RunResult Machine::run(RunLimit limit) {
                     return result;
                 }
                 break;
+            case RunLimit::Kind::Lines:
+                if (absoluteLine() >= targetLine) {
+                    return result;
+                }
+                break;
             case RunLimit::Kind::UntilBreak:
                 break;
         }
-        if (!stepCpu(result)) {
+        if (!stepCpu<kHooked>(result)) {
             return result;
         }
     }
@@ -255,21 +296,30 @@ RunResult Machine::run(RunLimit limit) {
 
 RunResult Machine::step(CpuId cpu) {
     RunResult result;
+    stopRequested_ = false;
     if (cpu == CpuId::Z80) {
         if (!z80_.running()) {
             return result;
         }
         z80cpu_->setIrq(vdp_.state().z80Int);
+        inZ80_ = true;
         const int t = z80cpu_->step();
+        inZ80_ = false;
         if (z80cpu_->breakHit()) {
             result.reason = StopReason::Breakpoint;
+            result.cpu = CpuId::Z80;
             return result;
         }
         result.instructions = 1;
         z80Mclk_ += static_cast<std::uint64_t>(t) * kZ80Divider;
+        clock_.cpuMclk += static_cast<std::uint64_t>(z80_.takeM68kStall()) * kM68kDivider;
         return result;
     }
-    stepCpu(result);
+    if (hooked_) {
+        stepCpu<true>(result);
+    } else {
+        stepCpu<false>(result);
+    }
     return result;
 }
 

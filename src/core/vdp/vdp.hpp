@@ -206,6 +206,7 @@ private:
     DmaTarget currentTarget() const;
     void writeVram(std::uint16_t addr, std::uint8_t value);
     void writeTarget(std::uint16_t value);
+    void reportWrite(std::uint16_t value) const;  // onVdpWrite for a data-port / DMA write
     void startDma();
     void finishMemoryDma();
     void runFill(std::uint16_t value);

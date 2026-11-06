@@ -278,7 +278,9 @@ TEST_CASE("Hooks see every access with the instruction's PC and can break", "[m6
     CHECK(r.cpu.breakHit());
     CHECK(r.cpu.state().pc == kStart + 2);  // stopped before the NOP
     log.breakNext = true;
-    CHECK(r.cpu.step() == 4);  // resuming runs it without asking the hook again
+    const int seen = log.instrs;
+    CHECK(r.cpu.step() == 4);  // resuming runs it: the hook sees it again, but cannot break it twice
+    CHECK(log.instrs == seen + 1);
     CHECK_FALSE(r.cpu.breakHit());
     CHECK(r.cpu.state().pc == kStart + 4);
 }

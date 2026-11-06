@@ -178,7 +178,7 @@ void Machine::serializeChunk(std::string_view tag, state::Archive& ar) {
     }
 }
 
-std::vector<std::uint8_t> Machine::saveState(std::uint64_t timestamp) {
+std::vector<std::uint8_t> Machine::saveState(std::uint64_t timestamp, bool thumbnail) {
     state::StateFile file;
     const state::StateInfo info{romSha1_, frame_, timestamp, stateHash()};
     file.chunks.push_back({"INFO", 1, state::encodeInfo(info)});
@@ -187,6 +187,14 @@ std::vector<std::uint8_t> Machine::saveState(std::uint64_t timestamp) {
         state::Archive ar(chunk.payload, def.version);
         serializeChunk(def.tag, ar);
         file.chunks.push_back(std::move(chunk));
+    }
+    if (thumbnail) {
+        // Interlace mode 2 frames have twice the lines: every other one is enough for a thumbnail.
+        const int lines = vdp_.frameHeight() > 240 ? vdp_.frameHeight() / 2 : vdp_.frameHeight();
+        const int stride = vdp::kFbWidth * (vdp_.frameHeight() > 240 ? 2 : 1);
+        file.chunks.push_back({"THMB", 1,
+                               state::encodeThumbnail(state::makeThumbnail(
+                                   vdp_.framebuffer(), vdp_.frameWidth(), lines, stride))});
     }
     return state::encodeStateFile(file);
 }
@@ -226,8 +234,8 @@ bool Machine::loadState(std::span<const std::uint8_t> bytes, std::string& error)
         return false;
     }
     for (const state::StateChunk& c : file->chunks) {
-        if (c.tag == "INFO") {
-            continue;
+        if (c.tag == "INFO" || c.tag == "THMB") {
+            continue;  // THMB is a picture for state browsers, not machine state
         }
         const ChunkDef* def = findChunk(c.tag);
         if (def == nullptr) {

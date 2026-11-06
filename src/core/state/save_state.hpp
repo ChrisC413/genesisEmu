@@ -56,4 +56,19 @@ std::optional<StateInfo> decodeInfo(const StateChunk& chunk, std::string& error)
 // Reads just the INFO chunk of a state file (slot menus, ROM checks before loading).
 std::optional<StateInfo> peekStateInfo(std::span<const std::uint8_t> bytes, std::string& error);
 
+// Optional "THMB" chunk (M06-08): a small picture of the screen for state browsers. It is not machine state:
+// loading ignores it and a state without one is complete.
+inline constexpr int kThumbnailWidth = 160;
+inline constexpr int kThumbnailHeight = 112;
+struct Thumbnail {
+    int width = 0;
+    int height = 0;
+    std::vector<std::uint32_t> rgba;  // byte order R, G, B, A
+};
+// Nearest-neighbour downscale of a framebuffer (`stride` pixels per row) to 160x112.
+Thumbnail makeThumbnail(const std::uint32_t* pixels, int width, int height, int stride);
+std::vector<std::uint8_t> encodeThumbnail(const Thumbnail& thumbnail);  // u16 width, u16 height, RGB888
+std::optional<Thumbnail> decodeThumbnail(const StateChunk& chunk);
+std::optional<Thumbnail> peekThumbnail(std::span<const std::uint8_t> bytes);
+
 }  // namespace gen::state
